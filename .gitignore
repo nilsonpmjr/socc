@@ -11,8 +11,8 @@ __pycache__/
 soc_copilot/soc_copilot.db
 soc_copilot.db
 *.db
-SOC_Copilot_*.md
-Revisao_Fase*.md
+# SOC_Copilot_*.md
+# Revisao_Fase*.md
 
 Notas_Geradas/
 Alertas_Gerados/
