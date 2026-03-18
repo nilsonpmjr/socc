@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SOC Copilot</title>
+  <style>
+    :root {
+      --bg: #f4f1e8;
+      --paper: #fffdf8;
+      --ink: #1d2328;
+      --muted: #66645f;
+      --line: #d7cebe;
+      --accent: #114b5f;
+      --accent-soft: #d9ece7;
+      --danger: #b84032;
+      --danger-soft: #f8e2dd;
+      --success: #2f6b4e;
+      --success-soft: #e4f2e8;
+      --warning: #8d651c;
+      --warning-soft: #fbefcf;
+      --shadow: 0 14px 28px rgba(36, 29, 18, 0.08);
+      --radius: 16px;
+      --radius-sm: 10px;
+    }
+
+    [data-theme="dark"] {
+      --bg: #0f1117;
+      --paper: #181c24;
+      --ink: #e8e6e0;
+      --muted: #8a8880;
+      --line: #2e3340;
+      --accent: #4ab3cc;
+      --accent-soft: #1a3040;
+      --danger: #e06c5a;
+      --danger-soft: #2e1a18;
+      --success: #4caf7d;
+      --success-soft: #152318;
+      --warning: #d4a53a;
+      --warning-soft: #2a2010;
+      --shadow: 0 14px 28px rgba(0,0,0,0.35);
+    }
+    [data-theme="dark"] body {
+      background: linear-gradient(180deg, #0f1117 0%, #0a0d12 100%);
+    }
+    [data-theme="dark"] .card,
+    [data-theme="dark"] .subcard {
+      background: rgba(24, 28, 36, 0.95);
+    }
+    [data-theme="dark"] .summary-box {
+      background: rgba(74, 179, 204, 0.07);
+      border-color: rgba(74, 179, 204, 0.15);
+    }
+    [data-theme="dark"] input[type="text"],
+    [data-theme="dark"] select,
+    [data-theme="dark"] textarea,
+    [data-theme="dark"] .ti-block,
+    [data-theme="dark"] .draft-output {
+      background: #1e2330;
+      color: var(--ink);
+      border-color: var(--line);
+    }
+    [data-theme="dark"] .btn-secondary { background: #2a2e3a; color: var(--ink); }
+    [data-theme="dark"] .chip { background: #252a35; }
+    [data-theme="dark"] .pill { background: #252a35; border-color: var(--line); }
+    [data-theme="dark"] .pill.external { background: #2e1e1c; }
+    [data-theme="dark"] .pill.internal { background: #1e2028; }
+    [data-theme="dark"] .note-block { background: rgba(74,179,204,0.05); border-color: rgba(74,179,204,0.12); }
+    [data-theme="dark"] .note-block.warning { background: var(--warning-soft); border-color: rgba(212,165,58,0.18); }
+    [data-theme="dark"] .note-block.danger { background: var(--danger-soft); border-color: rgba(224,108,90,0.18); }
+    [data-theme="dark"] .note-block.success { background: var(--success-soft); border-color: rgba(76,175,125,0.18); }
+    [data-theme="dark"] .empty-state { background: rgba(255,255,255,0.03); }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      background: linear-gradient(180deg, #faf6ee 0%, var(--bg) 100%);
+      color: var(--ink);
+      font-family: "Segoe UI", sans-serif;
+      padding: 24px;
+    }
+
+    .shell { max-width: 1440px; margin: 0 auto; }
+    .hero { margin-bottom: 22px; }
+    .eyebrow {
+      display: inline-block;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 0.74rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 12px;
+    }
+    h1 { margin: 0 0 10px; font-size: clamp(2rem, 4vw, 3rem); line-height: 0.95; letter-spacing: -0.04em; }
+    .hero p { margin: 0; color: var(--muted); max-width: 70ch; line-height: 1.6; }
+
+    .layout { display: grid; grid-template-columns: 390px minmax(0, 1fr); gap: 20px; align-items: start; }
+    .stack { display: grid; gap: 18px; }
+    .card {
+      background: rgba(255, 253, 248, 0.92);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
+    .section-title {
+      margin: 0 0 14px;
+      color: var(--accent);
+      font-size: 0.82rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .section-hint { color: var(--muted); font-size: 0.83rem; margin: -6px 0 14px; }
+
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    label {
+      display: block;
+      margin: 14px 0 6px;
+      color: var(--muted);
+      font-size: 0.73rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    label:first-child { margin-top: 0; }
+    input[type="text"], input[type="file"], select, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      background: var(--paper);
+      color: var(--ink);
+      padding: 12px;
+      font: inherit;
+    }
+    textarea { min-height: 210px; resize: vertical; line-height: 1.5; }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(17, 75, 95, 0.10);
+    }
+    .file-meta { margin-top: 8px; color: var(--muted); font-size: 0.8rem; }
+
+    .btn-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+    .btn {
+      border: 0;
+      border-radius: 999px;
+      padding: 11px 16px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-secondary { background: #e9e1d4; color: var(--ink); }
+    .btn-copy { background: #16657f; color: #fff; }
+    .btn-save { background: #8d651c; color: #fff; }
+
+    .spinner { display: none; margin-top: 12px; color: var(--accent); font-size: 0.83rem; font-weight: 700; }
+    .spinner.visible { display: block; }
+    .alert {
+      display: none;
+      margin-top: 12px;
+      border-radius: var(--radius-sm);
+      padding: 12px;
+      font-size: 0.83rem;
+      line-height: 1.5;
+    }
+    .alert.visible { display: block; }
+    .alert-error { background: var(--danger-soft); color: var(--danger); border: 1px solid rgba(184, 64, 50, 0.24); }
+    .alert-success { background: var(--success-soft); color: var(--success); border: 1px solid rgba(47, 107, 78, 0.20); }
+
+    .summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .summary-box {
+      border: 1px solid rgba(17, 75, 95, 0.12);
+      border-radius: var(--radius-sm);
+      background: rgba(17, 75, 95, 0.05);
+      padding: 12px;
+    }
+    .summary-box strong {
+      display: block;
+      color: var(--muted);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 6px;
+    }
+    .summary-box span { font-weight: 700; }
+
+    .badge-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+    .badge, .chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 800;
+    }
+    .badge-tp { background: #f4d7d2; color: #9f2f23; }
+    .badge-btp { background: #f9ebc8; color: #8d651c; }
+    .badge-fp { background: #e5e3dd; color: #56524b; }
+    .badge-tn { background: #dcedf5; color: #1b607c; }
+    .badge-ltf { background: #ede1f8; color: #6b38b0; }
+    .badge-icatu { background: #f4d7d2; color: #9f2f23; }
+    .chip { background: #ebe3d7; color: var(--ink); }
+
+    .result-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 420px); gap: 18px; }
+    .subcard {
+      border: 1px solid rgba(215, 206, 190, 0.9);
+      border-radius: var(--radius-sm);
+      background: rgba(255, 255, 255, 0.48);
+      padding: 14px;
+    }
+    .subcard-title {
+      margin: 0 0 12px;
+      color: var(--accent);
+      font-size: 0.76rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .fields-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
+    .field-key {
+      display: block;
+      color: var(--muted);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 4px;
+    }
+    .field-val { font-size: 0.92rem; line-height: 1.45; word-break: break-word; }
+
+    .stack-list { display: grid; gap: 10px; }
+    .pill-list { display: flex; flex-wrap: wrap; gap: 8px; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 8px 10px;
+      font-size: 0.8rem;
+      background: #ede7db;
+      border: 1px solid rgba(215, 206, 190, 0.95);
+      word-break: break-word;
+    }
+    .pill.external { background: #f8e0db; }
+    .pill.internal { background: #ebe7df; }
+
+    .analysis-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .kv strong {
+      display: block;
+      color: var(--muted);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 4px;
+    }
+    .kv span { font-size: 0.9rem; line-height: 1.45; }
+
+    .note-block {
+      border-radius: var(--radius-sm);
+      padding: 12px;
+      background: rgba(17, 75, 95, 0.05);
+      border: 1px solid rgba(17, 75, 95, 0.10);
+    }
+    .note-block.warning { background: var(--warning-soft); border-color: rgba(141, 101, 28, 0.16); }
+    .note-block.danger { background: var(--danger-soft); border-color: rgba(184, 64, 50, 0.16); }
+    .note-block.success { background: var(--success-soft); border-color: rgba(47, 107, 78, 0.16); }
+    .note-block strong { display: block; margin-bottom: 6px; }
+    .note-block ul { margin: 0 0 0 18px; padding: 0; }
+    .note-block li, .note-block p { margin: 0; line-height: 1.5; }
+
+    .ti-block, .draft-output {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      background: var(--paper);
+      color: var(--ink);
+      padding: 14px;
+      font: 0.86rem/1.55 "Consolas", "Courier New", monospace;
+      white-space: pre-wrap;
+      resize: vertical;
+    }
+    .ti-block { min-height: 180px; }
+    .draft-output { min-height: 420px; }
+
+    .history-toggle {
+      background: none;
+      border: 0;
+      color: var(--accent);
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+      padding: 0;
+    }
+    .history-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+    .history-table th, .history-table td {
+      text-align: left;
+      padding: 9px 8px;
+      border-bottom: 1px solid rgba(215, 206, 190, 0.85);
+      vertical-align: top;
+    }
+    .history-table th {
+      color: var(--muted);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .hidden { display: none !important; }
+    .empty-state {
+      border: 1px dashed var(--line);
+      border-radius: var(--radius-sm);
+      padding: 18px;
+      background: rgba(255, 255, 255, 0.42);
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .muted { color: var(--muted); }
+
+    @media (max-width: 1200px) {
+      .layout, .result-grid { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 760px) {
+      body { padding: 16px; }
+      .row, .fields-grid, .analysis-grid, .summary { grid-template-columns: 1fr; }
+      .btn-row, .badge-row { flex-direction: column; align-items: stretch; }
+      .btn { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <button id="btn-dark" onclick="toggleDark()" style="position:fixed;top:18px;right:24px;z-index:100;border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:999px;padding:8px 14px;font-size:0.85rem;cursor:pointer;font-weight:700;" aria-label="Alternar tema">🌙 Dark</button>
+
+  <div class="shell">
+    <section class="hero">
+      <div class="eyebrow">SOC Copilot MVP</div>
+      <h1>Triagem local com saída pronta para operação.</h1>
+      <p>Campo extraído, análise estruturada e texto final no mesmo fluxo. Tudo local, sem chat aberto e com foco em velocidade operacional.</p>
+    </section>
+
+    <div class="layout">
+      <div class="stack">
+        <section class="card">
+          <h2 class="section-title">Entrada</h2>
+          <p class="section-hint">Cole o payload ou anexe um arquivo para iniciar a análise.</p>
+
+          <div class="row">
+            <div>
+              <label for="ofensa-id">ID da Ofensa</label>
+              <input type="text" id="ofensa-id" placeholder="Ex.: 274086">
+            </div>
+            <div>
+              <label for="cliente">Cliente</label>
+              <input type="text" id="cliente" placeholder="Ex.: Icatu">
+            </div>
+          </div>
+
+          <label for="regra">Nome / Regra de Detecção</label>
+          <input type="text" id="regra" placeholder="Ex.: Darktrace - Internal Download and External Uploads">
+
+          <label for="payload">Payload Bruto</label>
+          <textarea id="payload" placeholder="Cole aqui o payload bruto, export CSV, JSON ou conteúdo textual da ofensa."></textarea>
+
+          <label for="arquivo">Ou anexe um arquivo</label>
+          <input type="file" id="arquivo" accept=".json,.csv,.txt">
+          <div class="file-meta" id="arquivo-meta">Nenhum arquivo selecionado.</div>
+
+          <div class="btn-row">
+            <button class="btn btn-primary" id="btn-analisar" onclick="analisar()">Analisar</button>
+            <button class="btn btn-secondary" id="btn-limpar" onclick="limpar()">Limpar</button>
+          </div>
+
+          <div class="spinner" id="spinner">Processando análise, correlacionando IOCs e montando o draft...</div>
+          <div class="alert alert-error" id="alert-error"></div>
+        </section>
+
+        <section class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+            <h2 class="section-title" style="margin:0;">Histórico</h2>
+            <button class="history-toggle" onclick="toggleHistory()" id="hist-toggle">Expandir</button>
+          </div>
+          <div class="hidden" id="hist-body" style="margin-top:14px;">
+            <div class="btn-row" style="margin-top:0;margin-bottom:12px;">
+              <button class="btn btn-secondary" onclick="carregarHistorico()">Atualizar</button>
+            </div>
+            <table class="history-table">
+              <thead>
+                <tr>
+                  <th>#</th><th>Data/Hora</th><th>Ofensa</th><th>Cliente</th><th>Regra</th><th>Classificação</th><th>Template</th>
+                </tr>
+              </thead>
+              <tbody id="hist-rows">
+                <tr><td colspan="7" class="muted">Histórico ainda não carregado.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+            <h2 class="section-title" style="margin:0;">Resultado</h2>
+            <span class="section-hint" id="resultado-status" style="margin:0;">Aguardando análise</span>
+          </div>
+
+          <div class="empty-state" id="resultado-vazio" style="margin-top:14px;">
+            Assim que você analisar um payload, o sistema exibirá os campos extraídos, os artefatos identificados,
+            a análise estruturada e o texto final pronto para revisão.
+          </div>
+
+          <div class="hidden" id="resultado-conteudo" style="margin-top:14px;">
+            <div class="summary">
+              <div class="summary-box"><strong>Formato Detectado</strong><span id="summary-formato">-</span></div>
+              <div class="summary-box"><strong>Template Utilizado</strong><span id="summary-template">-</span></div>
+              <div class="summary-box"><strong>Run ID</strong><span id="summary-runid">-</span></div>
+            </div>
+
+            <div class="badge-row">
+              <div id="badge-cls"></div>
+              <div class="chip hidden" id="modelo-hint"></div>
+            </div>
+
+            <div class="result-grid">
+              <div class="stack">
+                <section class="subcard">
+                  <h3 class="subcard-title">Campos Extraídos</h3>
+                  <div class="fields-grid" id="campos-grid"></div>
+                </section>
+
+                <section class="subcard">
+                  <h3 class="subcard-title">IOCs Identificados</h3>
+                  <div class="stack-list" id="iocs-lista"></div>
+                </section>
+
+                <section class="subcard hidden" id="ti-section">
+                  <h3 class="subcard-title">Threat Intelligence</h3>
+                  <div class="ti-block" id="ti-block"></div>
+                </section>
+              </div>
+
+              <div class="stack">
+                <section class="subcard">
+                  <h3 class="subcard-title">Análise Estruturada</h3>
+                  <div class="analysis-grid">
+                    <div class="kv"><strong>O que</strong><span id="analysis-oque">-</span></div>
+                    <div class="kv"><strong>Quando</strong><span id="analysis-quando">-</span></div>
+                    <div class="kv"><strong>Quem</strong><span id="analysis-quem">-</span></div>
+                    <div class="kv"><strong>Onde</strong><span id="analysis-onde">-</span></div>
+                  </div>
+
+                  <div class="stack-list" style="margin-top:12px;">
+                    <div class="note-block">
+                      <strong>Classificação Sugerida</strong>
+                      <div id="analysis-classificacao">-</div>
+                    </div>
+                    <div class="note-block">
+                      <strong>Hipóteses Ranqueadas</strong>
+                      <div id="analysis-hipoteses" class="muted">Sem hipóteses registradas.</div>
+                    </div>
+                    <div class="note-block warning">
+                      <strong>Lacunas</strong>
+                      <div id="analysis-lacunas" class="muted">Nenhuma lacuna apontada.</div>
+                    </div>
+                    <div class="note-block success">
+                      <strong>Próximos Passos</strong>
+                      <div id="analysis-proximos" class="muted">Nenhum próximo passo sugerido.</div>
+                    </div>
+                    <div class="note-block danger">
+                      <strong>Alertas de Qualidade</strong>
+                      <div id="analysis-alertas" class="muted">Nenhum alerta de qualidade.</div>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            </div>
+
+            <section class="subcard" style="margin-top:18px;" id="draft-config-section">
+              <h3 class="subcard-title">Classificação e Dados Complementares</h3>
+              <p style="color:var(--muted);font-size:0.83rem;margin:0 0 14px;">
+                Revise os campos ausentes e confirme a classificação antes de gerar o draft.
+              </p>
+
+              <label for="classificacao-final" style="display:block;margin:0 0 6px;color:var(--muted);font-size:0.73rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">Classificação Final</label>
+              <select id="classificacao-final" style="width:100%;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);padding:12px;font:inherit;margin-bottom:14px;">
+                <option value="TP">True Positive (TP)</option>
+                <option value="BTP">Benign True Positive (BTP)</option>
+                <option value="FP">False Positive (FP)</option>
+                <option value="TN">True Negative (TN)</option>
+                <option value="LTF">Log Transmission Failure (LTF)</option>
+              </select>
+
+              <div id="campos-manuais-container"></div>
+
+              <div class="btn-row" style="margin-top:14px;">
+                <button class="btn btn-primary" id="btn-gerar-draft" onclick="gerarDraft()">Gerar Draft</button>
+              </div>
+              <div class="spinner" id="spinner-draft" style="display:none;margin-top:10px;color:var(--accent);font-size:0.83rem;font-weight:700;">Gerando draft...</div>
+            </section>
+
+            <section class="subcard hidden" id="draft-final-section" style="margin-top:18px;">
+              <h3 class="subcard-title">Saída Final</h3>
+              <textarea id="draft-output" class="draft-output" spellcheck="false"></textarea>
+              <div class="btn-row">
+                <button class="btn btn-copy" id="btn-copiar" onclick="copiar()">Copiar</button>
+                <button class="btn btn-save" id="btn-salvar" onclick="salvar()">Salvar</button>
+              </div>
+              <div class="alert alert-success" id="alert-save"></div>
+            </section>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ── Dark mode ──────────────────────────────────────────────────────────────
+    function toggleDark() {
+      const html = document.documentElement;
+      const on = html.getAttribute("data-theme") === "dark";
+      html.setAttribute("data-theme", on ? "light" : "dark");
+      document.getElementById("btn-dark").textContent = on ? "🌙 Dark" : "☀ Light";
+      localStorage.setItem("theme", on ? "light" : "dark");
+    }
+    // Restore saved theme
+    (function(){
+      const t = localStorage.getItem("theme") || "light";
+      document.documentElement.setAttribute("data-theme", t);
+      document.addEventListener("DOMContentLoaded", () => {
+        const btn = document.getElementById("btn-dark");
+        if (btn) btn.textContent = t === "dark" ? "☀ Light" : "🌙 Dark";
+      });
+    })();
+
+    // ── State ──────────────────────────────────────────────────────────────────
+    let _runId = null;
+    let _classificacao = "TP";
+    let _camposState = {};
+    let _iocsState = {};
+    let _tiState = {};
+    let _regraState = "";
+    let _clienteState = "";
+
+    const badgeClass = { TP: "badge-tp", BTP: "badge-btp", FP: "badge-fp", TN: "badge-tn", LTF: "badge-ltf" };
+
+    const CAMPO_LABELS = {
+      Horario: "Horário (SP)", Usuario: "Usuário", IP_Origem: "IP de Origem",
+      Destino: "Destino", Caminho: "Caminho", LogSource: "Log Source", Assunto: "Assunto"
+    };
+
+    document.getElementById("arquivo").addEventListener("change", atualizarArquivoMeta);
+
+    function atualizarArquivoMeta() {
+      const file = document.getElementById("arquivo").files[0];
+      document.getElementById("arquivo-meta").textContent = file ? `Arquivo selecionado: ${file.name}` : "Nenhum arquivo selecionado.";
+    }
+
+    // ── Analisar ───────────────────────────────────────────────────────────────
+    async function analisar() {
+      const ofensaId = document.getElementById("ofensa-id").value.trim();
+      const cliente = document.getElementById("cliente").value.trim();
+      const regra = document.getElementById("regra").value.trim();
+      const payload = document.getElementById("payload").value.trim();
+      const arquivo = document.getElementById("arquivo").files[0];
+      if (!payload && !arquivo) {
+        mostrarErro("Informe o payload ou anexe um arquivo para iniciar a análise.");
+        return;
+      }
+
+      setLoading(true);
+      ocultarErro();
+      ocultarSucesso();
+
+      const form = new FormData();
+      form.append("ofensa_id", ofensaId);
+      form.append("cliente", cliente);
+      form.append("regra", regra);
+      form.append("classificacao", "TP");
+      form.append("payload_raw", payload);
+      if (arquivo) form.append("arquivo", arquivo);
+
+      try {
+        const resp = await fetch("/api/analyze", { method: "POST", body: form });
+        const data = await resp.json();
+        if (!resp.ok) {
+          mostrarErro(data.erro || "Erro desconhecido durante a análise.");
+          return;
+        }
+        renderResultado(data);
+      } catch (error) {
+        mostrarErro("Falha na comunicação com o servidor: " + error.message);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    // ── renderResultado ────────────────────────────────────────────────────────
+    function renderResultado(data) {
+      _runId = data.run_id;
+      _classificacao = data.classificacao;
+      _camposState = Object.assign({}, data.campos_extraidos || {});
+      _iocsState = data.iocs || {};
+      _tiState = data.ti_results || {};
+      _regraState = document.getElementById("regra").value.trim();
+      _clienteState = document.getElementById("cliente").value.trim();
+
+      document.getElementById("resultado-vazio").classList.add("hidden");
+      document.getElementById("resultado-conteudo").classList.remove("hidden");
+      document.getElementById("resultado-status").textContent = "Análise concluída";
+      document.getElementById("summary-formato").textContent = data.formato_detectado || "-";
+      document.getElementById("summary-template").textContent = data.template_usado || "-";
+      document.getElementById("summary-runid").textContent = String(data.run_id || "-");
+      renderBadge(data);
+      renderModelo(data);
+      renderCampos(data.campos_extraidos || {});
+      renderIocs(data.iocs || {});
+      renderTI(data.ti_results || {});
+      renderAnalysis(data.analysis || {});
+
+      // Pre-fill classification select with suggested classification
+      const sugestao = (data.analysis && data.analysis.classificacao_sugerida && data.analysis.classificacao_sugerida.tipo) || "";
+      const clsMap = {"True Positive": "TP", "Benign True Positive": "BTP", "False Positive": "FP", "True Negative": "TN", "Log Transmission Failure": "LTF"};
+      const clsSel = document.getElementById("classificacao-final");
+      if (clsSel && clsMap[sugestao]) clsSel.value = clsMap[sugestao];
+
+      renderCamposManuais(data.campos_extraidos || {});
+
+      // Hide draft final section until gerarDraft() succeeds
+      document.getElementById("draft-final-section").classList.add("hidden");
+    }
+
+    // ── renderBadge ────────────────────────────────────────────────────────────
+    function renderBadge(data) {
+      const cls = String(data.classificacao || "").toUpperCase();
+      const isIcatu = String(data.template_usado || "").startsWith("icatu");
+      document.getElementById("badge-cls").innerHTML = isIcatu
+        ? `<span class="badge badge-icatu">Icatu · Repasse Técnico (${escHtml(cls)})</span>`
+        : `<span class="badge ${badgeClass[cls] || "badge-fp"}">${escHtml(cls || "N/A")}</span>`;
+    }
+
+    function renderModelo(data) {
+      const hint = document.getElementById("modelo-hint");
+      if (data.modelo_aderente) {
+        hint.textContent = "Modelo aderente: " + data.modelo_aderente;
+        hint.classList.remove("hidden");
+      } else {
+        hint.textContent = "";
+        hint.classList.add("hidden");
+      }
+    }
+
+    function renderCampos(campos) {
+      const labels = {
+        Horario: "Horário (SP)", Usuario: "Usuário", IP_Origem: "IP de Origem",
+        Destino: "Destino", Caminho: "Caminho", LogSource: "Log Source", Assunto: "Assunto"
+      };
+      const grid = document.getElementById("campos-grid");
+      grid.innerHTML = "";
+      Object.entries(labels).forEach(([key, label]) => {
+        const val = campos[key] || "N/A";
+        grid.innerHTML += `<div><span class="field-key">${escHtml(label)}</span><span class="field-val">${escHtml(val)}</span></div>`;
+      });
+    }
+
+    // ── Manual fields (campos manuais) ─────────────────────────────────────────
+    function renderCamposManuais(campos) {
+      _camposState = Object.assign({}, campos);
+      const container = document.getElementById("campos-manuais-container");
+      const naFields = Object.entries(CAMPO_LABELS).filter(([k]) => !campos[k] || campos[k] === "N/A");
+      if (!naFields.length) {
+        container.innerHTML = '<p style="color:var(--muted);font-size:0.83rem;margin:0;">Todos os campos foram extraídos automaticamente.</p>';
+        return;
+      }
+      container.innerHTML = '<p style="color:var(--muted);font-size:0.83rem;margin:0 0 10px;">Campos ausentes — preencha para enriquecer o draft:</p>' +
+        naFields.map(([k, label]) => `
+          <div style="margin-bottom:10px;">
+            <label for="manual-${k}" style="display:block;margin:0 0 4px;color:var(--muted);font-size:0.73rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">${escHtml(label)}</label>
+            <input type="text" id="manual-${k}" data-campo="${escHtml(k)}" placeholder="Inserir manualmente..."
+              style="width:100%;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);padding:10px 12px;font:inherit;"
+              oninput="atualizarCampo(this)">
+          </div>`).join("");
+    }
+
+    function atualizarCampo(input) {
+      const campo = input.getAttribute("data-campo");
+      const valor = input.value.trim();
+      if (valor) _camposState[campo] = valor;
+      else delete _camposState[campo];
+    }
+
+    // ── gerarDraft ─────────────────────────────────────────────────────────────
+    async function gerarDraft() {
+      const classificacao = document.getElementById("classificacao-final").value;
+      document.getElementById("spinner-draft").style.display = "block";
+      document.getElementById("btn-gerar-draft").disabled = true;
+
+      // Monta campos com overrides manuais
+      const camposParaEnviar = Object.assign({}, _camposState);
+      // Preenche com valor dos inputs manuais no momento do clique
+      document.querySelectorAll("[data-campo]").forEach(input => {
+        const campo = input.getAttribute("data-campo");
+        const valor = input.value.trim();
+        if (valor) camposParaEnviar[campo] = valor;
+      });
+
+      const form = new FormData();
+      form.append("run_id", _runId || 0);
+      form.append("classificacao", classificacao);
+      form.append("campos_json", JSON.stringify(camposParaEnviar));
+      form.append("iocs_json", JSON.stringify(_iocsState));
+      form.append("ti_json", JSON.stringify(_tiState));
+      form.append("regra", _regraState);
+      form.append("cliente", _clienteState);
+
+      try {
+        const resp = await fetch("/api/draft", { method: "POST", body: form });
+        const data = await resp.json();
+        if (!resp.ok) {
+          mostrarErro(data.erro || "Erro ao gerar o draft.");
+          return;
+        }
+        _classificacao = data.classificacao;
+        document.getElementById("draft-output").value = data.draft || "";
+        document.getElementById("draft-final-section").classList.remove("hidden");
+        document.getElementById("summary-template").textContent = data.template_usado || "-";
+        renderBadge(data);
+        document.getElementById("draft-output").scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch (error) {
+        mostrarErro("Falha ao gerar draft: " + error.message);
+      } finally {
+        document.getElementById("spinner-draft").style.display = "none";
+        document.getElementById("btn-gerar-draft").disabled = false;
+      }
+    }
+
+    // ── IOCs / TI / Analysis ───────────────────────────────────────────────────
+    function renderIocs(iocs) {
+      const root = document.getElementById("iocs-lista");
+      root.innerHTML = "";
+      const sections = [
+        ["Externos", iocs.externos || [], "external"],
+        ["Internos", iocs.internos || [], "internal"],
+        ["URLs", iocs.urls || [], "external"],
+        ["Domínios", iocs.dominios || [], "external"],
+        ["Hashes", iocs.hashes || [], "external"]
+      ];
+      let rendered = 0;
+      sections.forEach(([label, values, tone]) => {
+        if (!values.length) return;
+        rendered += 1;
+        root.innerHTML += `<div class="note-block"><strong>${escHtml(label)}</strong><div class="pill-list">${values.map(v => `<span class="pill ${tone}">${escHtml(v)}</span>`).join("")}</div></div>`;
+      });
+      if (!rendered) {
+        root.innerHTML = '<div class="note-block"><p class="muted">Nenhum IOC identificado no conteúdo analisado.</p></div>';
+      }
+    }
+
+    function renderTI(tiResults) {
+      const section = document.getElementById("ti-section");
+      const block = document.getElementById("ti-block");
+      const keys = Object.keys(tiResults);
+      if (!keys.length) {
+        section.classList.add("hidden");
+        block.textContent = "";
+        return;
+      }
+      const lines = [];
+      keys.forEach(ioc => {
+        lines.push(`[${ioc}]`);
+        lines.push(String(tiResults[ioc] || "").trim() || "Sem resultado.");
+        lines.push("");
+      });
+      block.textContent = lines.join("\n").trim();
+      section.classList.remove("hidden");
+    }
+
+    function renderAnalysis(analysis) {
+      const factual = analysis.resumo_factual || {};
+      document.getElementById("analysis-oque").textContent = factual.o_que || "N/A";
+      document.getElementById("analysis-quando").textContent = factual.quando || "N/A";
+      document.getElementById("analysis-quem").textContent = formatList(factual.quem);
+      document.getElementById("analysis-onde").textContent = formatList(factual.onde);
+
+      const sugestao = analysis.classificacao_sugerida || {};
+      const tipo = sugestao.tipo || "Não sugerida";
+      const confianca = Number.isFinite(sugestao.confianca) ? ` (${Math.round(sugestao.confianca * 100)}%)` : "";
+      const racional = sugestao.racional ? `<br><span class="muted">${escHtml(sugestao.racional)}</span>` : "";
+      document.getElementById("analysis-classificacao").innerHTML = `${escHtml(tipo)}${escHtml(confianca)}${racional}`;
+
+      renderStructuredList("analysis-hipoteses", analysis.hipoteses, item => {
+        const rotulo = item.tipo || "Hipótese sem rótulo";
+        const score = Number.isFinite(item.confianca) ? ` (${Math.round(item.confianca * 100)}%)` : "";
+        const texto = item.justificativa || item.racional || "Sem justificativa registrada.";
+        return `<strong>${escHtml(rotulo)}${escHtml(score)}</strong><p>${escHtml(texto)}</p>`;
+      }, "Sem hipóteses registradas.");
+
+      renderSimpleList("analysis-lacunas", analysis.lacunas, "Nenhuma lacuna apontada.");
+      renderSimpleList("analysis-proximos", analysis.proximos_passos, "Nenhum próximo passo sugerido.");
+      renderSimpleList("analysis-alertas", analysis.alertas_de_qualidade, "Nenhum alerta de qualidade.");
+    }
+
+    function renderStructuredList(id, items, renderer, emptyText) {
+      const target = document.getElementById(id);
+      if (!Array.isArray(items) || !items.length) {
+        target.innerHTML = `<p class="muted">${escHtml(emptyText)}</p>`;
+        return;
+      }
+      target.innerHTML = items.map(item => `<div style="margin-top:8px;">${renderer(item)}</div>`).join("");
+    }
+
+    function renderSimpleList(id, items, emptyText) {
+      const target = document.getElementById(id);
+      if (!Array.isArray(items) || !items.length) {
+        target.innerHTML = `<p class="muted">${escHtml(emptyText)}</p>`;
+        return;
+      }
+      target.innerHTML = `<ul>${items.map(item => `<li>${escHtml(String(item))}</li>`).join("")}</ul>`;
+    }
+
+    // ── Copy / Save ────────────────────────────────────────────────────────────
+    async function copiar() {
+      const texto = document.getElementById("draft-output").value;
+      if (!texto.trim()) {
+        mostrarErro("Não há conteúdo para copiar.");
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(texto);
+        mostrarSucesso("Rascunho copiado para a área de transferência.");
+      } catch {
+        const area = document.getElementById("draft-output");
+        area.select();
+        document.execCommand("copy");
+        mostrarSucesso("Rascunho copiado.");
+      }
+    }
+
+    async function salvar() {
+      const conteudo = document.getElementById("draft-output").value.trim();
+      if (!conteudo) {
+        mostrarErro("O rascunho está vazio.");
+        return;
+      }
+      const form = new FormData();
+      form.append("run_id", _runId || 0);
+      form.append("ofensa_id", document.getElementById("ofensa-id").value.trim());
+      form.append("classificacao", _classificacao);
+      form.append("conteudo", conteudo);
+      try {
+        const resp = await fetch("/api/save", { method: "POST", body: form });
+        const data = await resp.json();
+        if (!resp.ok) {
+          mostrarErro(data.erro || "Erro ao salvar o arquivo.");
+          return;
+        }
+        mostrarSucesso("Arquivo salvo em: " + data.salvo_em);
+      } catch (error) {
+        mostrarErro("Falha ao salvar: " + error.message);
+      }
+    }
+
+    // ── Limpar ─────────────────────────────────────────────────────────────────
+    function limpar() {
+      ["ofensa-id", "cliente", "regra", "payload"].forEach(id => document.getElementById(id).value = "");
+      document.getElementById("arquivo").value = "";
+      atualizarArquivoMeta();
+      document.getElementById("resultado-vazio").classList.remove("hidden");
+      document.getElementById("resultado-conteudo").classList.add("hidden");
+      document.getElementById("resultado-status").textContent = "Aguardando análise";
+      document.getElementById("draft-output").value = "";
+      document.getElementById("draft-final-section").classList.add("hidden");
+      ocultarErro();
+      ocultarSucesso();
+      _runId = null;
+      _classificacao = "TP";
+      _camposState = {};
+      _iocsState = {};
+      _tiState = {};
+      _regraState = "";
+      _clienteState = "";
+    }
+
+    // ── Histórico ──────────────────────────────────────────────────────────────
+    async function carregarHistorico() {
+      const tbody = document.getElementById("hist-rows");
+      tbody.innerHTML = '<tr><td colspan="7" class="muted">Carregando histórico...</td></tr>';
+      try {
+        const resp = await fetch("/api/history?limit=30");
+        const data = await resp.json();
+        const runs = data.runs || [];
+        if (!runs.length) {
+          tbody.innerHTML = '<tr><td colspan="7" class="muted">Nenhuma execução registrada até o momento.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = runs.map(run => `
+          <tr>
+            <td>${escHtml(String(run.id || ""))}</td>
+            <td>${escHtml(String(run.created_at || ""))}</td>
+            <td>${escHtml(String(run.ofensa_id || ""))}</td>
+            <td>${escHtml(String(run.cliente || ""))}</td>
+            <td>${escHtml(String(run.regra || ""))}</td>
+            <td>${escHtml(String(run.classificacao_sugerida || ""))}</td>
+            <td>${escHtml(String(run.template_usado || ""))}</td>
+          </tr>
+        `).join("");
+      } catch (error) {
+        tbody.innerHTML = `<tr><td colspan="7" class="muted">Falha ao carregar histórico: ${escHtml(error.message)}</td></tr>`;
+      }
+    }
+
+    function toggleHistory() {
+      const body = document.getElementById("hist-body");
+      const button = document.getElementById("hist-toggle");
+      const open = !body.classList.contains("hidden");
+      if (open) {
+        body.classList.add("hidden");
+        button.textContent = "Expandir";
+      } else {
+        body.classList.remove("hidden");
+        button.textContent = "Recolher";
+        carregarHistorico();
+      }
+    }
+
+    // ── UI helpers ─────────────────────────────────────────────────────────────
+    function setLoading(on) {
+      document.getElementById("spinner").classList.toggle("visible", on);
+      document.getElementById("btn-analisar").disabled = on;
+      document.getElementById("btn-limpar").disabled = on;
+      document.getElementById("btn-copiar").disabled = on;
+      document.getElementById("btn-salvar").disabled = on;
+    }
+
+    function mostrarErro(msg) {
+      const el = document.getElementById("alert-error");
+      el.textContent = msg;
+      el.classList.add("visible");
+    }
+
+    function ocultarErro() {
+      const el = document.getElementById("alert-error");
+      el.textContent = "";
+      el.classList.remove("visible");
+    }
+
+    function mostrarSucesso(msg) {
+      const el = document.getElementById("alert-save");
+      el.textContent = msg;
+      el.classList.add("visible");
+      window.clearTimeout(el._timer);
+      el._timer = window.setTimeout(() => el.classList.remove("visible"), 4500);
+    }
+
+    function ocultarSucesso() {
+      const el = document.getElementById("alert-save");
+      el.textContent = "";
+      el.classList.remove("visible");
+    }
+
+    function formatList(value) {
+      if (!Array.isArray(value) || !value.length) return "N/A";
+      return value.join(" | ");
+    }
+
+    function escHtml(value) {
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+  </script>
+</body>
+</html>
