@@ -105,6 +105,20 @@ _BTP_SIGNALS: list[tuple[str, int]] = [
 ]
 
 # ---------------------------------------------------------------------------
+# Organizações de scanning conhecidas — presença no TI result indica BTP
+# ---------------------------------------------------------------------------
+
+_KNOWN_SCANNER_ORGS = {
+    "tenable", "nessus", "qualys", "rapid7", "openvas", "greenbone",
+    "shodan", "censys", "zmap", "masscan", "acunetix", "veracode",
+    "checkmarx", "burp suite", "nikto", "w3af",
+    "internet-measurement", "research scanning",
+}
+
+# Ações que indicam que o controle de segurança já bloqueou o tráfego
+_BLOCKED_ACTIONS = {"dropped", "blocked", "reset", "deny", "denied", "rejected", "drop", "block"}
+
+# ---------------------------------------------------------------------------
 # Palavras-chave para interpretar veredito da Threat Intelligence
 # ---------------------------------------------------------------------------
 
@@ -129,6 +143,18 @@ _TI_CLEAN_KEYWORDS = (
 # ---------------------------------------------------------------------------
 
 _MITRE_MAPPINGS: list[tuple[tuple[str, ...], str, str]] = [
+    # Exploração de aplicação pública (Log4Shell, Log4j, CVEs web)
+    (("log4j", "log4shell", "log4", "jndi", "cve-2021-44228",
+      "exploit public", "exploit web", "web exploit", "rce via",
+      "apache struts", "spring4shell", "shellshock", "heartbleed",
+      "sql injection", "sqli", "remote code execution", "rce",
+      "path traversal", "directory traversal", "../", "lfi", "rfi"),
+     "T1190", "Tentativa de exploração de vulnerabilidade em aplicação pública detectada."),
+    # DoS/DDoS de endpoint ou rede
+    (("denial of service", "ddos", "dos attack", "flood", "syn flood",
+      "amplification", "udp flood", "http flood", "layer 7",
+      ".dos", "dos}", "dos\"", " dos "),
+     "T1499", "Ataque de negação de serviço direcionado a endpoint ou serviço detectado."),
     # Despejo de credenciais
     (("mimikatz", "lsass", "credential dump", "ntds.dit"), "T1003",
      "Despejo de credenciais do sistema operacional identificado."),
@@ -406,11 +432,23 @@ def _build_artefatos(fields: dict) -> list[str]:
 
 def _score_hipoteses(fields: dict, ti_results: dict, raw_text: str) -> list[dict]:
     raw_lower = raw_text.lower()
+
+    # Combina payload + resultado TI para busca de sinais — resolve o caso onde
+    # a organização (ex: Tenable) aparece apenas no TI result, não no payload original
+    ti_text = " ".join((ti_results or {}).values()).lower()
+    combined_lower = raw_lower + " " + ti_text
+
+    acao = (fields.get("Acao") or "").strip().lower()
+    ja_bloqueado = acao in _BLOCKED_ACTIONS
+
     hipoteses = []
     ti_counts = _parse_ti_verdicts(ti_results)
 
+    # Scanner org detectado no resultado de TI (ex: ISP=Tenable, domain=tenable.com)
+    scanner_no_ti = any(org in ti_text for org in _KNOWN_SCANNER_ORGS)
+
     # --- Log Transmission Failure ---
-    ltf_score = _weighted_score(_LTF_SIGNALS, raw_lower)
+    ltf_score = _weighted_score(_LTF_SIGNALS, combined_lower)
     if ltf_score:
         confianca = min(round(0.35 + ltf_score * 0.08, 2), 0.92)
         hipoteses.append({
@@ -419,8 +457,24 @@ def _score_hipoteses(fields: dict, ti_results: dict, raw_text: str) -> list[dict
             "justificativa": "Sinais de falha na transmissão ou coleta de logs detectados no payload.",
         })
 
+    # --- Benign True Positive por scanner org no TI (alta prioridade) ---
+    if scanner_no_ti:
+        # Scanner bloqueado + TI limpo → BTP de alta confiança
+        confianca_btp = 0.88 if ja_bloqueado else 0.72
+        org_detectada = next((o for o in _KNOWN_SCANNER_ORGS if o in ti_text), "scanner de segurança")
+        hipoteses.append({
+            "tipo": "Benign True Positive",
+            "confianca": confianca_btp,
+            "justificativa": (
+                f"Threat Intelligence identificou o IP de origem como pertencente a '{org_detectada}', "
+                f"ferramenta de varredura de segurança conhecida."
+                + (" Tráfego já bloqueado pelo controle de segurança." if ja_bloqueado else "")
+                + " Atividade esperada de scanner de vulnerabilidades — regra disparou corretamente."
+            ),
+        })
+
     # --- False Positive ---
-    fp_score = _weighted_score(_FP_SIGNALS, raw_lower)
+    fp_score = _weighted_score(_FP_SIGNALS, combined_lower)
     if fp_score:
         confianca = min(round(0.3 + fp_score * 0.06, 2), 0.85)
         # TI clean reforça FP
@@ -435,12 +489,15 @@ def _score_hipoteses(fields: dict, ti_results: dict, raw_text: str) -> list[dict
             ),
         })
 
-    # --- Benign True Positive ---
-    btp_score = _weighted_score(_BTP_SIGNALS, raw_lower)
+    # --- Benign True Positive (sinais gerais) ---
+    btp_score = _weighted_score(_BTP_SIGNALS, combined_lower)
     if btp_score:
         confianca = min(round(0.3 + btp_score * 0.07, 2), 0.88)
         if ti_counts.get("clean", 0) > 0 and ti_counts.get("malicious", 0) == 0:
             confianca = min(confianca + 0.08, 0.90)
+        # Ação bloqueada + veredito limpo reforça BTP
+        if ja_bloqueado and ti_counts.get("malicious", 0) == 0:
+            confianca = min(confianca + 0.06, 0.90)
         hipoteses.append({
             "tipo": "Benign True Positive",
             "confianca": confianca,

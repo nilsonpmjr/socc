@@ -61,7 +61,37 @@ def init_db():
 
             CREATE INDEX IF NOT EXISTS idx_runs_cliente  ON runs(cliente);
             CREATE INDEX IF NOT EXISTS idx_runs_regra    ON runs(regra);
+
+            CREATE TABLE IF NOT EXISTS chat_sessions (
+                session_id        TEXT PRIMARY KEY,
+                created_at        TEXT NOT NULL,
+                updated_at        TEXT NOT NULL,
+                cliente           TEXT,
+                titulo            TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id        TEXT NOT NULL,
+                created_at        TEXT NOT NULL,
+                role              TEXT NOT NULL,
+                content           TEXT NOT NULL,
+                skill             TEXT,
+                FOREIGN KEY (session_id) REFERENCES chat_sessions(session_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id, id DESC);
         """)
+        _ensure_column(conn, "chat_messages", "metadata_json", "TEXT")
+
+
+def _ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, definition: str) -> None:
+    columns = {
+        row["name"]
+        for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    }
+    if column_name not in columns:
+        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
 
 
 def hash_input(raw: str) -> str:
@@ -148,3 +178,114 @@ def list_runs(limit: int = 50) -> list[dict]:
             (limit,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+def ensure_chat_session(session_id: str, cliente: str = "", titulo: str = "") -> None:
+    timestamp = datetime.now().isoformat(timespec="seconds")
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO chat_sessions (session_id, created_at, updated_at, cliente, titulo)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(session_id) DO UPDATE SET
+                   updated_at=excluded.updated_at,
+                   cliente=CASE
+                     WHEN excluded.cliente <> '' THEN excluded.cliente
+                     ELSE chat_sessions.cliente
+                   END,
+                   titulo=CASE
+                     WHEN excluded.titulo <> '' THEN excluded.titulo
+                     ELSE chat_sessions.titulo
+                   END
+            """,
+            (session_id, timestamp, timestamp, cliente, titulo),
+        )
+
+
+def save_chat_message(
+    session_id: str,
+    role: str,
+    content: str,
+    skill: str = "",
+    metadata: dict | None = None,
+) -> None:
+    if not session_id or not role or not content:
+        return
+
+    ensure_chat_session(session_id=session_id)
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO chat_messages (session_id, created_at, role, content, skill, metadata_json)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (
+                session_id,
+                datetime.now().isoformat(timespec="seconds"),
+                role,
+                content,
+                skill,
+                json.dumps(metadata or {}, ensure_ascii=False),
+            ),
+        )
+        conn.execute(
+            """UPDATE chat_sessions
+               SET updated_at=?
+               WHERE session_id=?""",
+            (datetime.now().isoformat(timespec="seconds"), session_id),
+        )
+
+
+def list_chat_messages(session_id: str, limit: int = 8) -> list[dict]:
+    if not session_id:
+        return []
+
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT role, content, skill, created_at, metadata_json
+               FROM chat_messages
+               WHERE session_id=?
+               ORDER BY id DESC
+               LIMIT ?""",
+            (session_id, max(1, min(limit, 100))),
+        ).fetchall()
+    items = [dict(row) for row in rows]
+    items.reverse()
+    for item in items:
+        metadata_raw = item.get("metadata_json") or ""
+        try:
+            item["metadata"] = json.loads(metadata_raw) if metadata_raw else {}
+        except json.JSONDecodeError:
+            item["metadata"] = {}
+        item.pop("metadata_json", None)
+    return items
+
+
+def list_chat_sessions(limit: int = 50) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                s.session_id,
+                s.created_at,
+                s.updated_at,
+                s.cliente,
+                s.titulo,
+                (
+                    SELECT content
+                    FROM chat_messages m
+                    WHERE m.session_id = s.session_id
+                    ORDER BY m.id DESC
+                    LIMIT 1
+                ) AS preview,
+                (
+                    SELECT role
+                    FROM chat_messages m
+                    WHERE m.session_id = s.session_id
+                    ORDER BY m.id DESC
+                    LIMIT 1
+                ) AS last_role
+            FROM chat_sessions s
+            ORDER BY s.updated_at DESC
+            LIMIT ?
+            """,
+            (max(1, min(limit, 200)),),
+        ).fetchall()
+    return [dict(row) for row in rows]

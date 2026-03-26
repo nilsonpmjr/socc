@@ -1,24 +1,16 @@
 """
 run.py
-Ponto de entrada do SOC Copilot.
+Backward-compatible entrypoint for the current MVP runtime.
 Execute: python run.py
 """
 import sys
 from pathlib import Path
 
-# Garante que o pacote soc_copilot seja encontrado
+# Keep the repository root importable for both legacy and installable layouts.
 sys.path.insert(0, str(Path(__file__).parent))
 
-import uvicorn
-from soc_copilot.config import SOC_PORT
+from socc.cli.main import main
+
 
 if __name__ == "__main__":
-    print(f"\n  SOC Copilot MVP — iT.eam")
-    print(f"  Acesse: http://localhost:{SOC_PORT}\n")
-    uvicorn.run(
-        "soc_copilot.main:app",
-        host="127.0.0.1",
-        port=SOC_PORT,
-        reload=False,
-        log_level="info",
-    )
+    raise SystemExit(main(["serve"]))

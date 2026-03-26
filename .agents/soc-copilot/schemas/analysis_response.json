@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://socc.local/schemas/analysis_response.json",
+  "title": "SOC Copilot Analysis Response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "summary",
+    "verdict",
+    "confidence",
+    "iocs",
+    "ttps",
+    "risk_reasons",
+    "recommended_actions",
+    "sources"
+  ],
+  "properties": {
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "benigno",
+        "suspeito",
+        "malicioso",
+        "inconclusivo"
+      ]
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "iocs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "value",
+          "context"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "ip",
+              "domain",
+              "url",
+              "hash",
+              "email",
+              "file",
+              "process",
+              "registry",
+              "other"
+            ]
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1
+          },
+          "context": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "ttps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "reason"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^T[0-9]{4}(\\.[0-9]{3})?$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "risk_reasons": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "recommended_actions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

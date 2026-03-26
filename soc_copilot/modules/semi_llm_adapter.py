@@ -32,6 +32,7 @@ _logger = logging.getLogger(__name__)
 
 from soc_copilot.modules.classification_helper import analyze as deterministic_analyze
 from soc_copilot.modules.rule_loader import RulePack
+from soc_copilot.modules.soc_copilot_loader import build_prompt_context
 
 # ---------------------------------------------------------------------------
 # Schema de entrada obrigatório (o que _call_llm recebe)
@@ -133,7 +134,14 @@ def _build_llm_input(
     cliente: str,
     pack: RulePack | None,
     deterministic_result: dict,
+    raw_text: str = "",
 ) -> dict:
+    soc_context = _build_soc_copilot_context(
+        fields=fields,
+        raw_text=raw_text,
+        cliente=cliente,
+        regra=regra,
+    )
     return {
         "fields": fields,
         "ti_results": ti_results,
@@ -141,12 +149,14 @@ def _build_llm_input(
         "classificacao_candidata": deterministic_result.get("classificacao_sugerida", {}),
         "regra": regra,
         "cliente": cliente,
+        "raw_text": raw_text,
         "modelo_aderente": {
             "nome": pack.modelo_nome if pack else "",
             "caminho": pack.modelo_metadata.caminho if pack else "",
             "score": pack.modelo_metadata.score if pack else 0,
             "matched_tokens": pack.modelo_metadata.matched_tokens[:] if pack else [],
         },
+        "soc_copilot": soc_context,
     }
 
 
@@ -266,27 +276,155 @@ def _validate_output(data: object, fallback: dict | None = None) -> dict:
     return {key: output[key] for key in _OUTPUT_SCHEMA_KEYS}
 
 
-_SYSTEM_PROMPT = """\
-Você é um assistente especializado de SOC (Security Operations Center), \
-com expertise em análise de eventos de segurança.
+def _load_agent_rules_condensed() -> str:
+    """Carrega versão condensada das regras do AGENT.md para o system prompt."""
+    try:
+        from soc_copilot import config as _cfg
+        p = __import__("pathlib").Path(getattr(_cfg, "AGENT_MD", ""))
+        if p.exists():
+            text = p.read_text(encoding="utf-8")
+            # Extrai apenas as seções críticas (regras obrigatórias + regras de escrita)
+            lines = []
+            in_section = False
+            for line in text.splitlines():
+                if line.startswith("## Regras obrigatórias") or line.startswith("## Regras de escrita") or line.startswith("## Regra MITRE"):
+                    in_section = True
+                elif line.startswith("## ") and in_section:
+                    in_section = False
+                if in_section or line.startswith("## Regras obrigatórias") or line.startswith("## Regras de escrita") or line.startswith("## Regra MITRE"):
+                    lines.append(line)
+            return "\n".join(lines)
+    except Exception:
+        pass
+    return ""
 
-Seu papel é analisar dados estruturados de alertas e fornecer análise técnica \
-objetiva para auxiliar analistas SOC na tomada de decisão.
 
-REGRAS OBRIGATÓRIAS:
-- Responda APENAS com JSON válido, sem texto adicional, sem markdown
-- Todos os campos de texto devem estar em Português do Brasil
-- Acentuação e cedilha obrigatórias (ex: análise, ação, não)
-- NÃO invente fatos que não estejam presentes nos dados fornecidos
-- NÃO tome a decisão final de classificação — apenas sugira com nível de confiança
+def _infer_artifact_type(fields: dict, raw_text: str) -> str:
+    format_hint = str(fields.get("_source_format", "")).lower()
+    source_hint = str(fields.get("LogSource", "")).lower()
+    subject_hint = str(fields.get("Assunto", "")).lower()
+    combined = " ".join(
+        part for part in (format_hint, source_hint, subject_hint, raw_text[:2000].lower()) if part
+    )
+
+    if any(token in combined for token in ("subject:", "reply-to", "attachment", "email", "mail")):
+        return "email"
+    if any(token in combined for token in ("http://", "https://", "www.", "domain", "url")):
+        return "url"
+    if any(
+        token in combined
+        for token in ("powershell", "cmd.exe", "rundll32", "schtasks", "registry", "persistence")
+    ):
+        return "malware"
+    return "payload"
+
+
+def _build_soc_copilot_context(
+    fields: dict,
+    raw_text: str,
+    cliente: str,
+    regra: str,
+) -> dict:
+    artifact_type = _infer_artifact_type(fields, raw_text)
+    seed_parts = []
+    if cliente:
+        seed_parts.append(f"Cliente: {cliente}")
+    if regra:
+        seed_parts.append(f"Regra: {regra}")
+    assunto = str(fields.get("Assunto", "")).strip()
+    if assunto:
+        seed_parts.append(f"Assunto: {assunto}")
+    seed_parts.append(raw_text[:2000] if raw_text else "")
+    seed_input = "\n".join(part for part in seed_parts if part).strip()
+
+    try:
+        return build_prompt_context(
+            user_input=seed_input or "payload de seguranca",
+            artifact_type=artifact_type,
+            session_context="",
+        )
+    except Exception:
+        return {
+            "identity": "",
+            "soul": "",
+            "user": "",
+            "agents": "",
+            "memory": "",
+            "tools": "",
+            "skills_index": "",
+            "selected_skill": "payload-triage",
+            "skill_content": "",
+            "schema_path": "",
+            "session_context": "",
+            "user_input": seed_input,
+        }
+
+
+_SYSTEM_PROMPT_BASE = """\
+Você é um analista especializado de SOC (Security Operations Center) da iT.eam, \
+com expertise em análise de eventos de segurança em ambiente multi-tenant IBM SIEM/SOAR.
+
+Seu papel é analisar dados de alertas e o payload bruto do evento, corrigindo \
+extrações incompletas e fornecendo análise técnica objetiva para auxiliar analistas.
+
+REGRAS DO AGENTE iT.eam (AGENT.md):
+- Use obrigatoriamente Português do Brasil com acentuação e cedilha corretas
+- Horário exclusivamente em São Paulo, formato HH:MM:SS
+- Nunca invente informações ausentes — use string vazia ou lista vazia
+- Toda análise termina em exatamente uma categoria: True Positive, Benign True Positive, \
+False Positive, True Negative ou Log Transmission Failure
+- Para técnicas MITRE use apenas o formato exato T1234 ou T1234.001
+- Confiança deve ser float entre 0.0 e 1.0
 - NÃO use markdown (sem **, sem #, sem ```)
-- Mantenha anonimização: não repita nomes de usuários em recomendações
-- Para técnicas MITRE, use apenas o formato exato T1234 ou T1234.001
-- Confiança deve ser float entre 0.0 e 1.0\
+- Recomendações devem ser anônimas (sem usuários, IPs internos ou hostnames reais)
+- Responda APENAS com JSON válido, sem texto adicional antes ou depois
+
+INSTRUÇÕES DE EXTRAÇÃO:
+- Analise TANTO os campos normalizados QUANTO o payload bruto
+- Se um campo estiver como N/A nos campos normalizados, tente extraí-lo do payload bruto
+- Usuário pode estar em: Username, user, srcuser, UserId, SubjectUserName, AccountName, email
+- Horário pode estar em: time, timestamp, date+time, LogTime, CreationTime
+- IP de origem: srcip, ClientIP, SourceAddress, RemoteAddress
+- Assinatura/ataque: attack, msg, rulename, RuleName, Signature\
 """
+
+
+def _build_system_prompt(llm_input: dict | None = None) -> str:
+    """Monta system prompt com regras AGENT.md e persona do SOC Copilot."""
+    extra = _load_agent_rules_condensed()
+    soc_context = (llm_input or {}).get("soc_copilot", {}) if isinstance(llm_input, dict) else {}
+    sections = [_SYSTEM_PROMPT_BASE]
+    if extra:
+        sections.append(f"REGRAS COMPLETAS DE ESCRITA (AGENT.md):\n{extra}")
+
+    persona_sections = [
+        soc_context.get("identity", ""),
+        soc_context.get("soul", ""),
+        soc_context.get("user", ""),
+        soc_context.get("agents", ""),
+        soc_context.get("memory", ""),
+        soc_context.get("tools", ""),
+        f"Skill selecionada: {soc_context.get('selected_skill', '')}",
+        soc_context.get("skill_content", ""),
+    ]
+    persona_text = "\n\n".join(section for section in persona_sections if section)
+    if persona_text:
+        sections.append(f"CONTEXTO DO SOC COPILOT:\n{persona_text}")
+
+    sections.append(
+        "DISCIPLINA DE SAIDA: responda apenas com JSON valido conforme o schema exigido, "
+        "sem markdown, sem texto introdutorio e sem chaves extras."
+    )
+    return "\n\n".join(section for section in sections if section)
 
 _USER_PROMPT_TEMPLATE = """\
 Analise o evento de segurança abaixo e retorne um JSON estruturado.
+
+SKILL DO SOC COPILOT:
+{selected_skill}
+
+ORIENTACAO DO PLAYBOOK:
+{skill_content}
 
 DADOS DO EVENTO:
 {payload_json}
@@ -328,65 +466,294 @@ Retorne APENAS um objeto JSON com exatamente estas chaves (sem chaves extras):
 """
 
 
-def _call_llm_ollama(
+# ---------------------------------------------------------------------------
+# MCP Tools — definições e executor local para Ollama tool calling
+# ---------------------------------------------------------------------------
+
+_MCP_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_agent_rules",
+            "description": (
+                "Retorna as regras obrigatórias do agente SOC iT.eam (AGENT.md). "
+                "Use quando precisar verificar o formato correto de saída, "
+                "regras de escrita ou exceções por cliente."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_relevant_model",
+            "description": (
+                "Retorna o conteúdo de um modelo de alerta existente como referência "
+                "de estrutura e linguagem. Use para casos com tipo de ataque identificado."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "attack_name": {
+                        "type": "string",
+                        "description": "Nome do ataque, assinatura ou tipo de evento (ex: 'Botnet', 'Acesso RDP', 'Varredura').",
+                    }
+                },
+                "required": ["attack_name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_deterministic_analysis",
+            "description": (
+                "Retorna a análise determinística já calculada para este evento. "
+                "Use para validar ou enriquecer sua classificação com a análise de base."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_sop",
+            "description": (
+                "Retorna o Procedimento Operacional Standard (SOP.md) com as 5 etapas "
+                "obrigatórias de análise. Use quando não tiver certeza do fluxo correto."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+]
+
+
+def _execute_mcp_tool(name: str, arguments: dict, llm_input: dict) -> str:
+    """Executa uma ferramenta MCP localmente e retorna o resultado como string."""
+    try:
+        if name == "get_agent_rules":
+            rules = _load_agent_rules_condensed()
+            return rules if rules else "AGENT.md não encontrado no caminho configurado."
+
+        if name == "get_deterministic_analysis":
+            fields = llm_input.get("fields", {})
+            ti = llm_input.get("ti_results", {})
+            raw = llm_input.get("raw_text", "")
+            result = deterministic_analyze(fields, ti, raw)
+            return json.dumps(result, ensure_ascii=False, indent=2)
+
+        if name == "get_relevant_model":
+            attack = (arguments.get("attack_name") or "").strip()
+            from soc_copilot import config as _cfg
+            from pathlib import Path as _Path
+            modelos_dir = _Path(getattr(_cfg, "MODELOS_DIR", ""))
+            if not modelos_dir.exists() or not attack:
+                return "Modelo não encontrado."
+            # Busca por similaridade simples de tokens
+            attack_tokens = set(attack.lower().replace(".", " ").replace("_", " ").split())
+            best_score, best_path = 0, None
+            for f in modelos_dir.iterdir():
+                if not f.is_file():
+                    continue
+                name_tokens = set(f.name.lower().replace("-", " ").replace("_", " ").split())
+                score = len(attack_tokens & name_tokens)
+                if score > best_score:
+                    best_score, best_path = score, f
+            if best_path and best_score > 0:
+                try:
+                    return best_path.read_text(encoding="utf-8", errors="ignore")[:3000]
+                except Exception:
+                    pass
+            return "Nenhum modelo compatível encontrado para o ataque informado."
+
+        if name == "get_sop":
+            from soc_copilot import config as _cfg
+            from pathlib import Path as _Path
+            p = _Path(getattr(_cfg, "SOP_MD", ""))
+            return p.read_text(encoding="utf-8")[:4000] if p.exists() else "SOP.md não encontrado."
+
+        return f"Ferramenta '{name}' não reconhecida."
+    except Exception as exc:
+        return f"Erro ao executar ferramenta '{name}': {exc}"
+
+
+def _is_quality_sufficient(result: dict) -> bool:
+    """
+    Verifica se o output do LLM tem qualidade mínima para uso.
+    Retorna False se o output deve ser descartado e o fallback ativado.
+    """
+    if not isinstance(result, dict):
+        return False
+    # hipoteses deve existir e ter ao menos 1 entrada
+    if not isinstance(result.get("hipoteses"), list) or not result["hipoteses"]:
+        return False
+    # classificacao_sugerida com confiança válida
+    cls = result.get("classificacao_sugerida", {})
+    if not isinstance(cls, dict):
+        return False
+    confianca = cls.get("confianca", 0)
+    if not isinstance(confianca, (int, float)) or confianca <= 0:
+        return False
+    # o_que precisa ter conteúdo (pelo menos 15 chars)
+    o_que = (result.get("resumo_factual") or {}).get("o_que", "")
+    if len(str(o_que)) < 15:
+        return False
+    return True
+
+
+def _call_llm_ollama_with_mcp(
     llm_input: dict,
     fallback_analysis: dict,
     cfg,
 ) -> dict:
     """
-    Chama um modelo local via Ollama (http://localhost:11434).
-    Usa format="json" para forçar saída JSON estruturada.
+    Chama qwen2.5:3b (ou modelo Ollama configurado) com tool calling MCP.
+
+    Fluxo:
+      1. Injeta contexto MCP (agent_rules + análise determinística) no prompt
+      2. Oferece 4 ferramentas ao modelo para lookups dinâmicos
+      3. Executa loop agêntico (max 4 turns) com execução local das tools
+      4. Valida qualidade do output
+      5. Se qualidade insuficiente → chama Claude como fallback
     """
     import requests as _requests
 
-    model = getattr(cfg, "OLLAMA_MODEL", "llama3.1:8b")
+    model = getattr(cfg, "OLLAMA_MODEL", "qwen2.5:3b")
     base_url = getattr(cfg, "OLLAMA_URL", "http://localhost:11434").rstrip("/")
-    timeout = float(getattr(cfg, "LLM_TIMEOUT", 60))
+    timeout = float(getattr(cfg, "LLM_TIMEOUT", 90))
+
+    # --- Contexto MCP pré-injetado (reduz dependência de tool calling) ---
+    agent_rules = _load_agent_rules_condensed()
+    det_analysis = json.dumps(
+        llm_input.get("classificacao_candidata", {}), ensure_ascii=False
+    )
 
     fields = llm_input.get("fields", {})
     iocs = fields.get("IOCs", {})
+    raw_payload = llm_input.get("raw_text", "")
+
+    mcp_context = ""
+    if agent_rules:
+        mcp_context += f"\nREGRAS DO AGENTE (AGENT.md):\n{agent_rules}\n"
+    if det_analysis and det_analysis != "{}":
+        mcp_context += f"\nANÁLISE DETERMINÍSTICA DE BASE:\n{det_analysis}\n"
+
     payload_summary = {
         "regra": llm_input.get("regra", ""),
         "cliente": llm_input.get("cliente", ""),
+        "skill_selecionada": (llm_input.get("soc_copilot", {}) or {}).get("selected_skill", ""),
         "campos_normalizados": {k: v for k, v in fields.items() if k != "IOCs"},
         "iocs_identificados": {
             "ips_externos": iocs.get("ips_externos", []),
+            "ips_internos": iocs.get("ips_internos", []),
             "dominios": iocs.get("dominios", []),
             "hashes": iocs.get("hashes", []),
+            "urls": iocs.get("urls", []),
         },
         "ti_results": llm_input.get("ti_results", {}),
-        "classificacao_candidata_deterministica": llm_input.get("classificacao_candidata", {}),
+        "payload_bruto": raw_payload[:3000] if raw_payload else "",
     }
 
-    user_prompt = _USER_PROMPT_TEMPLATE.format(
-        payload_json=json.dumps(payload_summary, ensure_ascii=False, indent=2)
+    user_content = (
+        f"{mcp_context}\n"
+        + _USER_PROMPT_TEMPLATE.format(
+            selected_skill=(llm_input.get("soc_copilot", {}) or {}).get("selected_skill", ""),
+            skill_content=(llm_input.get("soc_copilot", {}) or {}).get("skill_content", ""),
+            payload_json=json.dumps(payload_summary, ensure_ascii=False, indent=2),
+        )
     )
 
-    body = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user",   "content": user_prompt},
-        ],
-        "stream": False,
-        "format": "json",
-        "options": {"temperature": 0.1},
-    }
+    messages = [
+        {"role": "system", "content": _build_system_prompt(llm_input)},
+        {"role": "user",   "content": user_content},
+    ]
+
+    MAX_TURNS = 4
+    raw_result = None
 
     try:
-        resp = _requests.post(
-            f"{base_url}/api/chat",
-            json=body,
-            timeout=timeout,
-        )
-        resp.raise_for_status()
-        content = resp.json().get("message", {}).get("content", "")
-        result = json.loads(content)
-        _logger.info("Análise LLM local concluída via Ollama/%s.", model)
-        return result
+        for turn in range(MAX_TURNS):
+            body: dict = {
+                "model": model,
+                "messages": messages,
+                "stream": False,
+                "tools": _MCP_TOOLS,
+                "options": {"temperature": 0.1},
+            }
+
+            resp = _requests.post(
+                f"{base_url}/api/chat",
+                json=body,
+                timeout=timeout,
+            )
+            resp.raise_for_status()
+            resp_data = resp.json()
+            msg = resp_data.get("message", {})
+
+            tool_calls = msg.get("tool_calls", [])
+
+            if tool_calls:
+                # Modelo pediu tools — executar e continuar o loop
+                messages.append({"role": "assistant", "content": msg.get("content", ""), "tool_calls": tool_calls})
+                for tc in tool_calls:
+                    fn = tc.get("function", {})
+                    tool_name = fn.get("name", "")
+                    tool_args = fn.get("arguments", {})
+                    if isinstance(tool_args, str):
+                        try:
+                            tool_args = json.loads(tool_args)
+                        except Exception:
+                            tool_args = {}
+                    tool_result = _execute_mcp_tool(tool_name, tool_args, llm_input)
+                    _logger.info("MCP tool chamada: %s → %d chars de resultado.", tool_name, len(tool_result))
+                    messages.append({"role": "tool", "content": tool_result})
+                # Solicitar resposta final após tools
+                if turn == MAX_TURNS - 2:
+                    messages.append({
+                        "role": "user",
+                        "content": "Com base nas informações das ferramentas, retorne APENAS o JSON final conforme o schema solicitado.",
+                    })
+            else:
+                # Resposta final — tentar parsear JSON
+                content = msg.get("content", "").strip()
+                # Remove blocos markdown se houver
+                if content.startswith("```"):
+                    parts = content.split("```")
+                    content = parts[1] if len(parts) > 1 else content
+                    if content.startswith("json"):
+                        content = content[4:].lstrip()
+                try:
+                    raw_result = json.loads(content)
+                    break
+                except json.JSONDecodeError:
+                    # Tentativa de extração de JSON embutido
+                    import re as _re
+                    m = _re.search(r'\{[\s\S]*\}', content)
+                    if m:
+                        try:
+                            raw_result = json.loads(m.group())
+                            break
+                        except Exception:
+                            pass
+                    _logger.warning("Ollama turn %d: JSON inválido na resposta.", turn + 1)
+                    # Última tentativa: pedir explicitamente JSON
+                    messages.append({"role": "assistant", "content": content})
+                    messages.append({"role": "user", "content": "Retorne APENAS JSON válido conforme o schema, sem texto adicional."})
+
     except Exception as exc:
-        _logger.error("Falha no Ollama (%s): %s; usando análise determinística.", model, exc)
-        return fallback_analysis
+        _logger.error("Falha no Ollama MCP (%s): %s; ativando fallback Claude.", model, exc)
+        raw_result = None
+
+    # --- Validação de qualidade ---
+    if raw_result is not None and _is_quality_sufficient(raw_result):
+        _logger.info("Ollama/%s — qualidade OK, resultado aceito.", model)
+        return raw_result
+
+    _logger.warning(
+        "Ollama/%s — qualidade insuficiente ou JSON inválido. Ativando fallback Claude.",
+        model,
+    )
+    return _call_llm_anthropic(llm_input, fallback_analysis, cfg)
 
 
 def _call_llm_anthropic(
@@ -413,21 +780,29 @@ def _call_llm_anthropic(
 
     fields = llm_input.get("fields", {})
     iocs = fields.get("IOCs", {})
+    raw_payload = llm_input.get("raw_text", "")
+
     payload_summary = {
         "regra": llm_input.get("regra", ""),
         "cliente": llm_input.get("cliente", ""),
+        "skill_selecionada": (llm_input.get("soc_copilot", {}) or {}).get("selected_skill", ""),
         "campos_normalizados": {k: v for k, v in fields.items() if k != "IOCs"},
         "iocs_identificados": {
             "ips_externos": iocs.get("ips_externos", []),
+            "ips_internos": iocs.get("ips_internos", []),
             "dominios": iocs.get("dominios", []),
             "hashes": iocs.get("hashes", []),
+            "urls": iocs.get("urls", []),
         },
         "ti_results": llm_input.get("ti_results", {}),
         "classificacao_candidata_deterministica": llm_input.get("classificacao_candidata", {}),
+        "payload_bruto": raw_payload[:3000] if raw_payload else "",
     }
 
     user_prompt = _USER_PROMPT_TEMPLATE.format(
-        payload_json=json.dumps(payload_summary, ensure_ascii=False, indent=2)
+        selected_skill=(llm_input.get("soc_copilot", {}) or {}).get("selected_skill", ""),
+        skill_content=(llm_input.get("soc_copilot", {}) or {}).get("skill_content", ""),
+        payload_json=json.dumps(payload_summary, ensure_ascii=False, indent=2),
     )
 
     try:
@@ -435,7 +810,7 @@ def _call_llm_anthropic(
         message = client.messages.create(
             model=model,
             max_tokens=2048,
-            system=_SYSTEM_PROMPT,
+            system=_build_system_prompt(llm_input),
             messages=[{"role": "user", "content": user_prompt}],
             timeout=timeout,
         )
@@ -477,8 +852,8 @@ def _call_llm(
     if provider == "anthropic":
         return _call_llm_anthropic(llm_input, fallback_analysis, _cfg)
 
-    # padrão: ollama
-    return _call_llm_ollama(llm_input, fallback_analysis, _cfg)
+    # padrão: ollama com MCP tools + fallback Claude automático
+    return _call_llm_ollama_with_mcp(llm_input, fallback_analysis, _cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -504,6 +879,7 @@ def run(
         cliente=cliente,
         pack=pack,
         deterministic_result=deterministic_result,
+        raw_text=raw_text,
     )
     raw_output = _call_llm(llm_input, deterministic_result)
     return _validate_output(raw_output, fallback=deterministic_result)

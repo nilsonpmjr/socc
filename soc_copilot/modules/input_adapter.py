@@ -13,6 +13,33 @@ import re
 
 _KV_LINE_RE = re.compile(r"^\s*([^:=]{2,120}?)\s*[:=]\s*(.+?)\s*$")
 
+# FortiGate/syslog inline key=value ou key="value"
+_FGT_KV_RE = re.compile(r'(\w+)=("(?:[^"\\]|\\.)*"|[^\s"=]+)')
+_FGT_MARKERS = ("logver=", "devid=", "vd=", "logid=", "devname=", "subtype=", "eventtype=")
+
+
+def _is_fortigate_syslog(raw: str) -> bool:
+    """Detecta log FortiGate ou syslog com pares key=value inline em linha única."""
+    sample = raw[:600].lower()
+    return sum(1 for m in _FGT_MARKERS if m in sample) >= 3
+
+
+def _parse_fortigate_syslog(raw: str) -> dict[str, str]:
+    """Extrai pares key=value de logs FortiGate/syslog inline (múltiplos por linha)."""
+    fields: dict[str, str] = {}
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        for m in _FGT_KV_RE.finditer(line):
+            key = m.group(1)
+            val = m.group(2)
+            if val.startswith('"') and val.endswith('"'):
+                val = val[1:-1]
+            if key and val:
+                fields.setdefault(key, val)  # primeira ocorrência vence
+    return fields
+
 
 def _flatten_json(data, prefix: str = "") -> dict[str, str]:
     """
@@ -143,6 +170,10 @@ def detect_and_parse(raw: str) -> tuple[str, dict | list]:
     if parsed_json is not None:
         return "json", parsed_json
 
+    # FortiGate/syslog inline KV — detectar antes do CSV para evitar falso positivo
+    if _is_fortigate_syslog(raw):
+        return "fortigate", _parse_fortigate_syslog(raw)
+
     parsed_csv = _try_parse_csv(raw)
     if parsed_csv is not None:
         return "csv", parsed_csv
@@ -187,6 +218,8 @@ def adapt(raw: str) -> tuple[str, dict[str, str], str]:
         campos = normalize_from_json(parsed)
     elif fmt == "csv":
         campos = normalize_from_csv(parsed)
+    elif fmt == "fortigate":
+        campos = parsed  # já é dict[str, str] com todos os KV extraídos
     else:
         campos = parsed if isinstance(parsed, dict) else {}
 

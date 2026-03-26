@@ -10,19 +10,43 @@ Projeto local de apoio a triagem SOC, parsing de payloads, enriquecimento de IOC
 - análise estruturada pré-draft
 - geração controlada de saídas operacionais
 - interface local para análise, revisão, cópia e salvamento
+- base inicial para runtime instalável com CLI, gateway e MCP
 
 ## Estrutura principal
 
-- `soc_copilot/`: aplicação principal
+- `soc_copilot/`: aplicação web atual e módulos do MVP
+- `socc/`: pacote instalável com `cli`, `core`, `gateway` e `utils`
 - `tests/`: suíte de regressão e casos extremos
-- `run.py`: inicialização local do MVP
-- `SOC_Copilot_PRD.md`: PRD do MVP
-- `SOC_Copilot_TODO.md`: acompanhamento de fases e entregas
+- `run.py`: entrypoint compatível com o MVP atual
+- `pyproject.toml`: configuração do pacote instalável e do binário `socc`
 
-## Execução local
+## Instalação em modo editável
+
+```bash
+pip install -e .
+```
+
+## Comandos principais
+
+```bash
+socc init
+socc serve
+socc analyze --file caminho/do/payload.txt --json
+```
+
+Compatibilidade com o fluxo atual:
 
 ```bash
 python run.py
 ```
 
-O projeto usa variáveis locais definidas em `.env`.
+## Direção arquitetural
+
+O pacote `socc` foi adicionado como camada de runtime para aproximar o projeto de um modelo instalável estilo agent/runtime:
+
+- `socc.cli`: comandos locais como `init`, `serve` e `analyze`
+- `socc.core`: wrappers para engine, memória, prompts e ferramentas
+- `socc.gateway`: preparação para execução LLM local/remota e integração MCP
+- `socc.utils`: carregamento de configuração e parsing utilitário
+
+O projeto continua usando variáveis locais definidas em `.env`, com possibilidade de bootstrap de `~/.socc/.env` via `socc init`.
