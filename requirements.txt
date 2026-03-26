@@ -6,3 +6,6 @@ pytz==2024.1
 requests==2.32.3
 python-dotenv==1.0.1
 aiofiles==23.2.1
+anthropic>=0.40.0
+scikit-learn>=1.8.0
+rapidfuzz>=3.14.0

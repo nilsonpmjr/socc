@@ -12,7 +12,7 @@ soc_copilot/soc_copilot.db
 soc_copilot.db
 *.db
 # SOC_Copilot_*.md
-# Revisao_Fase*.md
+#tem  Revisao_Fase*.md
 
 Notas_Geradas/
 Alertas_Gerados/

@@ -19,12 +19,16 @@ Responsabilidades PROIBIDAS:
   - consultar fontes externas por conta própria
   - alterar diretamente o banco de dados
 
-Estado atual: STUB — retorna o pacote do classification_helper sem LLM.
-Para ativar a camada LLM real: implemente `_call_llm()` abaixo e ajuste
-o provider/model em config.py.
+Estado: integrado com Anthropic Claude via config.LLM_ENABLED.
+Se LLM_ENABLED=false ou ANTHROPIC_API_KEY ausente, delega ao
+classification_helper determinístico como fallback seguro.
 """
 from __future__ import annotations
+import json
+import logging
 from copy import deepcopy
+
+_logger = logging.getLogger(__name__)
 
 from soc_copilot.modules.classification_helper import analyze as deterministic_analyze
 from soc_copilot.modules.rule_loader import RulePack
@@ -262,18 +266,219 @@ def _validate_output(data: object, fallback: dict | None = None) -> dict:
     return {key: output[key] for key in _OUTPUT_SCHEMA_KEYS}
 
 
+_SYSTEM_PROMPT = """\
+Você é um assistente especializado de SOC (Security Operations Center), \
+com expertise em análise de eventos de segurança.
+
+Seu papel é analisar dados estruturados de alertas e fornecer análise técnica \
+objetiva para auxiliar analistas SOC na tomada de decisão.
+
+REGRAS OBRIGATÓRIAS:
+- Responda APENAS com JSON válido, sem texto adicional, sem markdown
+- Todos os campos de texto devem estar em Português do Brasil
+- Acentuação e cedilha obrigatórias (ex: análise, ação, não)
+- NÃO invente fatos que não estejam presentes nos dados fornecidos
+- NÃO tome a decisão final de classificação — apenas sugira com nível de confiança
+- NÃO use markdown (sem **, sem #, sem ```)
+- Mantenha anonimização: não repita nomes de usuários em recomendações
+- Para técnicas MITRE, use apenas o formato exato T1234 ou T1234.001
+- Confiança deve ser float entre 0.0 e 1.0\
+"""
+
+_USER_PROMPT_TEMPLATE = """\
+Analise o evento de segurança abaixo e retorne um JSON estruturado.
+
+DADOS DO EVENTO:
+{payload_json}
+
+Retorne APENAS um objeto JSON com exatamente estas chaves (sem chaves extras):
+{{
+  "resumo_factual": {{
+    "o_que": "descrição técnica objetiva e concisa do que ocorreu",
+    "quem": ["lista de atores/usuários envolvidos"],
+    "onde": ["lista de sistemas, IPs ou destinos relevantes"],
+    "quando": "horário do evento no formato HH:MM:SS",
+    "artefatos": ["lista de IOCs ou artefatos técnicos identificados"]
+  }},
+  "hipoteses": [
+    {{
+      "tipo": "True Positive|False Positive|Benign True Positive|True Negative|Log Transmission Failure",
+      "confianca": 0.0,
+      "justificativa": "justificativa técnica objetiva para esta hipótese"
+    }}
+  ],
+  "lacunas": ["lacuna de evidência que impede conclusão definitiva"],
+  "classificacao_sugerida": {{
+    "tipo": "classificação mais provável dentre os tipos válidos",
+    "confianca": 0.0,
+    "racional": "racional técnico detalhado para a sugestão"
+  }},
+  "mitre_candidato": {{
+    "tecnica": "T1234 ou T1234.001 se aplicável, senão string vazia",
+    "justificativa": "por que esta técnica MITRE se aplica ao comportamento observado"
+  }},
+  "modelo_sugerido": "nome do modelo de nota mais adequado para este caso",
+  "blocos_recomendados": {{
+    "incluir_analise_ip": true,
+    "incluir_referencia_mitre": false
+  }},
+  "proximos_passos": ["ação recomendada ao analista (anonimizada)"],
+  "alertas_de_qualidade": ["alerta sobre qualidade dos dados ou limitações da análise"]
+}}
+"""
+
+
+def _call_llm_ollama(
+    llm_input: dict,
+    fallback_analysis: dict,
+    cfg,
+) -> dict:
+    """
+    Chama um modelo local via Ollama (http://localhost:11434).
+    Usa format="json" para forçar saída JSON estruturada.
+    """
+    import requests as _requests
+
+    model = getattr(cfg, "OLLAMA_MODEL", "llama3.1:8b")
+    base_url = getattr(cfg, "OLLAMA_URL", "http://localhost:11434").rstrip("/")
+    timeout = float(getattr(cfg, "LLM_TIMEOUT", 60))
+
+    fields = llm_input.get("fields", {})
+    iocs = fields.get("IOCs", {})
+    payload_summary = {
+        "regra": llm_input.get("regra", ""),
+        "cliente": llm_input.get("cliente", ""),
+        "campos_normalizados": {k: v for k, v in fields.items() if k != "IOCs"},
+        "iocs_identificados": {
+            "ips_externos": iocs.get("ips_externos", []),
+            "dominios": iocs.get("dominios", []),
+            "hashes": iocs.get("hashes", []),
+        },
+        "ti_results": llm_input.get("ti_results", {}),
+        "classificacao_candidata_deterministica": llm_input.get("classificacao_candidata", {}),
+    }
+
+    user_prompt = _USER_PROMPT_TEMPLATE.format(
+        payload_json=json.dumps(payload_summary, ensure_ascii=False, indent=2)
+    )
+
+    body = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user",   "content": user_prompt},
+        ],
+        "stream": False,
+        "format": "json",
+        "options": {"temperature": 0.1},
+    }
+
+    try:
+        resp = _requests.post(
+            f"{base_url}/api/chat",
+            json=body,
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        content = resp.json().get("message", {}).get("content", "")
+        result = json.loads(content)
+        _logger.info("Análise LLM local concluída via Ollama/%s.", model)
+        return result
+    except Exception as exc:
+        _logger.error("Falha no Ollama (%s): %s; usando análise determinística.", model, exc)
+        return fallback_analysis
+
+
+def _call_llm_anthropic(
+    llm_input: dict,
+    fallback_analysis: dict,
+    cfg,
+) -> dict:
+    """
+    Chama o Claude via API Anthropic (nuvem).
+    """
+    api_key = getattr(cfg, "ANTHROPIC_API_KEY", "")
+    if not api_key:
+        _logger.warning("ANTHROPIC_API_KEY não configurada; usando análise determinística.")
+        return fallback_analysis
+
+    try:
+        import anthropic as _anthropic
+    except ImportError:
+        _logger.error("Pacote 'anthropic' não instalado; usando análise determinística.")
+        return fallback_analysis
+
+    model = getattr(cfg, "LLM_MODEL", "claude-haiku-4-5-20251001")
+    timeout = float(getattr(cfg, "LLM_TIMEOUT", 30))
+
+    fields = llm_input.get("fields", {})
+    iocs = fields.get("IOCs", {})
+    payload_summary = {
+        "regra": llm_input.get("regra", ""),
+        "cliente": llm_input.get("cliente", ""),
+        "campos_normalizados": {k: v for k, v in fields.items() if k != "IOCs"},
+        "iocs_identificados": {
+            "ips_externos": iocs.get("ips_externos", []),
+            "dominios": iocs.get("dominios", []),
+            "hashes": iocs.get("hashes", []),
+        },
+        "ti_results": llm_input.get("ti_results", {}),
+        "classificacao_candidata_deterministica": llm_input.get("classificacao_candidata", {}),
+    }
+
+    user_prompt = _USER_PROMPT_TEMPLATE.format(
+        payload_json=json.dumps(payload_summary, ensure_ascii=False, indent=2)
+    )
+
+    try:
+        client = _anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model=model,
+            max_tokens=2048,
+            system=_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_prompt}],
+            timeout=timeout,
+        )
+        response_text = message.content[0].text.strip()
+        if response_text.startswith("```"):
+            parts = response_text.split("```")
+            response_text = parts[1] if len(parts) > 1 else response_text
+            if response_text.startswith("json"):
+                response_text = response_text[4:].lstrip()
+        result = json.loads(response_text)
+        _logger.info("Análise LLM concluída via Anthropic/%s.", model)
+        return result
+    except Exception as exc:
+        _logger.error("Falha na chamada Anthropic (%s): %s; usando análise determinística.", model, exc)
+        return fallback_analysis
+
+
 def _call_llm(
     llm_input: dict,
     fallback_analysis: dict,
 ) -> dict:
     """
-    Stub: substitua este método quando um LLM local/API estiver disponível.
-    Deve retornar um dict compatível com _OUTPUT_SCHEMA_KEYS.
-    O LLM NÃO deve receber payload sensível intacto — apenas o pacote estruturado.
+    Roteia a chamada LLM para o provider configurado em LLM_PROVIDER:
+      - "ollama"     : modelo local via Ollama (padrão)
+      - "anthropic"  : Claude via API Anthropic (nuvem)
+    Em caso de falha ou LLM desabilitado, retorna fallback_analysis (determinístico).
     """
-    # TODO: integrar LLM (ex: claude-haiku local, ollama, etc.)
-    # Enquanto o stub está ativo, delega ao classification_helper determinístico.
-    return fallback_analysis
+    try:
+        from soc_copilot import config as _cfg
+    except ImportError:
+        _logger.warning("Módulo config não encontrado; usando análise determinística.")
+        return fallback_analysis
+
+    if not getattr(_cfg, "LLM_ENABLED", False):
+        return fallback_analysis
+
+    provider = getattr(_cfg, "LLM_PROVIDER", "ollama").lower()
+
+    if provider == "anthropic":
+        return _call_llm_anthropic(llm_input, fallback_analysis, _cfg)
+
+    # padrão: ollama
+    return _call_llm_ollama(llm_input, fallback_analysis, _cfg)
 
 
 # ---------------------------------------------------------------------------

@@ -97,6 +97,10 @@ async def analyze(
     if not raw.strip():
         return JSONResponse({"erro": "Nenhum payload fornecido."}, status_code=400)
 
+    _MAX_PAYLOAD_BYTES = 512 * 1024  # 512 KB
+    if len(raw.encode("utf-8", errors="replace")) > _MAX_PAYLOAD_BYTES:
+        return JSONResponse({"erro": "Payload excede o limite de 512 KB."}, status_code=413)
+
     # 1. Input Adapter
     fmt, campos_brutos, raw_original = input_adapter.adapt(raw)
 

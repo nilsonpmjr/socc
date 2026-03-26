@@ -232,21 +232,41 @@ def _build_technical_analysis(classificacao: str, analysis: dict, ti_results: di
     return paragraph
 
 
-def _build_reference_and_mitre(analysis: dict) -> tuple[str, str]:
+def _mitre_link(tecnica: str) -> str:
+    if re.fullmatch(r"T\d{4}(?:\.\d{3})?", tecnica):
+        if "." in tecnica:
+            parent, child = tecnica.split(".", 1)
+            return f"https://attack.mitre.org/techniques/{parent}/{child}/"
+        return f"https://attack.mitre.org/techniques/{tecnica}/"
+    return tecnica
+
+
+def _build_reference_and_mitre(
+    analysis: dict,
+    pack: RulePack | None = None,
+) -> tuple[str, str]:
+    """
+    Retorna (referencia_texto, link_mitre).
+    Prioridade:
+      1. Fragmentos do modelo real (mitre_descricao + mitre_referencia)
+      2. Análise determinística (mitre_candidato)
+      3. Fallback genérico
+    """
+    # 1. Fragmento do modelo real
+    frag = getattr(pack, "modelo_fragmentos", None)
+    if frag and frag.mitre_descricao:
+        descricao = _clean_inline(frag.mitre_descricao)
+        tecnica = frag.mitre_tecnica or ""
+        link = _mitre_link(tecnica) if tecnica else (frag.mitre_referencia or "Mapeamento MITRE pendente de validação técnica.")
+        return _ensure_sentence(descricao), link
+
+    # 2. Análise determinística
     mitre = analysis.get("mitre_candidato", {})
     tecnica = _clean_inline(mitre.get("tecnica", ""))
     justificativa = _ensure_sentence(mitre.get("justificativa", ""))
 
     if tecnica:
-        if re.fullmatch(r"T\d{4}(?:\.\d{3})?", tecnica):
-            if "." in tecnica:
-                parent, child = tecnica.split(".", 1)
-                link = f"https://attack.mitre.org/techniques/{parent}/{child}/"
-            else:
-                link = f"https://attack.mitre.org/techniques/{tecnica}/"
-        else:
-            link = tecnica
-
+        link = _mitre_link(tecnica)
         referencia = justificativa or _ensure_sentence(
             f"A atividade observada apresenta aderência técnica ao comportamento descrito em {tecnica}"
         )
@@ -273,7 +293,36 @@ def _repasse_recommendation() -> str:
     )
 
 
-def _build_tp(fields: dict, ti_results: dict[str, str], analysis: dict) -> str:
+def _build_proximos_passos_text(
+    analysis: dict,
+    fallback: str,
+    pack: RulePack | None = None,
+) -> str:
+    """
+    Monta o texto de recomendação.
+    Prioridade:
+      1. Recomendação do modelo real (anonimizada pelo model_parser)
+      2. proximos_passos gerados pelo classification_helper
+      3. fallback fixo
+    """
+    # 1. Recomendação do modelo real
+    frag = getattr(pack, "modelo_fragmentos", None)
+    if frag and frag.recomendacao:
+        return _clean_inline(frag.recomendacao)
+
+    # 2. proximos_passos da análise
+    proximos = analysis.get("proximos_passos", [])
+    itens = [_clean_inline(p) for p in (proximos or []) if _clean_inline(p)]
+    if itens:
+        return " ".join(
+            item if item.endswith((".", "!", "?")) else item + "."
+            for item in itens
+        )
+
+    return fallback
+
+
+def _build_tp(fields: dict, ti_results: dict[str, str], analysis: dict, pack: RulePack | None = None) -> str:
     title = _build_title(fields, analysis, "Identificada atividade suspeita com potencial impacto à segurança")
     factual = analysis.get("resumo_factual", {})
     lead = _ensure_sentence(
@@ -281,7 +330,7 @@ def _build_tp(fields: dict, ti_results: dict[str, str], analysis: dict) -> str:
         "Foi identificada atividade com relevância para segurança a partir da telemetria analisada.",
     )
     narrativa = _build_context_sentence(fields, lead)
-    referencia, mitre_link = _build_reference_and_mitre(analysis)
+    referencia, mitre_link = _build_reference_and_mitre(analysis, pack)
 
     sections = [
         "Prezados,",
@@ -312,20 +361,24 @@ def _build_tp(fields: dict, ti_results: dict[str, str], analysis: dict) -> str:
             mitre_link,
             "",
             "Recomendação:",
-            _tp_recommendation(),
+            _build_proximos_passos_text(analysis, _tp_recommendation(), pack),
         ]
     )
     return _finalize_text("\n".join(sections))
 
 
-def _build_btp(fields: dict, analysis: dict) -> str:
+def _build_btp(fields: dict, analysis: dict, pack: RulePack | None = None) -> str:
     factual = analysis.get("resumo_factual", {})
     summary = _ensure_sentence(
         factual.get("o_que", ""),
         "A atividade observada foi corretamente identificada pela regra de detecção e confirmada como comportamento benigno.",
     )
     rationale = _build_technical_analysis("BTP", analysis, {})
-    action = "Encerrar o caso como Benign True Positive, sem indicação de impacto adverso ao ambiente."
+    action = _build_proximos_passos_text(
+        analysis,
+        "Encerrar o caso como Benign True Positive, sem indicação de impacto adverso ao ambiente.",
+        pack,
+    )
 
     sections = [
         "Classificação Final: Benign True Positive",
@@ -342,18 +395,20 @@ def _build_btp(fields: dict, analysis: dict) -> str:
     return _finalize_text("\n".join(sections))
 
 
-def _build_fp_tn_ltf(classificacao: str, fields: dict, analysis: dict) -> str:
+def _build_fp_tn_ltf(classificacao: str, fields: dict, analysis: dict, pack: RulePack | None = None) -> str:
     label = CLASSIFICACOES.get(classificacao, classificacao)
     justificativa = _build_technical_analysis(classificacao, analysis, {})
 
     if classificacao == "FP":
-        action = "Registrar o caso como False Positive e avaliar necessidade de ajuste na regra caso a recorrência persista."
+        fallback_action = "Registrar o caso como False Positive e avaliar necessidade de ajuste na regra caso a recorrência persista."
     elif classificacao == "TN":
-        action = "Registrar o evento como atividade não maliciosa e manter monitoramento conforme o fluxo operacional."
+        fallback_action = "Registrar o evento como atividade não maliciosa e manter monitoramento conforme o fluxo operacional."
     elif classificacao == "LTF":
-        action = "Acionar o responsável pela fonte de logs para validar coleta, transmissão e integridade dos eventos necessários à análise."
+        fallback_action = "Acionar o responsável pela fonte de logs para validar coleta, transmissão e integridade dos eventos necessários à análise."
     else:
-        action = "Registrar a conclusão técnica conforme o procedimento operacional vigente."
+        fallback_action = "Registrar a conclusão técnica conforme o procedimento operacional vigente."
+
+    action = _build_proximos_passos_text(analysis, fallback_action, pack)
 
     sections = [
         f"Classificação Final: {label}",
@@ -422,13 +477,13 @@ def generate(
 
     if cls == "TP":
         template = pack.modelo_nome or "sop_tp_padrao"
-        return _build_tp(fields, ti_results, analysis), template
+        return _build_tp(fields, ti_results, analysis, pack), template
 
     if cls == "BTP":
-        return _build_btp(fields, analysis), "sop_btp"
+        return _build_btp(fields, analysis, pack), "sop_btp"
 
     if cls in {"FP", "TN", "LTF"}:
-        return _build_fp_tn_ltf(cls, fields, analysis), f"sop_{cls.lower()}"
+        return _build_fp_tn_ltf(cls, fields, analysis, pack), f"sop_{cls.lower()}"
 
     draft = _finalize_text(
         "\n".join(

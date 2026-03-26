@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from soc_copilot.config import AGENT_MD, INVENTARIO_MD, MODELOS_DIR, SOP_MD, TOOLS_MD
+from soc_copilot.modules.model_parser import ModelFragments, parse as parse_modelo
 
 
 RULE_PRECEDENCE = [
@@ -121,6 +122,7 @@ class RulePack:
     modelo_aderente: str = ""
     modelo_nome: str = ""
     modelo_metadata: ModeloMetadata = field(default_factory=ModeloMetadata)
+    modelo_fragmentos: ModelFragments = field(default_factory=ModelFragments)
     is_icatu: bool = False
 
 
@@ -169,13 +171,13 @@ def _score_model(rule_tokens: list[str], client_tokens: list[str], model_name: s
     return score, sorted(set(matched_tokens))
 
 
-def _find_modelo(regra: str, cliente: str) -> tuple[str, str, ModeloMetadata]:
+def _find_modelo(regra: str, cliente: str) -> tuple[str, str, ModeloMetadata, ModelFragments]:
     """
     Busca o modelo mais aderente em Modelos/ pelo nome da regra ou cliente.
-    Retorna (conteudo, nome_arquivo, metadata).
+    Retorna (conteudo, nome_arquivo, metadata, fragmentos).
     """
     if not MODELOS_DIR.exists():
-        return "", "", ModeloMetadata()
+        return "", "", ModeloMetadata(), ModelFragments()
 
     regra_tokens = _tokenize(regra)
     cliente_tokens = _tokenize(cliente)
@@ -189,7 +191,7 @@ def _find_modelo(regra: str, cliente: str) -> tuple[str, str, ModeloMetadata]:
             candidatos.append((score, modelo_path, matched_tokens))
 
     if not candidatos:
-        return "", "", ModeloMetadata()
+        return "", "", ModeloMetadata(), ModelFragments()
 
     melhor_score, melhor_path, matched_tokens = max(candidatos, key=lambda x: (x[0], len(x[2]), -len(x[1].name)))
     conteudo = _read_safe(melhor_path)
@@ -199,7 +201,8 @@ def _find_modelo(regra: str, cliente: str) -> tuple[str, str, ModeloMetadata]:
         score=melhor_score,
         matched_tokens=matched_tokens,
     )
-    return conteudo, melhor_path.name, metadata
+    fragmentos = parse_modelo(melhor_path)
+    return conteudo, melhor_path.name, metadata, fragmentos
 
 
 def _load_client_exception(cliente_norm: str) -> dict:
@@ -213,7 +216,7 @@ def load(regra: str = "", cliente: str = "") -> RulePack:
     Carrega e consolida todas as regras operacionais do MVP.
     """
     cliente_norm = _normalize_client(cliente)
-    modelo_aderente, modelo_nome, modelo_metadata = _find_modelo(regra, cliente)
+    modelo_aderente, modelo_nome, modelo_metadata, modelo_fragmentos = _find_modelo(regra, cliente)
 
     pack = RulePack(
         agent_rules=_read_safe(AGENT_MD),
@@ -229,6 +232,7 @@ def load(regra: str = "", cliente: str = "") -> RulePack:
         modelo_aderente=modelo_aderente,
         modelo_nome=modelo_nome,
         modelo_metadata=modelo_metadata,
+        modelo_fragmentos=modelo_fragmentos,
         is_icatu=cliente_norm == "icatu",
     )
 

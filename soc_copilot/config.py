@@ -34,6 +34,22 @@ BATCH_SCRIPT = os.getenv(
 SOC_PORT = int(os.getenv("SOC_PORT", "8080"))
 MAX_TI_IOCS = int(os.getenv("MAX_TI_IOCS", "5"))
 
+# ---------------------------------------------------------------------------
+# LLM — opcional; LLM_ENABLED=false mantém modo determinístico puro
+# LLM_PROVIDER: "anthropic" (nuvem) ou "ollama" (local)
+# ---------------------------------------------------------------------------
+LLM_ENABLED = os.getenv("LLM_ENABLED", "false").lower() in ("true", "1", "yes")
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama")   # "anthropic" | "ollama"
+LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "60"))
+
+# Anthropic (nuvem)
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+LLM_MODEL = os.getenv("LLM_MODEL", "claude-haiku-4-5-20251001")
+
+# Ollama (local)
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+
 # Caminhos derivados
 AGENT_MD = ALERTAS_ROOT / ".agents" / "rules" / "AGENT.md"
 TOOLS_MD = ALERTAS_ROOT / ".agents" / "rules" / "TOOLS.md"
