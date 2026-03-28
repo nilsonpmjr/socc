@@ -52,6 +52,7 @@ original_url = cfg.OLLAMA_URL
 original_model = cfg.OLLAMA_MODEL
 original_post = chat_service.requests.post
 original_cpu_guard = os.environ.get("SOCC_CPU_GUARD_ENABLED")
+original_fast_model = os.environ.get("SOCC_OLLAMA_FAST_MODEL")
 
 
 try:
@@ -73,7 +74,10 @@ try:
         "stream_fallback_final_message",
         isinstance(final_event.get("data"), dict)
         and final_event["data"].get("type") == "message"
-        and "Resumo do pedido" in final_event["data"].get("content", ""),
+        and (
+            "Resumo do pedido" in final_event["data"].get("content", "")
+            or "Pergunta registrada" in final_event["data"].get("content", "")
+        ),
     )
     check("stream_fallback_persisted_exchange", len(messages) == 2)
 except Exception as exc:
@@ -84,13 +88,18 @@ try:
     cfg.LLM_ENABLED = True
     cfg.LLM_PROVIDER = "ollama"
     cfg.OLLAMA_URL = "http://ollama.test"
-    cfg.OLLAMA_MODEL = "qwen2.5:3b"
+    cfg.OLLAMA_MODEL = "qwen3.5:9b"
     cfg.LLM_TIMEOUT = 5
     os.environ["SOCC_CPU_GUARD_ENABLED"] = "false"
+    os.environ["SOCC_OLLAMA_FAST_MODEL"] = "llama3.2:3b"
 
     def fake_post(url: str, json: dict, timeout: float, stream: bool = False):
         check("stream_ollama_uses_stream_flag", stream is True, str(stream))
         check("stream_ollama_hits_chat_api", url.endswith("/api/chat"), url)
+        check("stream_ollama_fast_model", str(json.get("model") or "") == "llama3.2:3b", str(json.get("model")))
+        check("stream_ollama_fast_num_predict_absent", "num_predict" not in (json.get("options") or {}), str(json.get("options")))
+        check("stream_ollama_fast_num_ctx", int((json.get("options") or {}).get("num_ctx") or 0) == 3072, str(json.get("options")))
+        check("stream_ollama_keep_alive", str(json.get("keep_alive") or "") == "15m", str(json.get("keep_alive")))
         return FakeStreamResponse(
             [
                 json_module
@@ -108,6 +117,7 @@ try:
             "Explique este alerta em uma frase.",
             session_id="stream-ollama",
             cliente="Cliente Teste",
+            response_mode="fast",
         )
     )
     delta_text = "".join(item.get("delta", "") for item in events if item.get("event") == "delta")
@@ -127,8 +137,105 @@ try:
             for item in messages
         ),
     )
+    persisted_assistant = next((item for item in messages if item.get("role") == "assistant"), {})
+    persisted_user = next((item for item in messages if item.get("role") == "user"), {})
+    check(
+        "stream_ollama_final_response_mode",
+        isinstance(final_data, dict) and (final_data.get("metadata") or {}).get("response_mode") == "fast",
+    )
+    check(
+        "stream_ollama_final_not_truncated",
+        isinstance(final_data, dict) and (final_data.get("metadata") or {}).get("truncated") is False,
+    )
+    check(
+        "stream_ollama_persisted_assistant_metadata_content",
+        isinstance(persisted_assistant.get("metadata"), dict)
+        and persisted_assistant["metadata"].get("content") == "Resposta incremental.",
+        str(persisted_assistant),
+    )
+    check(
+        "stream_ollama_persisted_assistant_metadata_mode",
+        isinstance((persisted_assistant.get("metadata") or {}).get("metadata"), dict)
+        and (persisted_assistant.get("metadata") or {}).get("metadata", {}).get("response_mode") == "fast",
+        str(persisted_assistant),
+    )
+    check(
+        "stream_ollama_persisted_user_metadata_content",
+        isinstance(persisted_user.get("metadata"), dict)
+        and persisted_user["metadata"].get("content") == "Explique este alerta em uma frase.",
+        str(persisted_user),
+    )
 except Exception as exc:
     check("stream_ollama_flow", False, str(exc))
+
+
+try:
+    cfg.LLM_ENABLED = True
+    cfg.LLM_PROVIDER = "ollama"
+    cfg.OLLAMA_URL = "http://ollama.test"
+    cfg.OLLAMA_MODEL = "qwen3.5:9b"
+    cfg.LLM_TIMEOUT = 5
+    os.environ["SOCC_CPU_GUARD_ENABLED"] = "false"
+
+    request_counter = {"count": 0}
+
+    def fake_post_truncated(url: str, json: dict, timeout: float, stream: bool = False):
+        request_counter["count"] += 1
+        if request_counter["count"] == 1:
+            check(
+                "stream_ollama_truncated_balanced_num_predict_absent",
+                "num_predict" not in (json.get("options") or {}),
+                str(json.get("options")),
+            )
+            return FakeStreamResponse(
+                [
+                    jsonlib.dumps({"message": {"content": "Primeira parte. "}, "done": False}),
+                    jsonlib.dumps({"message": {"content": "Segunda parte"}, "done": False}),
+                    jsonlib.dumps({"done": True, "done_reason": "length"}),
+                ]
+            )
+        check(
+            "stream_ollama_truncated_continuation_prompt",
+            "Continue exatamente de onde voce parou" in str((json.get("messages") or [])[-1].get("content") or ""),
+            str((json.get("messages") or [])[-1]),
+        )
+        return FakeStreamResponse(
+            [
+                jsonlib.dumps({"message": {"content": " concluída."}, "done": False}),
+                jsonlib.dumps({"done": True, "done_reason": "stop"}),
+            ]
+        )
+
+    chat_service.requests.post = fake_post_truncated
+    events = list(
+        chat_service.stream_chat_reply_events(
+            "Explique o alerta com começo, meio e fim.",
+            session_id="stream-ollama-truncated",
+            cliente="Cliente Teste",
+            response_mode="balanced",
+        )
+    )
+    final_event = next((item for item in events if item.get("event") == "final"), {})
+    final_data = final_event.get("data") if isinstance(final_event.get("data"), dict) else {}
+    final_metadata = final_data.get("metadata") if isinstance(final_data, dict) else {}
+
+    check("stream_ollama_truncated_second_call", request_counter["count"] == 2, str(request_counter))
+    check(
+        "stream_ollama_truncated_content_completed",
+        isinstance(final_data, dict) and final_data.get("content") == "Primeira parte. Segunda parte concluída.",
+        str(final_data),
+    )
+    check(
+        "stream_ollama_truncated_metadata_continuation",
+        isinstance(final_metadata, dict)
+        and final_metadata.get("continuation_used") is True
+        and final_metadata.get("truncated") is False
+        and final_metadata.get("done_reason") == "length"
+        and final_metadata.get("continuation_done_reason") == "stop",
+        str(final_metadata),
+    )
+except Exception as exc:
+    check("stream_ollama_truncated_flow", False, str(exc))
 finally:
     cfg.LLM_ENABLED = original_enabled
     cfg.LLM_PROVIDER = original_provider
@@ -140,6 +247,10 @@ finally:
         os.environ.pop("SOCC_CPU_GUARD_ENABLED", None)
     else:
         os.environ["SOCC_CPU_GUARD_ENABLED"] = original_cpu_guard
+    if original_fast_model is None:
+        os.environ.pop("SOCC_OLLAMA_FAST_MODEL", None)
+    else:
+        os.environ["SOCC_OLLAMA_FAST_MODEL"] = original_fast_model
 
 
 print(f"\n{'='*60}")

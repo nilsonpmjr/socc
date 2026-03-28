@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-Entregar um MVP funcional do copiloto de analise de payloads no SOCC, com chat real ligado a LLM local, resposta estruturada, feedback humano e base pronta para evolucao com RAG, ML e knowledge graph.
+Entregar um MVP funcional do copiloto de analise de payloads e conversa operacional no SOCC, com chat real ligado a LLM local, resposta estruturada, feedback humano e base pronta para evolucao com RAG, ML, knowledge graph e integracao ampla com o ecossistema Vantage.
 
 Como desdobramento de plataforma, preparar o produto para operar tambem como runtime instalavel com CLI, gateway local para LLM + MCP e preferencia por aceleracao em GPU.
 
@@ -10,7 +10,7 @@ Como desdobramento de plataforma, preparar o produto para operar tambem como run
 
 - backend e frontend do SOCC ja existem
 - existe uma pagina de chat em desenvolvimento
-- o modelo local atual e `qwen2.5:3b`
+- o modelo local atual e `qwen3.5:9b`, com preferencia explicita por GPU
 - o ambiente podera expor um endpoint local de inferencia
 - a arquitetura do agente seguira um padrao declarativo inspirado em OpenClaw
 - o produto podera evoluir para um pacote instalavel no estilo OpenClaw
@@ -23,15 +23,30 @@ Como desdobramento de plataforma, preparar o produto para operar tambem como run
 - `P2` passou a expor o contrato oficial `summary/verdict/confidence/iocs/ttps/risk_reasons/recommended_actions/sources`
 - feedback do analista agora possui endpoint e persistencia dedicada
 - o parser passou a cobrir um catalogo bem mais amplo de aliases JSON de seguranca para detectar usuario, IPs IPv4/IPv6, hostname, server, arquivo, hash, e-mail/auth, DNS/HTTP/TLS, processo, cloud, NAT/fluxo e Kubernetes/container com menos dependencia do modelo
+- a extracao de IOCs agora tambem normaliza artefatos defangados (`hxxp`, `[.]`), estabiliza caixa de hash/dominio/URL e reduz duplicidade entre parser, TI e contrato estruturado
 - a analise passou a derivar contextos investigativos determinísticos por família de telemetria, melhorando explicabilidade e priorizacao operacional mesmo sem depender da LLM
 - o draft passou a absorver prioridade operacional e contextos investigativos, reduzindo texto genérico na saída final
 - o draft passou a variar o recorte analítico por vertical, deixando a saída mais aderente a phishing, endpoint, rede, cloud e Kubernetes
 - a priorização passou a sair também como dado estruturado no runtime, export e UI, pronta para fila operacional e integração futura
 - o webchat agora possui painel local de configurações inspirado no ClawDBot, com preferências persistidas para tema, streaming, exportação, visibilidade analítica e status do runtime
+- o chat agora também possui perfis `Fast`, `Balanced` e `Deep` na UI e na CLI, reduzindo latência via menos contexto e menos saída quando apropriado
+- o perfil `Fast` agora também pode usar modelo menor do Ollama, deixando o `qwen3.5:9b` para perfis mais analíticos
+- o `Control Center` agora também permite listar modelos instalados, salvar o modelo por perfil (`Fast/Balanced/Deep`) e aquecer manualmente o modelo ativo
+- o webchat agora também expõe um `Control Center` inspirado no OpenClaw com visão operacional de runtime, base local, sessões, diagnóstico e troca manual do agente ativo
+- o seletor de skill do chat passou a tratar perguntas abertas de SOC como primeira classe, com skill generalista para CVE, hash, IOC, hunting, comportamento e investigação em linguagem natural
 - o runtime agora possui fundação inicial de base local de conhecimento para RAG, com registry de fontes, política de limpeza/normalização, chunking textual e ingestão/indexação local via CLI
 - o runtime agora também executa retrieval lexical inicial sobre a base local de conhecimento e anexa trechos recuperados ao contexto da análise e do chat, com fontes retornadas no payload final
+- o runtime agora também possui uma camada inicial de integração com a API do Vantage, com catálogo configurável de módulos, contrato básico de autenticação e comandos `socc vantage`
+- o webchat e o `Control Center` agora também mostram quando o Vantage contribuiu contexto para a resposta e quais módulos participaram
+- o `Control Center` agora também permite persistir quais módulos do Vantage participam do enriquecimento automático
+- o enriquecimento do Vantage agora também é orientado a artefatos, com extração de CVE, hash, IP, domínio, URL, hostname e usuário para consultas mais direcionadas por módulo
+- a análise agora também pode sair com `operational_payload` estruturado, pronto para reaproveito em encerramento, alerta e exportação operacional
+- o chat e a interface legada agora também exibem esse bloco como payload operacional, com cópia direta do conteúdo estruturado
+- os drafts e o `operational_payload` agora também carregam rota operacional mais específica por classificação, diferenciando abertura de alerta, encerramento administrativo, correção de detecção, encerramento benigno e tratativa de telemetria
 - o runtime passou a ter onboarding e diagnóstico local inspirados no fluxo de instalação do OpenClaw, via `socc onboard` e `socc doctor`
 - o runtime agora também possui instalador one-shot local em estilo OpenClaw, com `install.sh` e `install-cli.sh`
+- o runtime agora também possui fachada npm-first em estilo OpenClaw, com binário `socc` via `package.json` e wrapper Node sobre a CLI Python
+- o bootstrap npm agora separa explicitamente o estado do usuário em `~/.socc` do código/assets do pacote instalado, aproximando o layout do modelo do OpenClaw
 - o runtime agora também controla o servidor local em background com `socc service`, aceitando o alias `socc gateway`, incluindo `restart`, e expõe/abre a URL da UI por `socc dashboard`
 - a arquitetura atual do chat, templates e rotas web foi documentada, e o fluxo principal já está confirmado como desacoplado do gateway MCP externo
 - o gateway de inferência agora separa explicitamente `backend` de `provider`, com catálogo inicial de backends compatíveis (`ollama`, `lmstudio`, `vllm`, `openai-compatible`, `anthropic`) e diagnóstico ampliado no runtime
@@ -77,6 +92,7 @@ Como desdobramento de plataforma, preparar o produto para operar tambem como run
 - [x] Criar instalador one-shot no estilo `install.sh`/`install-cli.sh`
 - [x] Adicionar controle local de serviço/daemon sem depender de systemd
 - [x] Adicionar atalho CLI para dashboard/UI local
+- [x] Adicionar empacotamento npm com binário `socc` e scripts operacionais
 
 ## Entregavel P0.5
 
@@ -157,19 +173,22 @@ Como desdobramento de plataforma, preparar o produto para operar tambem como run
 
 - respostas com contexto das bases de inteligencia internas
 
-## Fase P4 - Automacao com n8n
+## Fase P4 - Integracao com Vantage API
 
-- [ ] Definir eventos de entrada mais valiosos para automacao
-- [ ] Criar endpoint para ingestao automatizada de alertas ou payloads
-- [ ] Padronizar payload de requisicao e resposta para workflows
-- [ ] Criar fluxo n8n para receber evento e chamar o SOCC
-- [ ] Criar fluxo n8n para abrir ticket ou registrar caso
-- [ ] Criar fluxo n8n para notificacao operacional
-- [ ] Criar fluxo n8n para armazenar feedback em base central
+- [x] Mapear os modulos do Vantage mais relevantes para consumo pelo SOCC
+- [x] Definir contrato autenticado de integracao entre SOCC e a API do Vantage
+- [x] Criar camada de cliente para consumir dados dos modulos do Vantage de forma reutilizavel
+- [x] Permitir que o chat consulte contexto operacional do Vantage sob demanda
+- [x] Permitir enriquecimento automático do chat e da análise com contexto do Vantage quando houver sinais relevantes
+- [x] Adicionar consultas orientadas a IOC/artefato para melhorar o uso dos módulos do Vantage
+- [ ] Planejar consumo futuro das fontes RSS configuradas no Vantage via API, sem depender de parser RSS direto no SOCC
+- [ ] Definir estrategia de cache, rate limit e resiliencia para consultas ao Vantage
+- [x] Padronizar payloads de pergunta e resposta para o copiloto usar dados do Vantage em fluxos consultivos e analiticos
+- [ ] Deixar automacoes com n8n explicitamente em backlog, para quando fizer sentido operacional
 
 ## Entregavel P4
 
-- integracao automatizada para operacao e orquestracao
+- integracao consultiva e analitica com a API do Vantage, pronta para ampliar o contexto operacional do copiloto
 
 ## Fase P5 - Machine learning operacional
 
@@ -216,10 +235,10 @@ Como desdobramento de plataforma, preparar o produto para operar tambem como run
 ## Backlog de produto
 
 - [ ] Modo "explicar para N1"
-- [ ] Modo "resposta curta" e "resposta detalhada"
+- [x] Modo "resposta curta" e "resposta detalhada"
 - [ ] Upload de arquivos para analise
-- [ ] Templates de resposta por tipo de incidente
-- [ ] Exportacao para markdown, JSON e ticket
+- [x] Templates de resposta por tipo de incidente
+- [x] Exportacao para markdown, JSON e ticket
 - [ ] Comparacao entre respostas de diferentes modelos locais
 - [ ] Biblioteca de prompts por caso de uso
 - [ ] Gateway com suporte a multiplos backends locais de inferencia
@@ -229,7 +248,7 @@ Como desdobramento de plataforma, preparar o produto para operar tambem como run
 
 - [x] Usuario consegue conversar com a LLM local pela UI
 - [x] Sistema devolve JSON estruturado valido
-- [ ] Sistema extrai IOCs basicos com consistencia aceitavel
+- [x] Sistema extrai IOCs basicos com consistencia aceitavel
 - [x] Analista consegue registrar feedback
 - [ ] Fluxo possui logs e tratamento de erro suficiente para suporte
 - [x] Fluxo possui logs e tratamento de erro suficiente para suporte
@@ -243,6 +262,6 @@ Como desdobramento de plataforma, preparar o produto para operar tambem como run
 4. P1.5 - runtime de inferencia e GPU
 5. P2 - analise estruturada
 6. P3 - RAG
-7. P4 - n8n
+7. P4 - Vantage API
 8. P5 - ML
 9. P6 - knowledge graph

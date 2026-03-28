@@ -10,3 +10,4 @@ anthropic
 scikit-learn
 rapidfuzz
 fastmcp
+InquirerPy>=0.3.4

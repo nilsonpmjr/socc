@@ -21,8 +21,8 @@ def check(nome: str, condicao: bool, detalhe: str = "") -> None:
     resultados.append((status, nome, detalhe))
 
 
-def render(payload_text: str) -> str:
-    result = analyze_payload(payload_text=payload_text, include_draft=True)
+def render(payload_text: str, classificacao: str = "TP") -> str:
+    result = analyze_payload(payload_text=payload_text, include_draft=True, classificacao=classificacao)
     return result.get("draft", "")
 
 
@@ -72,8 +72,21 @@ try:
     )
     check("draft_vertical_network_label", "Recorte Analítico: Fluxo de Rede" in network_draft)
     check("draft_vertical_network_detail", "Bytes de Saída: 4096" in network_draft or "Bytes de Saida: 4096" in network_draft)
+    check("draft_vertical_network_operational_route", "Destino Operacional: Abertura de alerta" in network_draft)
 except Exception as exc:
     check("draft_vertical_network_flow", False, str(exc))
+
+
+try:
+    fp_draft = render(
+        '{"src_ip":"10.0.0.5","dst_ip":"198.51.100.90","action":"allow","http.host":"intranet.local","url.full":"https://intranet.local/health"}'
+        ,
+        classificacao="FP",
+    )
+    check("draft_fp_operational_route", "Destino Operacional: Correção de detecção" in fp_draft)
+    check("draft_fp_operational_summary", "Resumo Operacional:" in fp_draft)
+except Exception as exc:
+    check("draft_fp_flow", False, str(exc))
 
 
 print(f"\n{'='*60}")

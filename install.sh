@@ -130,6 +130,10 @@ else
   fi
 fi
 
+# Garantir InquirerPy para CLI interativa (setas, toggle, autocomplete)
+"$VENV_PIP" install "${PIP_COMMON_ARGS[@]}" "InquirerPy>=0.3.4" 2>/dev/null || \
+  echo "Aviso: InquirerPy não instalado. CLI interativa usará modo texto simples." >&2
+
 mkdir -p "$SOCC_HOME/bin"
 cat > "$SOCC_HOME/bin/socc" <<EOF
 #!/usr/bin/env bash

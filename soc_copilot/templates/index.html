@@ -4,336 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SOC Copilot</title>
-  <style>
-    :root {
-      --bg: #f4f1e8;
-      --paper: #fffdf8;
-      --ink: #1d2328;
-      --muted: #66645f;
-      --line: #d7cebe;
-      --accent: #114b5f;
-      --accent-soft: #d9ece7;
-      --danger: #b84032;
-      --danger-soft: #f8e2dd;
-      --success: #2f6b4e;
-      --success-soft: #e4f2e8;
-      --warning: #8d651c;
-      --warning-soft: #fbefcf;
-      --shadow: 0 14px 28px rgba(36, 29, 18, 0.08);
-      --radius: 16px;
-      --radius-sm: 10px;
-    }
+    <link rel="stylesheet" href="/static/index.css">
 
-    [data-theme="dark"] {
-      --bg: #0f1117;
-      --paper: #181c24;
-      --ink: #e8e6e0;
-      --muted: #8a8880;
-      --line: #2e3340;
-      --accent: #4ab3cc;
-      --accent-soft: #1a3040;
-      --danger: #e06c5a;
-      --danger-soft: #2e1a18;
-      --success: #4caf7d;
-      --success-soft: #152318;
-      --warning: #d4a53a;
-      --warning-soft: #2a2010;
-      --shadow: 0 14px 28px rgba(0,0,0,0.35);
-    }
-    [data-theme="dark"] body {
-      background: linear-gradient(180deg, #0f1117 0%, #0a0d12 100%);
-    }
-    [data-theme="dark"] .card,
-    [data-theme="dark"] .subcard {
-      background: rgba(24, 28, 36, 0.95);
-    }
-    [data-theme="dark"] .summary-box {
-      background: rgba(74, 179, 204, 0.07);
-      border-color: rgba(74, 179, 204, 0.15);
-    }
-    [data-theme="dark"] input[type="text"],
-    [data-theme="dark"] select,
-    [data-theme="dark"] textarea,
-    [data-theme="dark"] .ti-block,
-    [data-theme="dark"] .draft-output {
-      background: #1e2330;
-      color: var(--ink);
-      border-color: var(--line);
-    }
-    [data-theme="dark"] .btn-secondary { background: #2a2e3a; color: var(--ink); }
-    [data-theme="dark"] .chip { background: #252a35; }
-    [data-theme="dark"] .pill { background: #252a35; border-color: var(--line); }
-    [data-theme="dark"] .pill.external { background: #2e1e1c; }
-    [data-theme="dark"] .pill.internal { background: #1e2028; }
-    [data-theme="dark"] .note-block { background: rgba(74,179,204,0.05); border-color: rgba(74,179,204,0.12); }
-    [data-theme="dark"] .note-block.warning { background: var(--warning-soft); border-color: rgba(212,165,58,0.18); }
-    [data-theme="dark"] .note-block.danger { background: var(--danger-soft); border-color: rgba(224,108,90,0.18); }
-    [data-theme="dark"] .note-block.success { background: var(--success-soft); border-color: rgba(76,175,125,0.18); }
-    [data-theme="dark"] .empty-state { background: rgba(255,255,255,0.03); }
-
-    * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; }
-    body {
-      min-height: 100vh;
-      background: linear-gradient(180deg, #faf6ee 0%, var(--bg) 100%);
-      color: var(--ink);
-      font-family: "Segoe UI", sans-serif;
-      padding: 24px;
-    }
-
-    .shell { max-width: 1440px; margin: 0 auto; }
-    .hero { margin-bottom: 22px; }
-    .eyebrow {
-      display: inline-block;
-      padding: 7px 10px;
-      border-radius: 999px;
-      background: var(--accent-soft);
-      color: var(--accent);
-      font-size: 0.74rem;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      margin-bottom: 12px;
-    }
-    h1 { margin: 0 0 10px; font-size: clamp(2rem, 4vw, 3rem); line-height: 0.95; letter-spacing: -0.04em; }
-    .hero p { margin: 0; color: var(--muted); max-width: 70ch; line-height: 1.6; }
-
-    .layout { display: grid; grid-template-columns: 390px minmax(0, 1fr); gap: 20px; align-items: start; }
-    .stack { display: grid; gap: 18px; }
-    .card {
-      background: rgba(255, 253, 248, 0.92);
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      padding: 18px;
-    }
-    .section-title {
-      margin: 0 0 14px;
-      color: var(--accent);
-      font-size: 0.82rem;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-    .section-hint { color: var(--muted); font-size: 0.83rem; margin: -6px 0 14px; }
-
-    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    label {
-      display: block;
-      margin: 14px 0 6px;
-      color: var(--muted);
-      font-size: 0.73rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-    label:first-child { margin-top: 0; }
-    input[type="text"], input[type="file"], select, textarea {
-      width: 100%;
-      border: 1px solid var(--line);
-      border-radius: var(--radius-sm);
-      background: var(--paper);
-      color: var(--ink);
-      padding: 12px;
-      font: inherit;
-    }
-    textarea { min-height: 210px; resize: vertical; line-height: 1.5; }
-    input:focus, select:focus, textarea:focus {
-      outline: none;
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(17, 75, 95, 0.10);
-    }
-    .file-meta { margin-top: 8px; color: var(--muted); font-size: 0.8rem; }
-
-    .btn-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
-    .btn {
-      border: 0;
-      border-radius: 999px;
-      padding: 11px 16px;
-      font: inherit;
-      font-weight: 700;
-      cursor: pointer;
-    }
-    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-    .btn-primary { background: var(--accent); color: #fff; }
-    .btn-secondary { background: #e9e1d4; color: var(--ink); }
-    .btn-copy { background: #16657f; color: #fff; }
-    .btn-save { background: #8d651c; color: #fff; }
-
-    .spinner { display: none; margin-top: 12px; color: var(--accent); font-size: 0.83rem; font-weight: 700; }
-    .spinner.visible { display: block; }
-    .alert {
-      display: none;
-      margin-top: 12px;
-      border-radius: var(--radius-sm);
-      padding: 12px;
-      font-size: 0.83rem;
-      line-height: 1.5;
-    }
-    .alert.visible { display: block; }
-    .alert-error { background: var(--danger-soft); color: var(--danger); border: 1px solid rgba(184, 64, 50, 0.24); }
-    .alert-success { background: var(--success-soft); color: var(--success); border: 1px solid rgba(47, 107, 78, 0.20); }
-
-    .summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
-    .summary-box {
-      border: 1px solid rgba(17, 75, 95, 0.12);
-      border-radius: var(--radius-sm);
-      background: rgba(17, 75, 95, 0.05);
-      padding: 12px;
-    }
-    .summary-box strong {
-      display: block;
-      color: var(--muted);
-      font-size: 0.72rem;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      margin-bottom: 6px;
-    }
-    .summary-box span { font-weight: 700; }
-
-    .badge-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
-    .badge, .chip {
-      display: inline-flex;
-      align-items: center;
-      padding: 8px 12px;
-      border-radius: 999px;
-      font-size: 0.8rem;
-      font-weight: 800;
-    }
-    .badge-tp { background: #f4d7d2; color: #9f2f23; }
-    .badge-btp { background: #f9ebc8; color: #8d651c; }
-    .badge-fp { background: #e5e3dd; color: #56524b; }
-    .badge-tn { background: #dcedf5; color: #1b607c; }
-    .badge-ltf { background: #ede1f8; color: #6b38b0; }
-    .badge-icatu { background: #f4d7d2; color: #9f2f23; }
-    .chip { background: #ebe3d7; color: var(--ink); }
-
-    .result-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 420px); gap: 18px; }
-    .subcard {
-      border: 1px solid rgba(215, 206, 190, 0.9);
-      border-radius: var(--radius-sm);
-      background: rgba(255, 255, 255, 0.48);
-      padding: 14px;
-    }
-    .subcard-title {
-      margin: 0 0 12px;
-      color: var(--accent);
-      font-size: 0.76rem;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-    .fields-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
-    .field-key {
-      display: block;
-      color: var(--muted);
-      font-size: 0.72rem;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      margin-bottom: 4px;
-    }
-    .field-val { font-size: 0.92rem; line-height: 1.45; word-break: break-word; }
-
-    .stack-list { display: grid; gap: 10px; }
-    .pill-list { display: flex; flex-wrap: wrap; gap: 8px; }
-    .pill {
-      display: inline-flex;
-      align-items: center;
-      border-radius: 999px;
-      padding: 8px 10px;
-      font-size: 0.8rem;
-      background: #ede7db;
-      border: 1px solid rgba(215, 206, 190, 0.95);
-      word-break: break-word;
-    }
-    .pill.external { background: #f8e0db; }
-    .pill.internal { background: #ebe7df; }
-
-    .analysis-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .kv strong {
-      display: block;
-      color: var(--muted);
-      font-size: 0.72rem;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      margin-bottom: 4px;
-    }
-    .kv span { font-size: 0.9rem; line-height: 1.45; }
-
-    .note-block {
-      border-radius: var(--radius-sm);
-      padding: 12px;
-      background: rgba(17, 75, 95, 0.05);
-      border: 1px solid rgba(17, 75, 95, 0.10);
-    }
-    .note-block.warning { background: var(--warning-soft); border-color: rgba(141, 101, 28, 0.16); }
-    .note-block.danger { background: var(--danger-soft); border-color: rgba(184, 64, 50, 0.16); }
-    .note-block.success { background: var(--success-soft); border-color: rgba(47, 107, 78, 0.16); }
-    .note-block strong { display: block; margin-bottom: 6px; }
-    .note-block ul { margin: 0 0 0 18px; padding: 0; }
-    .note-block li, .note-block p { margin: 0; line-height: 1.5; }
-
-    .ti-block, .draft-output {
-      width: 100%;
-      border: 1px solid var(--line);
-      border-radius: var(--radius-sm);
-      background: var(--paper);
-      color: var(--ink);
-      padding: 14px;
-      font: 0.86rem/1.55 "Consolas", "Courier New", monospace;
-      white-space: pre-wrap;
-      resize: vertical;
-    }
-    .ti-block { min-height: 180px; }
-    .draft-output { min-height: 420px; }
-
-    .history-toggle {
-      background: none;
-      border: 0;
-      color: var(--accent);
-      font: inherit;
-      font-weight: 800;
-      cursor: pointer;
-      padding: 0;
-    }
-    .history-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
-    .history-table th, .history-table td {
-      text-align: left;
-      padding: 9px 8px;
-      border-bottom: 1px solid rgba(215, 206, 190, 0.85);
-      vertical-align: top;
-    }
-    .history-table th {
-      color: var(--muted);
-      font-size: 0.72rem;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-    .hidden { display: none !important; }
-    .empty-state {
-      border: 1px dashed var(--line);
-      border-radius: var(--radius-sm);
-      padding: 18px;
-      background: rgba(255, 255, 255, 0.42);
-      color: var(--muted);
-      line-height: 1.6;
-    }
-    .muted { color: var(--muted); }
-
-    @media (max-width: 1200px) {
-      .layout, .result-grid { grid-template-columns: 1fr; }
-    }
-
-    @media (max-width: 760px) {
-      body { padding: 16px; }
-      .row, .fields-grid, .analysis-grid, .summary { grid-template-columns: 1fr; }
-      .btn-row, .badge-row { flex-direction: column; align-items: stretch; }
-      .btn { width: 100%; }
-    }
-  </style>
 </head>
 <body>
-  <button id="btn-dark" onclick="toggleDark()" style="position:fixed;top:18px;right:24px;z-index:100;border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:999px;padding:8px 14px;font-size:0.85rem;cursor:pointer;font-weight:700;" aria-label="Alternar tema">🌙 Dark</button>
+  <button id="btn-dark" class="btn-dark-toggle" aria-label="Alternar tema">🌙 Dark</button>
 
   <div class="shell">
     <section class="hero">
@@ -370,8 +45,8 @@
           <div class="file-meta" id="arquivo-meta">Nenhum arquivo selecionado.</div>
 
           <div class="btn-row">
-            <button class="btn btn-primary" id="btn-analisar" onclick="analisar()">Analisar</button>
-            <button class="btn btn-secondary" id="btn-limpar" onclick="limpar()">Limpar</button>
+            <button class="btn btn-primary" id="btn-analisar">Analisar</button>
+            <button class="btn btn-secondary" id="btn-limpar">Limpar</button>
           </div>
 
           <div class="spinner" id="spinner">Processando análise, correlacionando IOCs e montando o draft...</div>
@@ -379,13 +54,13 @@
         </section>
 
         <section class="card">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
-            <h2 class="section-title" style="margin:0;">Histórico</h2>
-            <button class="history-toggle" onclick="toggleHistory()" id="hist-toggle">Expandir</button>
+          <div class="section-header">
+            <h2 class="section-title section-title-inline">Histórico</h2>
+            <button class="history-toggle" id="hist-toggle">Expandir</button>
           </div>
-          <div class="hidden" id="hist-body" style="margin-top:14px;">
-            <div class="btn-row" style="margin-top:0;margin-bottom:12px;">
-              <button class="btn btn-secondary" onclick="carregarHistorico()">Atualizar</button>
+          <div class="hidden block-spaced" id="hist-body">
+            <div class="btn-row btn-row-tight">
+              <button class="btn btn-secondary" id="btn-hist-refresh">Atualizar</button>
             </div>
             <table class="history-table">
               <thead>
@@ -403,17 +78,17 @@
 
       <div class="stack">
         <section class="card">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
-            <h2 class="section-title" style="margin:0;">Resultado</h2>
-            <span class="section-hint" id="resultado-status" style="margin:0;">Aguardando análise</span>
+          <div class="section-header">
+            <h2 class="section-title section-title-inline">Resultado</h2>
+            <span class="section-hint section-hint-inline" id="resultado-status">Aguardando análise</span>
           </div>
 
-          <div class="empty-state" id="resultado-vazio" style="margin-top:14px;">
+          <div class="empty-state block-spaced" id="resultado-vazio">
             Assim que você analisar um payload, o sistema exibirá os campos extraídos, os artefatos identificados,
             a análise estruturada e o texto final pronto para revisão.
           </div>
 
-          <div class="hidden" id="resultado-conteudo" style="margin-top:14px;">
+          <div class="hidden block-spaced" id="resultado-conteudo">
             <div class="summary">
               <div class="summary-box"><strong>Formato Detectado</strong><span id="summary-formato">-</span></div>
               <div class="summary-box"><strong>Template Utilizado</strong><span id="summary-template">-</span></div>
@@ -453,7 +128,7 @@
                     <div class="kv"><strong>Onde</strong><span id="analysis-onde">-</span></div>
                   </div>
 
-                  <div class="stack-list" style="margin-top:12px;">
+                  <div class="stack-list stack-list-spaced">
                     <div class="note-block">
                       <strong>Classificação Sugerida</strong>
                       <div id="analysis-classificacao">-</div>
@@ -514,30 +189,46 @@
                       <strong>Limitações Consolidadas</strong>
                       <div id="trace-limitations" class="muted">Nenhuma limitação consolidada.</div>
                     </div>
+                    <div class="note-block">
+                      <strong>Payload Operacional</strong>
+                      <div id="operational-title" class="muted">Título ainda não disponível.</div>
+                      <div id="operational-disposition" class="muted">Disposição ainda não disponível.</div>
+                      <div id="operational-priority" class="muted">Prioridade ainda não disponível.</div>
+                    </div>
+                    <div class="note-block success">
+                      <strong>Ações Recomendadas</strong>
+                      <div id="operational-actions" class="muted">Nenhuma ação operacional consolidada.</div>
+                    </div>
+                    <div class="note-block">
+                      <strong>Fontes e Vantage</strong>
+                      <div id="operational-sources" class="muted">Nenhuma fonte operacional consolidada.</div>
+                    </div>
                   </div>
                 </section>
               </div>
             </div>
 
-            <section class="subcard" style="margin-top:18px;">
+            <section class="subcard subcard-spaced">
               <h3 class="subcard-title">Exportação Operacional</h3>
-              <p style="color:var(--muted);font-size:0.83rem;margin:0 0 14px;">
+              <p class="section-copy">
                 Exporte a análise estruturada para reaproveitar em automações, documentação técnica ou futura integração com o Vantage.
               </p>
               <div class="btn-row">
-                <button class="btn btn-copy" onclick="copiarAnaliseJson()">Copiar JSON</button>
-                <button class="btn btn-secondary" onclick="exportarAnalise('json')">Exportar JSON</button>
-                <button class="btn btn-secondary" onclick="exportarAnalise('markdown')">Exportar Markdown</button>
+                <button class="btn btn-copy" id="btn-copy-analysis-json">Copiar JSON</button>
+                <button class="btn btn-copy" id="btn-copy-operational-json">Copiar Payload Operacional</button>
+                <button class="btn btn-secondary" id="btn-export-analysis-json">Exportar JSON</button>
+                <button class="btn btn-secondary" id="btn-export-analysis-markdown">Exportar Markdown</button>
+                <button class="btn btn-secondary" id="btn-export-analysis-ticket">Exportar Ticket</button>
               </div>
             </section>
 
-            <section class="subcard" style="margin-top:18px;">
+            <section class="subcard subcard-spaced">
               <h3 class="subcard-title">Feedback do Analista</h3>
-              <p style="color:var(--muted);font-size:0.83rem;margin:0 0 14px;">
+              <p class="section-copy">
                 Registre se a sugestão da IA foi útil, incorreta ou precisa de ajuste antes de seguir para o fluxo do Vantage.
               </p>
-              <label for="feedback-verdict" style="display:block;margin:0 0 6px;color:var(--muted);font-size:0.73rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">Correção de Verdict</label>
-              <select id="feedback-verdict" style="width:100%;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);padding:12px;font:inherit;">
+              <label for="feedback-verdict" class="label-inline">Correção de Verdict</label>
+              <select id="feedback-verdict" class="form-control">
                 <option value="">Sem correção</option>
                 <option value="benigno">Benigno</option>
                 <option value="suspeito">Suspeito</option>
@@ -545,25 +236,25 @@
                 <option value="inconclusivo">Inconclusivo</option>
               </select>
 
-              <label for="feedback-comments" style="display:block;margin:14px 0 6px;color:var(--muted);font-size:0.73rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">Observações</label>
-              <textarea id="feedback-comments" style="min-height:110px;" placeholder="Ex.: a classificação está correta, mas faltou considerar a origem interna do IOC."></textarea>
+              <label for="feedback-comments" class="label-inline label-top">Observações</label>
+              <textarea id="feedback-comments" class="textarea-compact" placeholder="Ex.: a classificação está correta, mas faltou considerar a origem interna do IOC."></textarea>
 
-              <div class="btn-row" style="margin-top:14px;">
-                <button class="btn btn-secondary" onclick="enviarFeedback('approve')">Aprovar</button>
-                <button class="btn btn-primary" onclick="enviarFeedback('correct')">Corrigir</button>
-                <button class="btn btn-save" onclick="enviarFeedback('reject')">Rejeitar</button>
+              <div class="btn-row btn-row-top">
+                <button class="btn btn-secondary" id="btn-feedback-approve">Aprovar</button>
+                <button class="btn btn-primary" id="btn-feedback-correct">Corrigir</button>
+                <button class="btn btn-save" id="btn-feedback-reject">Rejeitar</button>
               </div>
-              <div class="alert alert-success" id="feedback-status" style="margin-top:12px;"></div>
+              <div class="alert alert-success alert-spaced" id="feedback-status"></div>
             </section>
 
-            <section class="subcard" style="margin-top:18px;" id="draft-config-section">
+            <section class="subcard subcard-spaced" id="draft-config-section">
               <h3 class="subcard-title">Classificação e Dados Complementares</h3>
-              <p style="color:var(--muted);font-size:0.83rem;margin:0 0 14px;">
+              <p class="section-copy">
                 Revise os campos ausentes e confirme a classificação antes de gerar o draft.
               </p>
 
-              <label for="classificacao-final" style="display:block;margin:0 0 6px;color:var(--muted);font-size:0.73rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">Classificação Final</label>
-              <select id="classificacao-final" style="width:100%;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);padding:12px;font:inherit;margin-bottom:14px;">
+              <label for="classificacao-final" class="label-inline">Classificação Final</label>
+              <select id="classificacao-final" class="form-control form-control-spaced">
                 <option value="TP">True Positive (TP)</option>
                 <option value="BTP">Benign True Positive (BTP)</option>
                 <option value="FP">False Positive (FP)</option>
@@ -573,18 +264,18 @@
 
               <div id="campos-manuais-container"></div>
 
-              <div class="btn-row" style="margin-top:14px;">
-                <button class="btn btn-primary" id="btn-gerar-draft" onclick="gerarDraft()">Gerar Draft</button>
+              <div class="btn-row btn-row-top">
+                <button class="btn btn-primary" id="btn-gerar-draft">Gerar Draft</button>
               </div>
-              <div class="spinner" id="spinner-draft" style="display:none;margin-top:10px;color:var(--accent);font-size:0.83rem;font-weight:700;">Gerando draft...</div>
+              <div class="spinner spinner-spaced" id="spinner-draft">Gerando draft...</div>
             </section>
 
-            <section class="subcard hidden" id="draft-final-section" style="margin-top:18px;">
+            <section class="subcard subcard-spaced hidden" id="draft-final-section">
               <h3 class="subcard-title">Saída Final</h3>
               <textarea id="draft-output" class="draft-output" spellcheck="false"></textarea>
               <div class="btn-row">
-                <button class="btn btn-copy" id="btn-copiar" onclick="copiar()">Copiar</button>
-                <button class="btn btn-save" id="btn-salvar" onclick="salvar()">Salvar</button>
+                <button class="btn btn-copy" id="btn-copiar">Copiar</button>
+                <button class="btn btn-save" id="btn-salvar">Salvar</button>
               </div>
               <div class="alert alert-success" id="alert-save"></div>
             </section>
@@ -610,6 +301,28 @@
       document.addEventListener("DOMContentLoaded", () => {
         const btn = document.getElementById("btn-dark");
         if (btn) btn.textContent = t === "dark" ? "☀ Light" : "🌙 Dark";
+        btn?.addEventListener("click", toggleDark);
+        document.getElementById("btn-analisar")?.addEventListener("click", analisar);
+        document.getElementById("btn-limpar")?.addEventListener("click", limpar);
+        document.getElementById("hist-toggle")?.addEventListener("click", toggleHistory);
+        document.getElementById("btn-hist-refresh")?.addEventListener("click", carregarHistorico);
+        document.getElementById("btn-copy-analysis-json")?.addEventListener("click", copiarAnaliseJson);
+        document.getElementById("btn-copy-operational-json")?.addEventListener("click", copiarOperationalJson);
+        document.getElementById("btn-export-analysis-json")?.addEventListener("click", () => exportarAnalise("json"));
+        document.getElementById("btn-export-analysis-markdown")?.addEventListener("click", () => exportarAnalise("markdown"));
+        document.getElementById("btn-export-analysis-ticket")?.addEventListener("click", () => exportarAnalise("ticket"));
+        document.getElementById("btn-feedback-approve")?.addEventListener("click", () => enviarFeedback("approve"));
+        document.getElementById("btn-feedback-correct")?.addEventListener("click", () => enviarFeedback("correct"));
+        document.getElementById("btn-feedback-reject")?.addEventListener("click", () => enviarFeedback("reject"));
+        document.getElementById("btn-gerar-draft")?.addEventListener("click", gerarDraft);
+        document.getElementById("btn-copiar")?.addEventListener("click", copiar);
+        document.getElementById("btn-salvar")?.addEventListener("click", salvar);
+        document.getElementById("campos-manuais-container")?.addEventListener("input", event => {
+          const target = event.target;
+          if (target instanceof HTMLInputElement && target.hasAttribute("data-campo")) {
+            atualizarCampo(target);
+          }
+        });
       });
     })();
 
@@ -626,6 +339,7 @@
     let _analysisStructuredState = {};
     let _analysisPriorityState = {};
     let _analysisTraceState = {};
+    let _operationalPayloadState = {};
 
     const badgeClass = { TP: "badge-tp", BTP: "badge-btp", FP: "badge-fp", TN: "badge-tn", LTF: "badge-ltf" };
 
@@ -731,6 +445,7 @@
       _analysisStructuredState = data.analysis_structured || {};
       _analysisPriorityState = data.analysis_priority || {};
       _analysisTraceState = data.analysis_trace || {};
+      _operationalPayloadState = data.operational_payload || data['soar' + '_payload'] || {};
 
       document.getElementById("resultado-vazio").classList.add("hidden");
       document.getElementById("resultado-conteudo").classList.remove("hidden");
@@ -743,7 +458,7 @@
       renderCampos(data.campos_extraidos || {});
       renderIocs(data.iocs || {});
       renderTI(data.ti_results || {});
-      renderAnalysis(_analysisState, _analysisStructuredState, _analysisPriorityState, _analysisTraceState);
+      renderAnalysis(_analysisState, _analysisStructuredState, _analysisPriorityState, _analysisTraceState, _operationalPayloadState);
       document.getElementById("feedback-comments").value = "";
       document.getElementById("feedback-verdict").value = "";
       esconderStatusFeedback();
@@ -798,16 +513,15 @@
       const container = document.getElementById("campos-manuais-container");
       const naFields = Object.entries(MANUAL_CAMPO_LABELS).filter(([k]) => !campos[k] || campos[k] === "N/A");
       if (!naFields.length) {
-        container.innerHTML = '<p style="color:var(--muted);font-size:0.83rem;margin:0;">Todos os campos foram extraídos automaticamente.</p>';
+        container.innerHTML = '<p class="manual-fields-empty">Todos os campos foram extraídos automaticamente.</p>';
         return;
       }
-      container.innerHTML = '<p style="color:var(--muted);font-size:0.83rem;margin:0 0 10px;">Campos ausentes — preencha para enriquecer o draft:</p>' +
+      container.innerHTML = '<p class="manual-fields-heading">Campos ausentes — preencha para enriquecer o draft:</p>' +
         naFields.map(([k, label]) => `
-          <div style="margin-bottom:10px;">
-            <label for="manual-${k}" style="display:block;margin:0 0 4px;color:var(--muted);font-size:0.73rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">${escHtml(label)}</label>
+          <div class="manual-field-row">
+            <label for="manual-${k}" class="manual-field-label">${escHtml(label)}</label>
             <input type="text" id="manual-${k}" data-campo="${escHtml(k)}" placeholder="Inserir manualmente..."
-              style="width:100%;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);padding:10px 12px;font:inherit;"
-              oninput="atualizarCampo(this)">
+              class="manual-field-input">
           </div>`).join("");
     }
 
@@ -853,11 +567,12 @@
         _analysisStructuredState = data.analysis_structured || _analysisStructuredState;
         _analysisPriorityState = data.analysis_priority || _analysisPriorityState;
         _analysisTraceState = data.analysis_trace || _analysisTraceState;
+        _operationalPayloadState = data.operational_payload || data['soar' + '_payload'] || _operationalPayloadState;
         document.getElementById("draft-output").value = data.draft || "";
         document.getElementById("draft-final-section").classList.remove("hidden");
         document.getElementById("summary-template").textContent = data.template_usado || "-";
         renderBadge(data);
-        renderAnalysis(_analysisState, _analysisStructuredState, _analysisPriorityState, _analysisTraceState);
+        renderAnalysis(_analysisState, _analysisStructuredState, _analysisPriorityState, _analysisTraceState, _operationalPayloadState);
         document.getElementById("draft-output").scrollIntoView({ behavior: "smooth", block: "start" });
       } catch (error) {
         mostrarErro("Falha ao gerar draft: " + error.message);
@@ -908,7 +623,7 @@
       section.classList.remove("hidden");
     }
 
-    function renderAnalysis(analysis, structured, priority, trace) {
+    function renderAnalysis(analysis, structured, priority, trace, operationalPayload) {
       const factual = analysis.resumo_factual || {};
       document.getElementById("analysis-oque").textContent = factual.o_que || "N/A";
       document.getElementById("analysis-quando").textContent = factual.quando || "N/A";
@@ -940,6 +655,7 @@
       renderPriority(priority || {});
       renderOfficialAnalysis(structured || {});
       renderTrace(trace || {});
+      renderOperationalPayload(operationalPayload || {});
     }
 
     function renderPriority(priority) {
@@ -986,13 +702,34 @@
       renderSimpleList("trace-limitations", trace.limitations, "Nenhuma limitação consolidada.");
     }
 
+    function renderOperationalPayload(payload) {
+      document.getElementById("operational-title").textContent = payload.title
+        ? `${payload.title} (${payload.classification || "-"})`
+        : "Título ainda não disponível.";
+      document.getElementById("operational-disposition").textContent = payload.disposition
+        ? `Disposição: ${payload.disposition} · Verdict: ${payload.verdict || "-"}`
+        : "Disposição ainda não disponível.";
+      const priority = payload.priority || {};
+      document.getElementById("operational-priority").textContent = priority.level
+        ? `Prioridade: ${priority.level}${Number.isFinite(priority.score) ? ` · Score: ${priority.score}` : ""}${Number.isFinite(priority.rank) ? ` · Rank: ${priority.rank}` : ""}`
+        : "Prioridade ainda não disponível.";
+      renderSimpleList("operational-actions", payload.recommended_actions, "Nenhuma ação operacional consolidada.");
+      const sources = Array.isArray(payload.sources) ? payload.sources : [];
+      const vantageModules = Array.isArray((payload.vantage || {}).modules) ? (payload.vantage || {}).modules : [];
+      const combinedSources = [
+        ...sources,
+        ...vantageModules.map(item => `vantage:${item}`),
+      ];
+      renderSimpleList("operational-sources", combinedSources, "Nenhuma fonte operacional consolidada.");
+    }
+
     function renderStructuredList(id, items, renderer, emptyText) {
       const target = document.getElementById(id);
       if (!Array.isArray(items) || !items.length) {
         target.innerHTML = `<p class="muted">${escHtml(emptyText)}</p>`;
         return;
       }
-      target.innerHTML = items.map(item => `<div style="margin-top:8px;">${renderer(item)}</div>`).join("");
+      target.innerHTML = items.map(item => `<div class="structured-list-item">${renderer(item)}</div>`).join("");
     }
 
     function renderSimpleList(id, items, emptyText) {
@@ -1059,6 +796,7 @@
         analysis_structured: _analysisStructuredState || {},
         analysis_priority: _analysisPriorityState || {},
         analysis_trace: _analysisTraceState || {},
+        operational_payload: _operationalPayloadState || {},
         draft: document.getElementById("draft-output").value || ""
       };
     }
@@ -1074,6 +812,20 @@
         mostrarSucesso("Análise JSON copiada para a área de transferência.");
       } catch {
         mostrarErro("Não foi possível copiar a análise JSON.");
+      }
+    }
+
+    async function copiarOperationalJson() {
+      if (!_operationalPayloadState || !Object.keys(_operationalPayloadState).length) {
+        mostrarErro("Nenhum payload operacional disponível para cópia.");
+        return;
+      }
+      const content = JSON.stringify(_operationalPayloadState, null, 2);
+      try {
+        await navigator.clipboard.writeText(content);
+        mostrarSucesso("Payload operacional copiado para a área de transferência.");
+      } catch {
+        mostrarErro("Não foi possível copiar o payload operacional.");
       }
     }
 
@@ -1096,7 +848,11 @@
           mostrarErro(data.error || "Erro ao exportar a análise.");
           return;
         }
-        baixarConteudo(data.content || "", data.filename || `analysis.${format === "json" ? "json" : "md"}`, data.mime_type || "text/plain");
+        baixarConteudo(
+          data.content || "",
+          data.filename || `analysis.${format === "json" ? "json" : format === "ticket" ? "txt" : "md"}`,
+          data.mime_type || "text/plain"
+        );
         mostrarSucesso("Análise exportada com sucesso.");
       } catch (error) {
         mostrarErro("Falha ao exportar análise: " + error.message);

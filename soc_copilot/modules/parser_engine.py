@@ -128,6 +128,8 @@ _HASH_PATTERNS = [
     re.compile(r"\b[a-fA-F0-9]{40}\b"),
     re.compile(r"\b[a-fA-F0-9]{32}\b"),
 ]
+_DEFANG_DOT_PATTERN = re.compile(r"\[\.\]|\(\.\)|\{\.\}")
+_TRAILING_URL_PUNCT = ".,;:!?)\"]}>"
 
 try:
     _SP = pytz.timezone("America/Sao_Paulo") if pytz else ZoneInfo("America/Sao_Paulo")
@@ -269,6 +271,47 @@ def defang(value: str) -> str:
     return value
 
 
+def _normalize_ioc_text(text: str) -> str:
+    normalized = str(text or "")
+    normalized = re.sub(r"\bhxxps://", "https://", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"\bhxxp://", "http://", normalized, flags=re.IGNORECASE)
+    normalized = _DEFANG_DOT_PATTERN.sub(".", normalized)
+    return normalized
+
+
+def _normalize_domain(domain: str) -> str:
+    return str(domain or "").strip().strip(".").lower()
+
+
+def _normalize_hash(value: str) -> str:
+    return str(value or "").strip().lower()
+
+
+def _normalize_url(url: str) -> str:
+    cleaned = str(url or "").strip().strip(_TRAILING_URL_PUNCT)
+    if not cleaned:
+        return ""
+    try:
+        parsed = urlparse(cleaned)
+    except Exception:
+        return cleaned
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return cleaned
+    scheme = (parsed.scheme or "http").lower()
+    netloc = host
+    try:
+        if parsed.port:
+            default_port = (scheme == "http" and parsed.port == 80) or (scheme == "https" and parsed.port == 443)
+            if not default_port:
+                netloc = f"{host}:{parsed.port}"
+    except ValueError:
+        return cleaned
+    path = parsed.path or ""
+    query = f"?{parsed.query}" if parsed.query else ""
+    return f"{scheme}://{netloc}{path}{query}"
+
+
 def _extract_domains_from_urls(urls: list[str]) -> list[str]:
     domains: set[str] = set()
     for url in urls:
@@ -276,7 +319,7 @@ def _extract_domains_from_urls(urls: list[str]) -> list[str]:
             parsed = urlparse(url)
             host = parsed.hostname
             if host:
-                domains.add(host)
+                domains.add(_normalize_domain(host))
         except Exception:
             continue
     return sorted(domains)
@@ -286,18 +329,22 @@ def extract_iocs(text: str) -> dict:
     """
     Retorna IOCs normalizados a partir do texto bruto.
     """
+    normalized_text = _normalize_ioc_text(text or "")
     ips_ext: set[str] = set()
     ips_int: set[str] = set()
 
-    for ip in _extract_ip_candidates(text or ""):
+    for ip in _extract_ip_candidates(normalized_text):
         if _is_private_ip(ip):
             ips_int.add(ip)
         else:
             ips_ext.add(ip)
 
     urls = sorted(
-        u for u in set(_URL_PATTERN.findall(text or ""))
-        if not _VENDOR_REF_URL_RE.match(u)
+        normalized_url
+        for normalized_url in (
+            _normalize_url(u) for u in set(_URL_PATTERN.findall(normalized_text))
+        )
+        if normalized_url and not _VENDOR_REF_URL_RE.match(normalized_url)
     )
     url_domains = set(_extract_domains_from_urls(urls))
 
@@ -305,19 +352,23 @@ def extract_iocs(text: str) -> dict:
     # não são domínios — excluir da extração para evitar falsos positivos
     email_local_parts: set[str] = {
         m.group(1).lower()
-        for m in re.finditer(r"\b([\w.\-+]+)@[\w.\-]+\.[a-zA-Z]{2,}\b", text or "")
+        for m in re.finditer(r"\b([\w.\-+]+)@[\w.\-]+\.[a-zA-Z]{2,}\b", normalized_text)
     }
 
     raw_domains = {
-        d for d in _DOMAIN_PATTERN.findall(text or "")
-        if d not in url_domains
-        and not d.replace(".", "").isdigit()
-        and d.lower() not in email_local_parts
-        and _is_valid_domain_ioc(d)
+        normalized_domain
+        for normalized_domain in (
+            _normalize_domain(d) for d in _DOMAIN_PATTERN.findall(normalized_text)
+        )
+        if normalized_domain
+        and normalized_domain not in url_domains
+        and not normalized_domain.replace(".", "").isdigit()
+        and normalized_domain not in email_local_parts
+        and _is_valid_domain_ioc(normalized_domain)
     }
     hashes: set[str] = set()
     for pattern in _HASH_PATTERNS:
-        hashes.update(pattern.findall(text or ""))
+        hashes.update(_normalize_hash(item) for item in pattern.findall(normalized_text))
 
     return {
         "ips_externos": sorted(ips_ext),

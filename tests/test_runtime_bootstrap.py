@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT))
 from soc_copilot.modules.soc_copilot_loader import load_soc_copilot
 from socc.cli.installer import (
     bootstrap_runtime,
+    package_root,
     runtime_agent_home,
     runtime_bin_dir,
     runtime_checkout_link,
@@ -71,6 +72,7 @@ try:
     check("bootstrap_manifest_rag_env", manifest.get("rag", {}).get("chunk_chars_env") == "SOCC_RAG_CHUNK_CHARS")
     check("bootstrap_result_agent_home", result.get("agent_home") == str(agent_home))
     check("bootstrap_result_project_linked", result.get("project_linked") in {"yes", "no"})
+    check("bootstrap_result_layout_default", result.get("layout") == "checkout")
 
     os.environ["SOCC_AGENT_HOME"] = str(agent_home)
     config = load_soc_copilot()
@@ -79,6 +81,17 @@ try:
 
     os.environ["SOCC_HOME"] = str(runtime_root)
     check("bootstrap_runtime_home_env", runtime_home() == runtime_root, str(runtime_home()))
+
+    package_root_dir = Path(tmpdir.name) / ".socc-package"
+    package_result = bootstrap_runtime(package_root_dir, force=True, layout="package")
+    package_manifest_path = package_root_dir / "socc.json"
+    package_manifest = json.loads(package_manifest_path.read_text(encoding="utf-8"))
+    check("bootstrap_package_layout_result", package_result.get("layout") == "package")
+    check("bootstrap_package_manifest_layout", (package_manifest.get("meta") or {}).get("installation_layout") == "package")
+    check("bootstrap_package_manifest_root", (package_manifest.get("paths") or {}).get("package_root") == str(package_root()))
+    check("bootstrap_package_no_checkout_link", not runtime_checkout_link(package_root_dir).exists())
+    check("bootstrap_package_no_project_link", not runtime_project_link(package_root_dir).exists())
+    check("bootstrap_package_project_linked_flag", package_result.get("project_linked") == "no")
 except Exception as exc:
     check("runtime_bootstrap_flow", False, str(exc))
 finally:

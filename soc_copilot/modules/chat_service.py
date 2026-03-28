@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from time import perf_counter
 from typing import Iterator, List
 
@@ -11,6 +12,7 @@ from soc_copilot import config as cfg
 from soc_copilot.modules import persistence
 from soc_copilot.modules.soc_copilot_loader import build_prompt_context, choose_skill
 from socc.core import knowledge_base as knowledge_base_runtime
+from socc.gateway import vantage_api as vantage_gateway
 from socc.gateway.llm_gateway import (
     inference_guard,
     record_prompt_audit,
@@ -20,8 +22,75 @@ from socc.gateway.llm_gateway import (
 )
 
 _logger = logging.getLogger(__name__)
-_MAX_HISTORY_MESSAGES = 8
 _STREAM_CHUNK_SIZE = 120
+_DEFAULT_RESPONSE_MODE = "balanced"
+_RESPONSE_MODE_PROFILES = {
+    "fast": {
+        "label": "Fast",
+        "history_limit": 2,
+        "kb_limit": 1,
+        "kb_chars": 520,
+        "chunk_size": 160,
+        "temperature": 0.1,
+        "num_ctx": 3072,
+        "instruction": (
+            "Modo FAST: responda com máxima objetividade, priorize conclusão, "
+            "evidências essenciais e próximos passos imediatos em formato curto. "
+            "Encerre a resposta completamente, sem começar listas longas, preferindo até 8 linhas curtas."
+        ),
+    },
+    "balanced": {
+        "label": "Balanced",
+        "history_limit": 5,
+        "kb_limit": 3,
+        "kb_chars": 1100,
+        "chunk_size": 120,
+        "temperature": 0.15,
+        "num_ctx": 6144,
+        "instruction": (
+            "Modo BALANCED: mantenha objetividade, mas preserve contexto "
+            "suficiente para análise SOC explicável e útil."
+        ),
+    },
+    "deep": {
+        "label": "Deep",
+        "history_limit": 8,
+        "kb_limit": 4,
+        "kb_chars": 2200,
+        "chunk_size": 100,
+        "temperature": 0.2,
+        "num_ctx": 8192,
+        "instruction": (
+            "Modo DEEP: aprofunde a análise, explicite hipóteses, limitações, "
+            "impacto e próximos passos com mais detalhe."
+        ),
+    },
+}
+
+
+def normalize_response_mode(value: str = "") -> str:
+    mode = str(value or "").strip().lower()
+    if mode in _RESPONSE_MODE_PROFILES:
+        return mode
+    return _DEFAULT_RESPONSE_MODE
+
+
+def response_mode_profile(value: str = "") -> dict[str, object]:
+    return dict(_RESPONSE_MODE_PROFILES[normalize_response_mode(value)])
+
+
+def resolve_ollama_model_for_mode(response_mode: str = _DEFAULT_RESPONSE_MODE) -> str:
+    mode = normalize_response_mode(response_mode)
+    primary = getattr(cfg, "OLLAMA_MODEL", "qwen3.5:9b")
+    fast_model = os.getenv("SOCC_OLLAMA_FAST_MODEL", "llama3.2:3b").strip() or primary
+    balanced_model = os.getenv("SOCC_OLLAMA_BALANCED_MODEL", primary).strip() or primary
+    deep_model = os.getenv("SOCC_OLLAMA_DEEP_MODEL", primary).strip() or primary
+    mapping = {
+        "fast": fast_model,
+        "balanced": balanced_model,
+        "deep": deep_model,
+    }
+    return mapping.get(mode, primary) or primary
 
 
 def _detect_artifact_type(message: str) -> str | None:
@@ -39,8 +108,8 @@ def select_skill(message: str, artifact_type: str | None = None) -> str:
     return choose_skill(message, artifact_type=artifact_type or _detect_artifact_type(message))
 
 
-def _format_history(session_id: str) -> str:
-    history = persistence.list_chat_messages(session_id, limit=_MAX_HISTORY_MESSAGES)
+def _format_history(session_id: str, *, limit: int) -> str:
+    history = persistence.list_chat_messages(session_id, limit=max(1, limit))
     if not history:
         return ""
     lines: List[str] = []
@@ -49,10 +118,11 @@ def _format_history(session_id: str) -> str:
         content = item.get("content", "").strip()
         if content:
             lines.append(f"{role}: {content}")
-    return "\n".join(lines[-_MAX_HISTORY_MESSAGES:])
+    return "\n".join(lines[-max(1, limit):])
 
 
-def _build_system_prompt(context: dict[str, str]) -> str:
+def _build_system_prompt(context: dict[str, str], *, response_mode: str = _DEFAULT_RESPONSE_MODE) -> str:
+    profile = response_mode_profile(response_mode)
     sections = [
         context.get("identity", ""),
         "Siga a persona e regras abaixo.",
@@ -71,33 +141,70 @@ def _build_system_prompt(context: dict[str, str]) -> str:
         "Skill selecionada:",
         context.get("selected_skill", ""),
         context.get("skill_content", ""),
+        str(profile.get("instruction") or ""),
         (
             "Regras de saida: responda em PT-BR, seja tecnico e objetivo, "
             "nao invente fatos, diferencie observacao de inferencia, e use markdown simples quando ajudar."
+        ),
+        (
+            "Nem toda conversa exige verdict, classificacao binaria ou estrutura de triagem. "
+            "Quando a pergunta for exploratoria, consultiva ou investigativa, responda como parceiro tecnico do SOC: "
+            "explique o significado, apresente hipoteses razoaveis, diga o que validar e sugira proximos passos."
+        ),
+        (
+            "So entre em modo de triagem estruturada quando houver payload, alerta, log ou artefato suficiente "
+            "para sustentar evidencias observaveis."
         ),
     ]
     return "\n\n".join(section for section in sections if section)
 
 
-def _build_user_prompt(message: str, cliente: str, context: dict[str, str]) -> str:
+def _build_user_prompt(
+    message: str,
+    cliente: str,
+    context: dict[str, str],
+    *,
+    response_mode: str = _DEFAULT_RESPONSE_MODE,
+) -> str:
+    mode = normalize_response_mode(response_mode)
+    selected_skill = str(context.get("selected_skill") or "").strip()
     parts = []
     if cliente:
         parts.append(f"Cliente: {cliente}")
+    parts.append(f"Modo de resposta: {mode}")
+    if selected_skill:
+        parts.append(f"Skill ativa: {selected_skill}")
     if context.get("session_context"):
         parts.append("Contexto recente da sessao:")
         parts.append(context["session_context"])
     if context.get("knowledge_context"):
         parts.append("Contexto recuperado da base local:")
         parts.append(context["knowledge_context"])
+    if context.get("vantage_context"):
+        parts.append("Contexto operacional recuperado do Vantage:")
+        parts.append(context["vantage_context"])
     parts.append("Pedido atual do usuario:")
     parts.append(message.strip())
-    parts.append(
-        "Se a entrada nao trouxer evidencia suficiente, explicite as limitacoes e proponha proximos passos seguros."
-    )
+    if selected_skill == "soc-generalist":
+        parts.append(
+            "Trate o pedido como conversa operacional do dia a dia do SOC. "
+            "Nao force verdict. Se houver pouca evidência, explique limites e oriente a investigação."
+        )
+    else:
+        parts.append(
+            "Se a entrada nao trouxer evidencia suficiente, explicite as limitacoes e proponha proximos passos seguros."
+        )
     return "\n\n".join(part for part in parts if part)
 
 
 def _fallback_response(message: str, skill_name: str) -> str:
+    if skill_name == "soc-generalist":
+        return (
+            "Recebi sua pergunta em modo consultivo de SOC. "
+            "A camada da conversa natural ja esta preparada, mas a resposta livre completa ainda depende de `LLM_ENABLED=true`.\n\n"
+            "Enquanto isso, eu preservo o contexto da conversa e continuo apto a analisar payloads, IOCs e artefatos quando voce trouxer mais dados.\n\n"
+            f"Pergunta registrada: {message.strip()[:400]}"
+        )
     return (
         f"Recebi sua mensagem e selecionei a skill `{skill_name}` para este contexto. "
         "A conversa geral com a LLM local ainda depende de `LLM_ENABLED=true`, mas a camada do SOC Copilot "
@@ -111,20 +218,34 @@ def _prepare_chat_context(
     message: str,
     session_id: str = "",
     cliente: str = "",
+    response_mode: str = _DEFAULT_RESPONSE_MODE,
 ) -> tuple[str, str, dict[str, str], list[dict[str, str]], dict[str, object]]:
     effective_session = session_id or "default"
+    profile = response_mode_profile(response_mode)
+    history_limit = int(profile.get("history_limit") or 5)
+    kb_limit = int(profile.get("kb_limit") or 3)
+    kb_chars = int(profile.get("kb_chars") or 1100)
     skill_name = select_skill(message)
     persistence.ensure_chat_session(
         session_id=effective_session,
         cliente=cliente,
         titulo=message.strip()[:80],
     )
-    session_context = _format_history(effective_session)
-    retrieval = knowledge_base_runtime.search_knowledge_base(query_text=message)
-    knowledge_context = knowledge_base_runtime.format_retrieval_context(retrieval)
+    session_context = _format_history(effective_session, limit=history_limit)
+    retrieval = knowledge_base_runtime.search_knowledge_base(query_text=message, limit=kb_limit)
+    knowledge_context = knowledge_base_runtime.format_retrieval_context(retrieval, max_chars=kb_chars)
+    vantage = vantage_gateway.retrieve_context(message)
+    combined_knowledge_context = "\n\n".join(
+        section
+        for section in (
+            knowledge_context,
+            str(vantage.get("context") or "").strip(),
+        )
+        if section
+    ).strip()
     source_labels = ", ".join(
         str(item.get("source_name") or item.get("source_id") or "")
-        for item in (retrieval.get("sources") or [])
+        for item in (list(retrieval.get("sources") or []) + list(vantage.get("sources") or []))
         if str(item.get("source_name") or item.get("source_id") or "")
     )
     context = build_prompt_context(
@@ -132,15 +253,24 @@ def _prepare_chat_context(
         artifact_type=_detect_artifact_type(message),
         session_context=session_context,
         selected_skill=skill_name,
-        knowledge_context=knowledge_context,
+        knowledge_context=combined_knowledge_context,
         knowledge_sources=source_labels,
+    )
+    context["vantage_context"] = str(vantage.get("context") or "").strip()
+    context["vantage_sources"] = ", ".join(
+        str(item.get("source_name") or item.get("source_id") or "")
+        for item in (vantage.get("sources") or [])
+        if str(item.get("source_name") or item.get("source_id") or "")
     )
     history_messages = [
         {"role": item.get("role", "user"), "content": item.get("content", "")}
         for item in persistence.list_chat_messages(
-            effective_session, limit=_MAX_HISTORY_MESSAGES
+            effective_session, limit=history_limit
         )
     ]
+    retrieval["vantage"] = vantage
+    retrieval["sources"] = list(retrieval.get("sources") or []) + list(vantage.get("sources") or [])
+    retrieval["matches"] = list(retrieval.get("matches") or []) + list(vantage.get("matches") or [])
     return effective_session, skill_name, context, history_messages, retrieval
 
 
@@ -150,20 +280,31 @@ def _persist_chat_exchange(
     message: str,
     skill_name: str,
     content: str,
+    assistant_payload: dict[str, object] | None = None,
 ) -> None:
     persistence.save_chat_message(
         session_id=session_id,
         role="user",
         content=message,
         skill=skill_name,
-        metadata={"type": "message"},
+        metadata={
+            "type": "message",
+            "content": message,
+            "skill": skill_name,
+            "session_id": session_id,
+        },
     )
+    payload = dict(assistant_payload or {})
+    payload.setdefault("type", "message")
+    payload.setdefault("content", content)
+    payload.setdefault("skill", skill_name)
+    payload.setdefault("session_id", session_id)
     persistence.save_chat_message(
         session_id=session_id,
         role="assistant",
         content=content,
         skill=skill_name,
-        metadata={"type": "message"},
+        metadata=payload,
     )
 
 
@@ -175,20 +316,32 @@ def _chunk_text(text: str, chunk_size: int = _STREAM_CHUNK_SIZE) -> Iterator[str
         yield content[index : index + max(1, chunk_size)]
 
 
-def _stream_ollama(messages: list[dict[str, str]]) -> Iterator[str]:
+def _stream_ollama_events(
+    messages: list[dict[str, str]],
+    *,
+    response_mode: str = _DEFAULT_RESPONSE_MODE,
+    num_predict_override: int | None = None,
+) -> Iterator[dict[str, object]]:
     runtime = resolve_runtime()
     base_url = getattr(cfg, "OLLAMA_URL", "http://localhost:11434").rstrip("/")
-    model = getattr(cfg, "OLLAMA_MODEL", "qwen2.5:3b")
+    model = resolve_ollama_model_for_mode(response_mode)
     timeout = float(getattr(cfg, "LLM_TIMEOUT", 60))
-
+    profile = response_mode_profile(response_mode)
     body = {
         "model": model,
         "messages": messages,
         "stream": True,
-        "options": {"temperature": 0.2},
+        "keep_alive": os.getenv("SOCC_OLLAMA_KEEP_ALIVE", "15m"),
+        "options": {
+            "temperature": float(profile.get("temperature") or 0.15),
+            "num_ctx": int(profile.get("num_ctx") or 6144),
+        },
     }
+    if num_predict_override is not None:
+        body["options"]["num_predict"] = int(num_predict_override)
     started = perf_counter()
     resp = None
+    final_payload: dict[str, object] = {}
     try:
         resp = requests.post(
             f"{base_url}/api/chat",
@@ -201,9 +354,20 @@ def _stream_ollama(messages: list[dict[str, str]]) -> Iterator[str]:
             if not raw_line:
                 continue
             payload = json.loads(raw_line)
+            if isinstance(payload, dict):
+                final_payload = payload
             delta = (payload.get("message") or {}).get("content") or ""
             if delta:
-                yield delta
+                yield {"kind": "delta", "delta": delta}
+        done_reason = str(final_payload.get("done_reason") or ("stop" if final_payload.get("done") else "unknown"))
+        yield {
+            "kind": "meta",
+            "done_reason": done_reason,
+            "truncated": done_reason in {"length", "max_tokens"} or bool(final_payload.get("truncated")),
+            "eval_count": int(final_payload.get("eval_count") or 0),
+            "prompt_eval_count": int(final_payload.get("prompt_eval_count") or 0),
+            "num_predict": int(num_predict_override) if num_predict_override is not None else None,
+        }
         record_inference_event(
             source="chat_service",
             provider="ollama",
@@ -234,7 +398,26 @@ def _stream_ollama(messages: list[dict[str, str]]) -> Iterator[str]:
             pass
 
 
-def _call_ollama(messages: list[dict[str, str]]) -> str:
+def _stream_ollama(
+    messages: list[dict[str, str]],
+    *,
+    response_mode: str = _DEFAULT_RESPONSE_MODE,
+    num_predict_override: int | None = None,
+) -> Iterator[str]:
+    for item in _stream_ollama_events(
+        messages,
+        response_mode=response_mode,
+        num_predict_override=num_predict_override,
+    ):
+        if item.get("kind") == "delta":
+            yield str(item.get("delta") or "")
+
+
+def _call_ollama(
+    messages: list[dict[str, str]],
+    *,
+    response_mode: str = _DEFAULT_RESPONSE_MODE,
+) -> str:
     prompt_blob = "\n\n".join(
         f"{item.get('role', 'user')}: {item.get('content', '')}"
         for item in messages
@@ -242,21 +425,26 @@ def _call_ollama(messages: list[dict[str, str]]) -> str:
     record_prompt_audit(
         source="chat_service",
         provider="ollama",
-        model=getattr(cfg, "OLLAMA_MODEL", "qwen2.5:3b"),
+        model=resolve_ollama_model_for_mode(response_mode),
         prompt_text=prompt_blob,
     )
-    return "".join(_stream_ollama(messages)).strip()
+    return "".join(_stream_ollama(messages, response_mode=response_mode)).strip()
 
 
 def stream_chat_reply_events(
     message: str,
     session_id: str = "",
     cliente: str = "",
+    response_mode: str = _DEFAULT_RESPONSE_MODE,
 ) -> Iterator[dict[str, object]]:
+    mode = normalize_response_mode(response_mode)
+    profile = response_mode_profile(mode)
+    effective_model = resolve_ollama_model_for_mode(mode)
     effective_session, skill_name, context, history_messages, retrieval = _prepare_chat_context(
         message,
         session_id=session_id,
         cliente=cliente,
+        response_mode=mode,
     )
     runtime = runtime_brief()
     yield {
@@ -264,23 +452,31 @@ def stream_chat_reply_events(
         "session_id": effective_session,
         "skill": skill_name,
         "runtime": runtime,
+        "response_mode": mode,
+        "model": effective_model,
     }
 
     content = ""
+    completion_meta: dict[str, object] = {
+        "done_reason": "",
+        "truncated": False,
+        "continuation_used": False,
+        "continuation_done_reason": "",
+    }
     if not getattr(cfg, "LLM_ENABLED", False):
         content = _fallback_response(message, skill_name)
-        for delta in _chunk_text(content):
+        for delta in _chunk_text(content, chunk_size=int(profile.get("chunk_size") or _STREAM_CHUNK_SIZE)):
             yield {"event": "delta", "delta": delta, "skill": skill_name}
     else:
-        messages = [{"role": "system", "content": _build_system_prompt(context)}]
+        messages = [{"role": "system", "content": _build_system_prompt(context, response_mode=mode)}]
         messages.extend(history_messages)
         messages.append(
-            {"role": "user", "content": _build_user_prompt(message, cliente, context)}
+            {"role": "user", "content": _build_user_prompt(message, cliente, context, response_mode=mode)}
         )
         try:
             if getattr(cfg, "LLM_PROVIDER", "ollama").lower() != "ollama":
                 content = _fallback_response(message, skill_name)
-                for delta in _chunk_text(content):
+                for delta in _chunk_text(content, chunk_size=int(profile.get("chunk_size") or _STREAM_CHUNK_SIZE)):
                     yield {"event": "delta", "delta": delta, "skill": skill_name}
             else:
                 runtime_cfg = resolve_runtime()
@@ -302,21 +498,55 @@ def stream_chat_reply_events(
                             + "\n\nObservabilidade: inferencia local temporariamente contida pelo runtime "
                             f"({reason})."
                         )
-                        for delta in _chunk_text(content):
+                        for delta in _chunk_text(content, chunk_size=int(profile.get("chunk_size") or _STREAM_CHUNK_SIZE)):
                             yield {"event": "delta", "delta": delta, "skill": skill_name}
                     else:
                         parts: list[str] = []
-                        for delta in _stream_ollama(messages):
-                            parts.append(delta)
-                            yield {"event": "delta", "delta": delta, "skill": skill_name}
+                        for item in _stream_ollama_events(messages, response_mode=mode):
+                            if item.get("kind") == "delta":
+                                delta = str(item.get("delta") or "")
+                                parts.append(delta)
+                                yield {"event": "delta", "delta": delta, "skill": skill_name}
+                            else:
+                                completion_meta.update(dict(item))
                         content = "".join(parts).strip()
+                        if bool(completion_meta.get("truncated")):
+                            completion_meta["continuation_used"] = True
+                            continuation_messages = list(messages)
+                            continuation_messages.append({"role": "assistant", "content": content})
+                            continuation_messages.append(
+                                {
+                                    "role": "user",
+                                    "content": (
+                                        "Continue exatamente de onde voce parou, sem repetir o texto anterior. "
+                                        "Conclua a resposta em no maximo 3 linhas curtas."
+                                    ),
+                                }
+                            )
+                            continuation_parts: list[str] = []
+                            continuation_meta: dict[str, object] = {}
+                            for item in _stream_ollama_events(
+                                continuation_messages,
+                                response_mode=mode,
+                            ):
+                                if item.get("kind") == "delta":
+                                    delta = str(item.get("delta") or "")
+                                    continuation_parts.append(delta)
+                                    yield {"event": "delta", "delta": delta, "skill": skill_name}
+                                else:
+                                    continuation_meta.update(dict(item))
+                            completion_meta["continuation_done_reason"] = str(
+                                continuation_meta.get("done_reason") or ""
+                            )
+                            completion_meta["truncated"] = bool(continuation_meta.get("truncated"))
+                            content = f"{content}{''.join(continuation_parts)}".strip()
         except Exception as exc:
             _logger.exception("Falha ao consultar a LLM local no chat do SOC Copilot.")
             content = (
                 f"Falha ao consultar a LLM local: {exc}. "
                 f"Skill selecionada: `{skill_name}`."
             )
-            for delta in _chunk_text(content):
+            for delta in _chunk_text(content, chunk_size=int(profile.get("chunk_size") or _STREAM_CHUNK_SIZE)):
                 yield {"event": "delta", "delta": delta, "skill": skill_name}
 
     _persist_chat_exchange(
@@ -324,6 +554,26 @@ def stream_chat_reply_events(
         message=message,
         skill_name=skill_name,
         content=content,
+        assistant_payload={
+            "type": "message",
+            "content": content,
+            "skill": skill_name,
+            "session_id": effective_session,
+            "runtime": runtime,
+            "metadata": {
+                "response_mode": mode,
+                "model": effective_model,
+                "done_reason": str(completion_meta.get("done_reason") or ""),
+                "truncated": bool(completion_meta.get("truncated")),
+                "continuation_used": bool(completion_meta.get("continuation_used")),
+                "continuation_done_reason": str(completion_meta.get("continuation_done_reason") or ""),
+                "knowledge_sources": list(retrieval.get("sources") or []),
+                "knowledge_query_terms": list(retrieval.get("query_terms") or []),
+                "vantage_context": str((retrieval.get("vantage") or {}).get("context") or ""),
+                "vantage_sources": list((retrieval.get("vantage") or {}).get("sources") or []),
+                "vantage_modules": list((retrieval.get("vantage") or {}).get("modules") or []),
+            },
+        },
     )
 
     yield {
@@ -335,8 +585,17 @@ def stream_chat_reply_events(
             "session_id": effective_session,
             "runtime": runtime,
             "metadata": {
+                "response_mode": mode,
+                "model": effective_model,
+                "done_reason": str(completion_meta.get("done_reason") or ""),
+                "truncated": bool(completion_meta.get("truncated")),
+                "continuation_used": bool(completion_meta.get("continuation_used")),
+                "continuation_done_reason": str(completion_meta.get("continuation_done_reason") or ""),
                 "knowledge_sources": list(retrieval.get("sources") or []),
                 "knowledge_query_terms": list(retrieval.get("query_terms") or []),
+                "vantage_context": str((retrieval.get("vantage") or {}).get("context") or ""),
+                "vantage_sources": list((retrieval.get("vantage") or {}).get("sources") or []),
+                "vantage_modules": list((retrieval.get("vantage") or {}).get("modules") or []),
             },
         },
     }
@@ -346,12 +605,14 @@ def generate_chat_reply(
     message: str,
     session_id: str = "",
     cliente: str = "",
+    response_mode: str = _DEFAULT_RESPONSE_MODE,
 ) -> dict[str, str]:
     final_response: dict[str, str] | None = None
     for event in stream_chat_reply_events(
         message,
         session_id=session_id,
         cliente=cliente,
+        response_mode=response_mode,
     ):
         if event.get("event") == "final":
             data = event.get("data")

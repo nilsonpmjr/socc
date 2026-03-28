@@ -21,6 +21,7 @@ from fastapi.templating import Jinja2Templates
 from socc.core.engine import (
     analyze_submission,
     chat_submission,
+    control_center_summary_payload,
     export_analysis_submission,
     generate_draft_submission,
     list_chat_session_messages_payload,
@@ -33,9 +34,13 @@ from socc.core.engine import (
     prepare_feedback_submission_inputs,
     runtime_benchmark_payload,
     runtime_status_payload,
+    select_active_agent_payload,
+    select_runtime_model_payload,
+    select_vantage_modules_payload,
     save_feedback_submission,
     save_note_submission,
     stream_chat_submission_events,
+    warmup_runtime_model_payload,
 )
 from socc.core import storage as storage_runtime
 from socc.gateway.llm_gateway import record_analysis_event
@@ -221,6 +226,84 @@ async def api_runtime_benchmark(
             probe=probe,
         )
     )
+
+
+@app.get("/api/control-center")
+async def api_control_center(limit_sessions: int = 12):
+    flags = resolve_feature_flags()
+    if not flags.runtime_api:
+        return JSONResponse(feature_disabled_payload("runtime_api"), status_code=503)
+    return JSONResponse(control_center_summary_payload(limit_sessions=limit_sessions))
+
+
+@app.post("/api/control-center/agent/select")
+async def api_control_center_select_agent(request: Request):
+    flags = resolve_feature_flags()
+    if not flags.runtime_api:
+        return JSONResponse(feature_disabled_payload("runtime_api"), status_code=503)
+    try:
+        body = await request.json()
+        agent_id = str((body or {}).get("agent_id") or "")
+        payload = await asyncio.to_thread(select_active_agent_payload, agent_id)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    except LookupError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=404)
+    return JSONResponse(payload)
+
+
+@app.post("/api/control-center/runtime/model/select")
+async def api_control_center_select_runtime_model(request: Request):
+    flags = resolve_feature_flags()
+    if not flags.runtime_api:
+        return JSONResponse(feature_disabled_payload("runtime_api"), status_code=503)
+    try:
+        body = await request.json()
+        mode = str((body or {}).get("response_mode") or "")
+        model = str((body or {}).get("model") or "")
+        payload = await asyncio.to_thread(
+            select_runtime_model_payload,
+            response_mode=mode,
+            model=model,
+        )
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    return JSONResponse(payload)
+
+
+@app.post("/api/control-center/runtime/warmup")
+async def api_control_center_runtime_warmup(request: Request):
+    flags = resolve_feature_flags()
+    if not flags.runtime_api:
+        return JSONResponse(feature_disabled_payload("runtime_api"), status_code=503)
+    try:
+        body = await request.json()
+        mode = str((body or {}).get("response_mode") or "balanced")
+        payload = await asyncio.to_thread(
+            warmup_runtime_model_payload,
+            response_mode=mode,
+        )
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    status_code = 200 if ((payload.get("result") or {}).get("warmed") is True) else 502
+    return JSONResponse(payload, status_code=status_code)
+
+
+@app.post("/api/control-center/vantage/modules")
+async def api_control_center_select_vantage_modules(request: Request):
+    flags = resolve_feature_flags()
+    if not flags.runtime_api:
+        return JSONResponse(feature_disabled_payload("runtime_api"), status_code=503)
+    try:
+        body = await request.json()
+        payload = await asyncio.to_thread(
+            select_vantage_modules_payload,
+            module_ids=list((body or {}).get("module_ids") or []),
+            enabled=(body or {}).get("enabled"),
+        )
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    return JSONResponse(payload)
 
 
 @app.post("/api/feedback")

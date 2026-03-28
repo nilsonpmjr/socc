@@ -707,6 +707,116 @@ def probe_inference_backend(timeout: float = 2.0) -> dict[str, Any]:
         return result
 
 
+def list_backend_models(timeout: float = 2.0) -> dict[str, Any]:
+    runtime = resolve_runtime()
+    payload: dict[str, Any] = {
+        "backend": runtime.backend,
+        "provider": runtime.provider,
+        "endpoint": runtime.endpoint,
+        "reachable": False,
+        "models": [],
+        "error": "",
+    }
+
+    if runtime.backend == "anthropic":
+        payload["error"] = "model_listing_not_supported"
+        return payload
+
+    import requests
+
+    endpoint = str(runtime.endpoint).rstrip("/")
+    if not endpoint:
+        payload["error"] = "backend_endpoint_missing"
+        return payload
+
+    models_url = f"{endpoint}/models"
+    parser = "openai-compatible"
+    if runtime.backend == "ollama":
+        models_url = f"{endpoint}/api/tags"
+        parser = "ollama"
+
+    try:
+        response = requests.get(models_url, timeout=timeout)
+        response.raise_for_status()
+        data = response.json()
+        raw_models = data.get("models", []) if isinstance(data, dict) else []
+        models: list[dict[str, Any]] = []
+        if parser == "ollama":
+            for item in raw_models:
+                if not isinstance(item, dict):
+                    continue
+                models.append(
+                    {
+                        "name": str(item.get("name") or ""),
+                        "size": item.get("size"),
+                        "modified_at": str(item.get("modified_at") or ""),
+                        "digest": str(item.get("digest") or ""),
+                    }
+                )
+        else:
+            for item in raw_models:
+                if not isinstance(item, dict):
+                    continue
+                models.append(
+                    {
+                        "name": str(item.get("id") or item.get("name") or ""),
+                    }
+                )
+        payload["reachable"] = True
+        payload["models"] = [item for item in models if item.get("name")]
+        return payload
+    except Exception as exc:
+        payload["error"] = str(exc)
+        return payload
+
+
+def warmup_backend_model(
+    *,
+    model: str,
+    keep_alive: str = "",
+    timeout: float = 20.0,
+) -> dict[str, Any]:
+    runtime = resolve_runtime()
+    normalized_model = str(model or "").strip()
+    payload = {
+        "backend": runtime.backend,
+        "provider": runtime.provider,
+        "endpoint": runtime.endpoint,
+        "model": normalized_model,
+        "warmed": False,
+        "error": "",
+    }
+
+    if not normalized_model:
+        payload["error"] = "model_missing"
+        return payload
+    if runtime.backend != "ollama":
+        payload["error"] = "warmup_supported_only_for_ollama"
+        return payload
+
+    import requests
+
+    endpoint = str(runtime.endpoint).rstrip("/")
+    if not endpoint:
+        payload["error"] = "backend_endpoint_missing"
+        return payload
+
+    body = {
+        "model": normalized_model,
+        "prompt": "",
+        "stream": False,
+        "keep_alive": keep_alive or os.getenv("SOCC_OLLAMA_KEEP_ALIVE", "15m"),
+    }
+    try:
+        response = requests.post(f"{endpoint}/api/generate", json=body, timeout=timeout)
+        response.raise_for_status()
+        payload["warmed"] = True
+        return payload
+    except Exception as exc:
+        payload["error"] = str(exc)
+        return payload
+
+
 def benchmark_concurrency(concurrency: int = 4, hold_ms: int = 150) -> dict[str, Any]:
     runtime = resolve_runtime()
     workers = max(1, concurrency)

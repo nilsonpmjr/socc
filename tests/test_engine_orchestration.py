@@ -48,13 +48,20 @@ async def _collect_stream(payload: str, session_id: str, classificacao: str, cli
     return events
 
 
-async def _collect_submission_stream(payload: str, session_id: str, classificacao: str, cliente: str):
+async def _collect_submission_stream(
+    payload: str,
+    session_id: str,
+    classificacao: str,
+    cliente: str,
+    response_mode: str = "balanced",
+):
     events = []
     async for event in stream_chat_submission_events(
         message=payload,
         session_id=session_id,
         classificacao=classificacao,
         cliente=cliente,
+        response_mode=response_mode,
         threat_intel_enabled=False,
         source="test_stream_chat_submission",
     ):
@@ -178,31 +185,35 @@ try:
     original_chat_reply = engine_module.chat_reply
     original_stream_chat_events = engine_module.stream_chat_events
     try:
-        engine_module.chat_reply = lambda message, session_id="", cliente="": {
+        engine_module.chat_reply = lambda message, session_id="", cliente="", response_mode="balanced": {
             "type": "message",
             "session_id": session_id or "msg-session",
             "skill": "triage",
             "content": f"eco: {message}",
+            "metadata": {"response_mode": response_mode},
         }
-        engine_module.stream_chat_events = lambda message, session_id="", cliente="": iter(
+        engine_module.stream_chat_events = lambda message, session_id="", cliente="", response_mode="balanced": iter(
             [
                 {"event": "meta", "session_id": session_id or "stream-session", "skill": "triage"},
                 {"event": "delta", "delta": "eco"},
-                {"event": "final", "data": {"type": "message", "content": f"eco: {message}", "session_id": session_id or "stream-session"}},
+                {"event": "final", "data": {"type": "message", "content": f"eco: {message}", "session_id": session_id or "stream-session", "metadata": {"response_mode": response_mode}}},
             ]
         )
         message_submission = chat_submission(
             message="olá runtime",
             session_id="chat-submission-message",
             cliente="Teste",
+            response_mode="fast",
         )
         check("engine_chat_submission_message", message_submission.get("content") == "eco: olá runtime")
+        check("engine_chat_submission_mode", ((message_submission.get("metadata") or {}).get("response_mode")) == "fast")
         generic_stream = asyncio.run(
             _collect_submission_stream(
                 "olá runtime",
                 "chat-submission-stream",
                 "AUTO",
                 "Teste",
+                "fast",
             )
         )
     finally:
@@ -224,6 +235,41 @@ try:
     final_event = next((item for item in streamed if item.get("event") == "final"), {})
     check("engine_chat_stream_has_phases", len(phase_events) == 5)
     check("engine_chat_stream_final_type", (final_event.get("payload") or {}).get("type") == "analysis")
+
+    original_build_chat_payload_response = engine_module.build_chat_payload_response
+    original_asyncio_to_thread = engine_module.asyncio.to_thread
+    to_thread_calls: list[dict[str, object]] = []
+    try:
+        def _fake_payload_response(**kwargs):
+            return {
+                "type": "analysis",
+                "session_id": kwargs.get("session_id", ""),
+                "skill": kwargs.get("skill", ""),
+                "draft": "draft stub",
+            }
+
+        async def _fake_to_thread(fn, *args, **kwargs):
+            to_thread_calls.append({"function": getattr(fn, "__name__", str(fn)), "kwargs": dict(kwargs)})
+            return fn(*args, **kwargs)
+
+        engine_module.build_chat_payload_response = _fake_payload_response
+        engine_module.asyncio.to_thread = _fake_to_thread
+
+        streamed_threaded = asyncio.run(
+            _collect_stream(
+                payload,
+                "chat-engine-stream-threaded",
+                "AUTO",
+                "Teste",
+            )
+        )
+    finally:
+        engine_module.build_chat_payload_response = original_build_chat_payload_response
+        engine_module.asyncio.to_thread = original_asyncio_to_thread
+
+    threaded_final = next((item for item in streamed_threaded if item.get("event") == "final"), {})
+    check("engine_chat_stream_to_thread_used", bool(to_thread_calls))
+    check("engine_chat_stream_to_thread_final", (threaded_final.get("payload") or {}).get("draft") == "draft stub")
 
     submission_streamed = asyncio.run(
         _collect_submission_stream(

@@ -1,0 +1,64 @@
+{
+  "name": "socc",
+  "version": "0.1.0",
+  "description": "SOCC local runtime with npm-first CLI wrapper on top of the Python engine.",
+  "type": "module",
+  "bin": {
+    "socc": "socc.mjs"
+  },
+  "files": [
+    "socc/",
+    "soc_copilot/",
+    ".agents/",
+    "scripts/",
+    ".env.example",
+    "README.md",
+    "pyproject.toml",
+    "requirements.txt",
+    "run.py",
+    "install.sh",
+    "install-cli.sh",
+    "socc.mjs",
+    "!**/__pycache__/**",
+    "!**/*.pyc",
+    "!**/*.pyo",
+    "!**/*.db",
+    "!**/*.db-shm",
+    "!**/*.db-wal"
+  ],
+  "scripts": {
+    "setup": "node scripts/bootstrap-python.mjs",
+    "onboard": "node socc.mjs onboard",
+    "doctor": "node socc.mjs doctor",
+    "doctor:probe": "node socc.mjs doctor --probe",
+    "serve": "node socc.mjs serve",
+    "dev": "node socc.mjs serve --reload",
+    "dashboard": "node socc.mjs dashboard",
+    "dashboard:open": "node socc.mjs dashboard --open",
+    "service:start": "node socc.mjs service start",
+    "service:stop": "node socc.mjs service stop",
+    "service:restart": "node socc.mjs service restart",
+    "service:status": "node socc.mjs service status",
+    "gateway:start": "node socc.mjs gateway start",
+    "gateway:stop": "node socc.mjs gateway stop",
+    "gateway:restart": "node socc.mjs gateway restart",
+    "gateway:status": "node socc.mjs gateway status",
+    "runtime": "node socc.mjs runtime",
+    "runtime:probe": "node socc.mjs runtime --probe",
+    "chat": "node socc.mjs chat",
+    "analyze": "node socc.mjs analyze",
+    "intel:list": "node socc.mjs intel list"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "soc",
+    "security",
+    "copilot",
+    "triage",
+    "rag",
+    "runtime"
+  ],
+  "license": "MIT"
+}

@@ -386,7 +386,7 @@ def _build_soc_copilot_context(
 
 _SYSTEM_PROMPT_BASE = """\
 Você é um analista especializado de SOC (Security Operations Center) da iT.eam, \
-com expertise em análise de eventos de segurança em ambiente multi-tenant IBM SIEM/SOAR.
+com expertise em análise de eventos de segurança em ambiente SOC multi-tenant.
 
 Seu papel é analisar dados de alertas e o payload bruto do evento, corrigindo \
 extrações incompletas e fornecendo análise técnica objetiva para auxiliar analistas.
@@ -658,7 +658,7 @@ def _call_llm_ollama_with_mcp(
     cfg,
 ) -> dict:
     """
-    Chama qwen2.5:3b (ou modelo Ollama configurado) com tool calling MCP.
+    Chama qwen3.5:9b (ou modelo Ollama configurado) com tool calling MCP.
 
     Fluxo:
       1. Injeta contexto MCP (agent_rules + análise determinística) no prompt
@@ -670,7 +670,7 @@ def _call_llm_ollama_with_mcp(
     import requests as _requests
 
     runtime = resolve_runtime()
-    model = getattr(cfg, "OLLAMA_MODEL", "qwen2.5:3b")
+    model = getattr(cfg, "OLLAMA_MODEL", "qwen3.5:9b")
     base_url = getattr(cfg, "OLLAMA_URL", "http://localhost:11434").rstrip("/")
     timeout = float(getattr(cfg, "LLM_TIMEOUT", 90))
 
@@ -714,6 +714,7 @@ def _call_llm_ollama_with_mcp(
             evidence_rules=(llm_input.get("soc_copilot", {}) or {}).get("evidence_rules", ""),
             ioc_extraction=(llm_input.get("soc_copilot", {}) or {}).get("ioc_extraction", ""),
             security_json_patterns=(llm_input.get("soc_copilot", {}) or {}).get("security_json_patterns", ""),
+            telemetry_investigation_patterns=(llm_input.get("soc_copilot", {}) or {}).get("telemetry_investigation_patterns", ""),
             mitre_guidance=(llm_input.get("soc_copilot", {}) or {}).get("mitre_guidance", ""),
             output_contract=(llm_input.get("soc_copilot", {}) or {}).get("output_contract", ""),
             knowledge_context=(llm_input.get("soc_copilot", {}) or {}).get("knowledge_context", ""),
@@ -927,6 +928,7 @@ def _call_llm_anthropic(
         evidence_rules=(llm_input.get("soc_copilot", {}) or {}).get("evidence_rules", ""),
         ioc_extraction=(llm_input.get("soc_copilot", {}) or {}).get("ioc_extraction", ""),
         security_json_patterns=(llm_input.get("soc_copilot", {}) or {}).get("security_json_patterns", ""),
+        telemetry_investigation_patterns=(llm_input.get("soc_copilot", {}) or {}).get("telemetry_investigation_patterns", ""),
         mitre_guidance=(llm_input.get("soc_copilot", {}) or {}).get("mitre_guidance", ""),
         output_contract=(llm_input.get("soc_copilot", {}) or {}).get("output_contract", ""),
         knowledge_context=(llm_input.get("soc_copilot", {}) or {}).get("knowledge_context", ""),

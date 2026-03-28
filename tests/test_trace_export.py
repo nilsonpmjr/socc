@@ -14,6 +14,7 @@ from soc_copilot.modules.analysis_export import (
     build_export_bundle,
     render_export_json,
     render_export_markdown,
+    render_export_ticket,
 )
 
 PASS = "PASS"
@@ -49,18 +50,27 @@ try:
         analysis_structured=result.get("analysis_structured", {}),
         analysis_priority=result.get("analysis_priority", {}),
         analysis_trace=trace,
+        operational_payload=result.get("operational_payload", {}),
         draft=result.get("draft", ""),
         analysis_legacy=result.get("analysis", {}),
     )
     exported_json = render_export_json(bundle)
     exported_md = render_export_markdown(bundle)
+    exported_ticket = render_export_ticket(bundle)
 
     check("export_json_has_summary", '"analysis_structured"' in exported_json and '"summary"' in exported_json)
     check("export_json_has_priority", '"analysis_priority"' in exported_json and '"score"' in exported_json)
     check("export_markdown_has_sections", "## Observed Facts" in exported_md and "## Inferences" in exported_md)
     check("export_markdown_has_priority", "## Priority" in exported_md)
+    check("export_markdown_has_operational_payload", "## Payload Operacional" in exported_md)
     check("export_markdown_has_draft", "## Draft" in exported_md)
     check("export_markdown_has_contexts", "## Investigative Contexts" in exported_md)
+    check("export_ticket_has_title", "Título:" in exported_ticket)
+    check("export_ticket_has_route", "Destino Operacional:" in exported_ticket)
+    check("export_ticket_has_actions", "Ações recomendadas:" in exported_ticket)
+    check("export_json_has_operational_payload", '"operational_payload"' in exported_json and '"classification"' in exported_json)
+    check("export_json_has_operational_payload_label", '"disposition_label"' in exported_json)
+    check("export_json_has_operational_payload_template", '"template_kind"' in exported_json)
     check("export_json_has_file_ioc", '"type": "file"' in exported_json)
     check("export_json_has_hash_ioc", '"type": "hash"' in exported_json)
     check("export_json_has_email_ioc", '"type": "email"' in exported_json)

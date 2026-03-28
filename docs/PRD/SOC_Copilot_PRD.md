@@ -68,7 +68,7 @@ Entregar um fluxo local e confiável que:
 
 ### Fora de Escopo no MVP
 
-- integração de escrita em QRadar, Jira, SOAR ou e-mail
+- integração de escrita em QRadar, Jira, plataformas operacionais ou e-mail
 - chat aberto com comportamento conversacional livre
 - dashboard histórico completo
 - busca avançada por ofensas antigas

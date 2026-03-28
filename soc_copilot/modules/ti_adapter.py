@@ -31,6 +31,24 @@ _TIMEOUT_BATCH_POLL = 60
 _SUPPORTED_KEYS = ("ips_externos", "dominios", "hashes")
 
 
+def _normalize_target(value: str) -> str:
+    target = str(value or "").strip()
+    if not target:
+        return ""
+
+    normalized = target
+    try:
+        normalized = str(ipaddress.ip_address(target))
+        return normalized
+    except ValueError:
+        pass
+
+    if len(target) in (32, 40, 64) and all(ch in "0123456789abcdefABCDEF" for ch in target):
+        return target.lower()
+
+    return target.lower().strip(".")
+
+
 def _ioc_type(ioc: str) -> str:
     try:
         ipaddress.ip_address(ioc)
@@ -131,7 +149,7 @@ def _collect_targets(iocs: dict) -> list[str]:
 
     for key in _SUPPORTED_KEYS:
         for item in iocs.get(key, []) or []:
-            normalized = str(item).strip()
+            normalized = _normalize_target(str(item))
             if not normalized or normalized in seen:
                 continue
             seen.add(normalized)

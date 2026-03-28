@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT))
 from soc_copilot.modules.soc_copilot_loader import (
     build_prompt_context,
     choose_skill,
+    list_available_agents,
     load_soc_copilot,
 )
 
@@ -27,8 +28,11 @@ def check(nome: str, condicao: bool, detalhe: str = "") -> None:
 
 try:
     config = load_soc_copilot()
+    agents = list_available_agents()
     check("loader_has_schema_path", config.schema_path.exists(), str(config.schema_path))
     check("loader_has_core_skill", "payload-triage" in config.skills)
+    check("loader_has_generalist_skill", "soc-generalist" in config.skills)
+    check("loader_has_available_agents", len(agents) >= 1)
     check(
         "loader_has_references",
         "evidence-rules" in config.references
@@ -63,6 +67,9 @@ except Exception as exc:
 try:
     check("skill_choice_url", choose_skill("https://malicious.example/login") == "suspicious-url")
     check("skill_choice_payload_default", choose_skill("srcip=10.0.0.5 dstip=8.8.8.8 action=blocked") == "payload-triage")
+    check("skill_choice_cve_generalist", choose_skill("me explica a CVE-2025-1234 e o impacto dela") == "soc-generalist")
+    check("skill_choice_hash_generalist", choose_skill("esse hash sha256 parece ruim?") == "soc-generalist")
+    check("skill_choice_open_question_generalist", choose_skill("como investigar beaconing DNS nesse caso?") == "soc-generalist")
 except Exception as exc:
     check("loader_choose_skill_flow", False, str(exc))
 

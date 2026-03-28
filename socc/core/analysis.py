@@ -6,6 +6,7 @@ from soc_copilot.modules import (
     analysis_contract,
     analysis_export,
     analysis_priority,
+    operational_payload,
     analysis_trace,
     draft_engine,
     rule_loader,
@@ -20,6 +21,7 @@ LEGACY_MODULES = {
     "draft_engine": "soc_copilot.modules.draft_engine",
     "analysis_contract": "soc_copilot.modules.analysis_contract",
     "analysis_priority": "soc_copilot.modules.analysis_priority",
+    "operational_payload": "soc_copilot.modules.operational_payload",
     "analysis_trace": "soc_copilot.modules.analysis_trace",
     "analysis_export": "soc_copilot.modules.analysis_export",
     "telemetry_context": "soc_copilot.modules.telemetry_context",
@@ -91,6 +93,27 @@ def build_analysis_priority(
     )
 
 
+def build_operational_payload(
+    *,
+    metadata: dict[str, Any] | None = None,
+    fields: dict[str, Any],
+    analysis_structured: dict[str, Any],
+    analysis_priority: dict[str, Any],
+    analysis_trace: dict[str, Any],
+    analysis_legacy: dict[str, Any] | None = None,
+    draft: str = "",
+) -> dict[str, Any]:
+    return operational_payload.build_operational_payload(
+        metadata=metadata,
+        fields=fields,
+        analysis_structured=analysis_structured,
+        analysis_priority=analysis_priority,
+        analysis_trace=analysis_trace,
+        analysis_legacy=analysis_legacy,
+        draft=draft,
+    )
+
+
 def validate_structured_analysis(data: Any) -> list[str]:
     return analysis_contract.validate_structured_analysis(data)
 
@@ -131,8 +154,10 @@ def build_export_bundle(
     analysis_structured: dict[str, Any],
     analysis_priority: dict[str, Any],
     analysis_trace: dict[str, Any],
+    operational_payload: dict[str, Any] | None = None,
     draft: str,
     analysis_legacy: dict[str, Any] | None = None,
+    **legacy_kwargs: Any,
 ) -> dict[str, Any]:
     return analysis_export.build_export_bundle(
         metadata=metadata,
@@ -141,8 +166,10 @@ def build_export_bundle(
         analysis_structured=analysis_structured,
         analysis_priority=analysis_priority,
         analysis_trace=analysis_trace,
+        operational_payload=operational_payload,
         draft=draft,
         analysis_legacy=analysis_legacy,
+        **legacy_kwargs,
     )
 
 

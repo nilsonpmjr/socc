@@ -2,7 +2,7 @@
 
 ## 1. Resumo executivo
 
-Este documento define a evolucao do SOCC para um copiloto de analise de payloads com suporte de LLM local, enriquecimento contextual e, em fases posteriores, classificacao baseada em machine learning e correlacao por knowledge graph.
+Este documento define a evolucao do SOCC para um copiloto de analise de payloads e conversa operacional de SOC com suporte de LLM local, enriquecimento contextual e, em fases posteriores, integracao ampla com a plataforma Vantage, classificacao baseada em machine learning e correlacao por knowledge graph.
 
 O objetivo inicial nao e substituir o analista, mas acelerar triagem, sumarizacao, extracao de IOCs/TTPs e recomendacao de proximos passos com rastreabilidade e baixo custo operacional.
 
@@ -10,7 +10,7 @@ Como evolucao natural do produto, o SOCC tambem deve poder operar como um runtim
 
 ## 2. Contexto
 
-Hoje existe uma pagina de chat inspirada em interfaces modernas, um MCP associado ao ambiente atual e a intencao de usar uma LLM local `qwen2.5:3b` para apoiar a analise de payloads.
+Hoje existe uma pagina de chat inspirada em interfaces modernas, um MCP associado ao ambiente atual e a intencao de usar uma LLM local `qwen3.5:9b` via Ollama para apoiar a analise de payloads, com preferencia por GPU.
 
 Pelo contexto atual, ainda nao existe um fluxo de chat funcional de ponta a ponta com a LLM, nem um pipeline completo de analise estruturada.
 
@@ -33,8 +33,10 @@ Analistas SOC perdem tempo com:
 Transformar o SOCC em um assistente operacional para analistas, capaz de:
 
 - conversar sobre um payload ou alerta em linguagem natural
+- responder perguntas do dia a dia do SOC sobre CVE, hash, IOC, TTP, hunting, comportamento suspeito e investigacao
 - retornar analise estruturada e auditavel
 - buscar contexto nas bases de inteligencia da organizacao
+- consultar, no futuro, dados operacionais da API do Vantage em todos os modulos relevantes
 - sugerir verdict, risco, TTPs e acoes recomendadas
 - aprender com feedback humano para melhorar priorizacao e precisao
 - operar com uma persona tecnica consistente e controlada por arquivos versionados
@@ -65,7 +67,7 @@ Esta fase nao pretende:
 
 - automatizar bloqueios sem revisao humana
 - treinar uma LLM do zero
-- substituir SIEM, EDR ou ferramenta de case management
+- substituir plataformas de eventos, EDR ou ferramentas de gestão de casos
 - entregar um knowledge graph completo antes de existir extracao confiavel de entidades
 - deslocar para markdown toda a logica que deve permanecer no backend
 
@@ -88,6 +90,8 @@ Esta fase nao pretende:
 3. O sistema gera uma estrutura pronta para registro de incidente ou nota tecnica.
 4. O analista corrige a resposta da IA, e essa correcao fica registrada para retroalimentar classificadores e regras futuras.
 5. O sistema escolhe um playbook de analise adequado ao tipo de artefato, mantendo uma persona operacional consistente.
+6. O analista faz perguntas abertas sobre uma CVE, hash, comportamento, deteccao ou hipotese investigativa e recebe uma resposta consultiva, nao binaria por padrao.
+7. O copiloto consulta, em fase posterior, modulos do Vantage via API para trazer contexto operacional ao analista.
 
 ## 9. Escopo por fase
 
@@ -124,14 +128,21 @@ Esta fase nao pretende:
 - exibicao de fontes utilizadas
 - mecanismo de versionamento das bases consultadas
 
-### Fase 4 - ML supervisionado
+### Fase 4 - Integracao com Vantage API
+
+- integracao autenticada com a API do Vantage
+- consumo gradual dos modulos relevantes ao fluxo do SOC
+- suporte futuro a fontes RSS ja configuradas no Vantage, consumidas via API
+- contexto operacional externo reutilizavel pelo chat e pela analise
+
+### Fase 5 - ML supervisionado
 
 - coleta de feedback humano
 - dataset de treino derivado de casos rotulados
 - modelo de scoring/priorizacao
 - comparacao entre heuristica, LLM e classificador
 
-### Fase 5 - Knowledge graph
+### Fase 6 - Knowledge graph
 
 - modelagem de entidades e relacoes
 - correlacao entre alertas, artefatos, IOCs, CVEs e campanhas
@@ -175,9 +186,9 @@ O sistema deve registrar pergunta, contexto enviado, resposta, fontes usadas e f
 
 O sistema deve permitir reaproveitar a analise em formato compativel com nota tecnica, incidente, ou fluxo automatizado.
 
-### RF-08 Integracao por automacao
+### RF-08 Integracao com Vantage API
 
-O sistema deve expor endpoint ou fluxo utilizavel por ferramentas como n8n para ingestao e resposta automatizada.
+O sistema deve se integrar com a API do Vantage para consultar, correlacionar e reutilizar contexto dos modulos relevantes ao SOC, incluindo a possibilidade futura de consumir fontes RSS configuradas no Vantage via API.
 
 ### RF-09 Persona operacional configuravel
 
@@ -239,7 +250,7 @@ O sistema deve suportar configuracao de backend de inferencia com preferencia po
 - modulo de extracao de entidades
 - modulo RAG para bases internas
 - camada de persistencia de sessoes, mensagens e feedback
-- endpoint de integracao com n8n e outros orquestradores
+- cliente de integracao com a API do Vantage e outros orquestradores futuros
 
 ### 12.2 Fluxo de alto nivel
 
@@ -398,16 +409,16 @@ Diretrizes:
 }
 ```
 
-## 14. Integracao com n8n
+## 14. Integracao com Vantage API
 
-O n8n deve ser tratado como camada de automacao, nao como motor principal de analise. Casos de uso recomendados:
+A API do Vantage deve ser tratada como a principal porta de integracao de contexto externo do SOCC, permitindo ao copiloto consultar modulos relevantes do ecossistema operacional sem acoplar logica do produto a conectores ad hoc.
 
-- receber evento de alerta
-- chamar endpoint do SOCC
-- anexar enriquecimentos externos
-- abrir ticket ou registrar caso
-- enviar notificacao para Teams, Slack ou email
-- armazenar feedback operacional
+Diretrizes:
+
+- consumir modulos do Vantage de forma autenticada e reutilizavel
+- expor os dados do Vantage ao chat e ao fluxo analitico como contexto consultivo, nao como substituto de evidencias locais
+- permitir evolucao futura para consumo das fontes RSS ja cadastradas no Vantage via API
+- manter n8n apenas como camada opcional de automacao futura, quando houver ganho operacional claro
 
 ## 15. Estrategia de ML
 
@@ -513,7 +524,7 @@ Relacoes iniciais:
 ### P3
 
 - RAG em bases internas
-- automacoes n8n
+- retrieval consultivo e anexacao de contexto
 - score de priorizacao
 
 ### Proximo passo imediato
@@ -526,14 +537,23 @@ Relacoes iniciais:
 
 ### P4
 
+- cliente inicial de integracao com Vantage API
+- mapeamento dos modulos prioritarios do Vantage para uso pelo SOCC
+- plano de consumo futuro de RSS via API do Vantage
+
+### P5
+
 - ML supervisionado
+
+### P6
+
 - knowledge graph inicial
 
 ## 21. Premissas
 
 - existe uma interface web de chat ja criada
 - existe um backend Python no SOCC
-- a LLM local alvo atual e `qwen2.5:3b`
+- a LLM local alvo atual e `qwen3.5:9b` via Ollama, com preferencia por GPU
 - o ambiente pode usar integracao local com modelo via servico compativel
 - o padrao OpenClaw sera adaptado como inspiracao arquitetural, nao como copia literal obrigatoria
 - este documento foi elaborado sem leitura direta do codigo nesta sessao, por falha de acesso ao terminal, e pode ser refinado apos inspecao do repositorio

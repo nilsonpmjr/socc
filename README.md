@@ -2,6 +2,8 @@
 
 Projeto local de apoio a triagem SOC, parsing de payloads, enriquecimento de IOCs e geração controlada de alertas e notas operacionais.
 
+Perfil local atual recomendado: `Ollama` com `qwen3.5:9b`, priorizando `GPU`.
+
 ## Escopo atual
 
 - parsing de entradas em texto, JSON e CSV
@@ -25,6 +27,53 @@ Projeto local de apoio a triagem SOC, parsing de payloads, enriquecimento de IOC
 ```bash
 pip install -e .
 ```
+
+## Instalação e execução via npm
+
+Para usar o SOCC em fluxo npm-first, no estilo do OpenClaw:
+
+```bash
+npm install -g .
+socc setup
+socc doctor --probe
+socc serve
+```
+
+No checkout local, você também pode usar scripts npm sem instalar globalmente:
+
+```bash
+npm run setup
+npm run doctor
+npm run serve
+```
+
+O wrapper npm delega para a CLI Python existente, prepara `~/.socc/venv` quando necessário e preserva os mesmos comandos operacionais (`socc dashboard`, `socc gateway restart`, `socc runtime`, etc.).
+
+No layout npm/global, o modelo agora fica mais próximo do OpenClaw:
+
+- `~/.socc/` guarda apenas estado do usuário: `.env`, `workspace/`, sessões, logs, cache, MCP e base local de conhecimento
+- a alma do agente é seedada em `~/.socc/workspace/soc-copilot`
+- código Python, templates HTML e assets continuam no pacote instalado
+- o manifesto `~/.socc/socc.json` registra `installation_layout=package` e o `package_root`
+
+No fluxo de desenvolvimento via checkout, o layout continua `checkout`, com links locais para o repositório quando isso fizer sentido.
+
+Para respostas mais rápidas no chat, o runtime agora suporta perfis de resposta:
+
+```bash
+socc chat --response-mode fast --message "Resuma este alerta"
+socc chat --response-mode balanced --message "Analise este log"
+socc chat --response-mode deep --message "Aprofunde hipóteses e próximos passos"
+```
+
+Na UI, o mesmo controle aparece como `Fast | Balanced | Deep`.
+No perfil atual recomendado:
+
+- `Fast` usa `llama3.2:3b`
+- `Balanced` usa `qwen3.5:9b`
+- `Deep` usa `qwen3.5:9b`
+
+Se quiser trocar isso, ajuste `SOCC_OLLAMA_FAST_MODEL`, `SOCC_OLLAMA_BALANCED_MODEL` e `SOCC_OLLAMA_DEEP_MODEL` em `~/.socc/.env`.
 
 ## Instalação one-shot local
 
@@ -54,6 +103,8 @@ socc dashboard --open
 socc init
 socc chat --message "Resumo técnico do caso"
 socc runtime
+socc vantage status
+socc vantage modules
 socc serve
 socc analyze --file caminho/do/payload.txt --json
 ```
@@ -93,7 +144,8 @@ O caminho de migração agora está formalizado em [migracao-runtime-socc.md](/h
 - `feedback`, `export` e `chat` também já normalizam seus corpos JSON via helpers do `engine`
 - export, feedback, save e histórico também já passam por helpers do runtime
 - os helpers residuais de SSE/detecção também já foram extraídos do `main.py`
-- o parser agora também usa um catálogo ampliado de aliases de telemetria de segurança para JSONs de EDR/NDR/SIEM/IAM/cloud/Kubernetes, incluindo IPv4/IPv6, hostname, server, arquivo, hash, e-mail/auth, DNS/HTTP/TLS, processo, cloud e container
+- o parser agora também usa um catálogo ampliado de aliases de telemetria de segurança para JSONs de EDR/NDR/plataformas de eventos/IAM/cloud/Kubernetes, incluindo IPv4/IPv6, hostname, server, arquivo, hash, e-mail/auth, DNS/HTTP/TLS, processo, cloud e container
+- a extração de IOCs agora também normaliza artefatos defangados (`hxxp`, `[.]`), estabiliza caixa de domínio/hash/URL e reduz duplicidade entre parser, TI e contrato estruturado
 - o runtime agora também deriva contextos investigativos por família de telemetria, como phishing, pressão de autenticação, canal web/TLS, persistência, exfiltração, cloud e Kubernetes
 - o draft final agora usa esses contextos para destacar prioridade operacional e recomendações mais específicas por caso
 - o draft também passou a variar o recorte analítico e os detalhes exibidos por vertical, diferenciando melhor casos de e-mail, endpoint, rede, cloud e Kubernetes
@@ -124,6 +176,11 @@ O fluxo local agora também pode começar por:
   Alias compatível: `socc gateway ...`
 - `socc dashboard` e `socc dashboard --open`: devolvem ou tentam abrir a URL local da interface com base no serviço atual
 - a base local de conhecimento já suporta retrieval lexical inicial, anexando trechos recuperados ao contexto do chat e da análise estruturada
+- a integração com Vantage API já possui catálogo inicial de módulos, contrato de autenticação por ambiente, comandos de inspeção via `socc vantage` e enriquecimento automático orientado a IOC/artefato
+- a análise e o export agora também podem carregar `operational_payload` estruturado, pronto para reaproveito operacional em alerta, encerramento e documentação técnica
+- a exportação operacional agora suporta `JSON`, `Markdown` e `Ticket`, tanto no chat quanto na interface legada
+- o chat e a interface legada agora também mostram esse `operational_payload`, incluindo ação de cópia direta do bloco estruturado
+- os drafts e o `operational_payload` agora diferenciam a rota operacional por classificação, destacando abertura de alerta, encerramento administrativo, correção de detecção, encerramento benigno e tratativa de telemetria
 
 ## Contrato interno do runtime
 
@@ -153,8 +210,11 @@ Principais grupos documentados em `.env.example`:
 - TI: `TI_API_BASE_URL`, `TI_API_USER`, `TI_API_PASS`, `THREAT_INTEL_API_KEY`, `THREAT_CHECK_SCRIPT`
 - LLM: `LLM_ENABLED`, `LLM_PROVIDER`, `LLM_TIMEOUT`, `OLLAMA_URL`, `OLLAMA_MODEL`, `ANTHROPIC_API_KEY`, `LLM_MODEL`
 - runtime local: `SOCC_INFERENCE_BACKEND`, `SOCC_BACKEND_PRIORITY`, `SOCC_INFERENCE_DEVICE`, `SOCC_LLM_FALLBACK_PROVIDER`, `SOCC_CPU_GUARD_ENABLED`, `SOCC_CPU_GUARD_LOAD`, `SOCC_MAX_CONCURRENT_LLM`, `SOCC_LMSTUDIO_URL`, `SOCC_LMSTUDIO_MODEL`, `SOCC_VLLM_URL`, `SOCC_VLLM_MODEL`, `SOCC_OPENAI_COMPAT_URL`, `SOCC_OPENAI_COMPAT_MODEL`, `SOCC_LOCAL_MODEL_DEFAULT`
+- ollama tuning: `SOCC_OLLAMA_KEEP_ALIVE`, `SOCC_OLLAMA_FAST_MODEL`, `SOCC_OLLAMA_BALANCED_MODEL`, `SOCC_OLLAMA_DEEP_MODEL`
 - feature flags: `SOCC_FEATURE_ANALYZE_API`, `SOCC_FEATURE_DRAFT_API`, `SOCC_FEATURE_CHAT_API`, `SOCC_FEATURE_CHAT_STREAMING`, `SOCC_FEATURE_FEEDBACK_API`, `SOCC_FEATURE_EXPORT_API`, `SOCC_FEATURE_THREAT_INTEL`, `SOCC_FEATURE_RUNTIME_API`
 - segurança/observabilidade: `SOCC_LOG_REDACTION_ENABLED`, `SOCC_PROMPT_AUDIT_ENABLED`, `SOCC_PROMPT_PREVIEW_CHARS`
+- Vantage API: `SOCC_VANTAGE_ENABLED`, `SOCC_VANTAGE_BASE_URL`, `SOCC_VANTAGE_BEARER_TOKEN`, `SOCC_VANTAGE_API_KEY`, `SOCC_VANTAGE_TIMEOUT`, `SOCC_VANTAGE_VERIFY_TLS`, `SOCC_VANTAGE_ENABLED_MODULES`
+  Ajustes de contexto automático: `SOCC_VANTAGE_CONTEXT_MAX_MODULES`, `SOCC_VANTAGE_CONTEXT_CHARS`, `SOCC_VANTAGE_QUERY_LIMIT`
 
 As feature flags permitem rollout controlado do runtime/plugin sem remover código:
 
@@ -171,6 +231,45 @@ Backends atualmente mapeados no runtime:
 - `anthropic`: fallback remoto
 
 `socc runtime` e `socc doctor` agora mostram o backend selecionado, a origem da decisão, capacidades do backend e o catálogo compatível conhecido pelo runtime.
+
+## Vantage API
+
+O runtime agora possui uma camada inicial para integração com a API do Vantage em [vantage_api.py](/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc/gateway/vantage_api.py), com catálogo inicial de módulos úteis ao SOC:
+
+- `dashboard`
+- `feed`
+- `recon`
+- `watchlist`
+- `hunting`
+- `exposure`
+- `users`
+- `admin`
+
+Comandos iniciais:
+
+- `socc vantage status`
+- `socc vantage modules`
+- `socc vantage probe --module feed`
+
+O runtime agora já tenta enriquecer automaticamente chat e análise com contexto do Vantage quando a integração estiver habilitada. Esse enriquecimento é fail-open: se a API falhar, o SOCC continua respondendo sem interromper o fluxo principal.
+Quando houver artefatos claros no caso, como `CVE`, `hash`, `IP`, `domínio`, `URL`, `hostname` ou `usuário`, o cliente do Vantage também monta consultas mais direcionadas por módulo para trazer contexto mais útil ao analista.
+
+No webchat, esse uso agora também fica visível:
+
+- o `Control Center` mostra o estado da integração e os módulos do Vantage mapeados
+- respostas e cards analíticos exibem quando módulos do Vantage contribuíram para o contexto
+- o `Control Center` também permite ligar/desligar o enriquecimento automático e escolher quais módulos entram no contexto
+
+## Saída operacional estruturada
+
+O runtime agora gera um bloco `operational_payload` junto da análise estruturada, com:
+
+- `title`, `classification`, `disposition`, `summary` e `verdict`
+- `priority` com `level`, `score`, `rank` e família principal
+- `recommended_actions`, `risk_reasons`, `iocs` e `evidence`
+- `sources` e resumo do contexto vindo do Vantage
+
+Esse bloco já entra no export `JSON` e também aparece no export `Markdown`, facilitando reaproveito em nota de encerramento, alerta ou integração futura com outras ferramentas.
 
 ## Segurança operacional
 
@@ -195,6 +294,8 @@ Backends atualmente mapeados no runtime:
 - `socc init --force` regrava manifesto, `.env.example` e arquivos seedados do runtime quando for preciso atualizar a base local
 - o seed do workspace preserva customizações existentes e só adiciona arquivos ausentes quando não há `--force`
 - o runtime agora também grava arquivos de serviço em `~/.socc/logs`, incluindo PID, metadata e logs stdout/stderr do `serve`
+- o seed atual de `.env` já sai alinhado para `SOCC_INFERENCE_BACKEND=ollama`, `SOCC_INFERENCE_DEVICE=gpu` e `OLLAMA_MODEL=qwen3.5:9b`
+- no layout npm, o runtime home não recebe cópia do projeto; ele recebe só o estado local e o workspace do agente, enquanto o pacote instalado continua sendo a origem de código/templates/assets
 
 ## Streaming do chat
 
@@ -205,6 +306,10 @@ Backends atualmente mapeados no runtime:
 ## Preferências da UI
 
 - o `chat.html` agora expõe um painel local de configurações inspirado no fluxo configurável do ClawDBot
+- o webchat agora também possui um `Control Center` inspirado no OpenClaw para runtime, agente ativo, base local de conhecimento, sessões e diagnóstico
+- a interface permite alternar manualmente entre agentes disponíveis do workspace/runtime sem editar variáveis de ambiente à mão
+- o chat agora também oferece perfis `Fast`, `Balanced` e `Deep`, que ajustam tamanho de contexto, profundidade de resposta e parâmetros do Ollama para equilibrar latência e qualidade
+- o `Control Center` agora também lista modelos detectados no backend, permite escolher os modelos de `Fast`, `Balanced` e `Deep` pela UI e executar warm-up manual do perfil selecionado
 - as preferências ficam em `localStorage` e cobrem tema, densidade dos cards, visibilidade de contexto/trilha/contrato oficial, preferência por SSE, classificação e cliente padrão, ordenação de sessões e formato padrão de exportação
 - o painel também consulta `GET /api/runtime/status` para mostrar provider, modelo, device e features ativas diretamente na interface
 

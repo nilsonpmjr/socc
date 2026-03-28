@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from time import time
 from pathlib import Path
@@ -50,10 +51,19 @@ def _runtime_home_arg(value: str | None) -> Path | None:
 
 
 def _doctor_payload(home: Path | None = None, *, include_probe: bool = False) -> dict[str, object]:
-    from socc.cli.installer import runtime_agent_home, runtime_home
+    from socc.cli.installer import package_root, runtime_agent_home, runtime_home
     from socc.core.knowledge_base import inspect_index
+    from socc.gateway import vantage_api
 
     runtime_dir = runtime_home(home)
+    manifest_file = runtime_dir / "socc.json"
+    manifest_payload: dict[str, object] = {}
+    if manifest_file.exists():
+        try:
+            manifest_payload = json.loads(manifest_file.read_text(encoding="utf-8"))
+        except Exception:
+            manifest_payload = {}
+    installation_layout = str((((manifest_payload.get("meta") or {}) if isinstance(manifest_payload, dict) else {}).get("installation_layout") or "checkout"))
     intel = inspect_index(home)
     env_error = ""
     runtime_error = ""
@@ -101,6 +111,8 @@ def _doctor_payload(home: Path | None = None, *, include_probe: bool = False) ->
         "paths": {
             "runtime_home": str(runtime_dir),
             "agent_home": str(runtime_agent_home(home)),
+            "package_root": str(package_root()),
+            "installation_layout": installation_layout,
             "env_file": str(runtime_dir / ".env"),
             "manifest_file": str(runtime_dir / "socc.json"),
             "intel_registry": ((intel.get("paths") or {}).get("registry") or ""),
@@ -119,6 +131,7 @@ def _doctor_payload(home: Path | None = None, *, include_probe: bool = False) ->
         "runtime": runtime_payload,
         "features": feature_payload,
         "intel": intel.get("manifest", {}),
+        "vantage": vantage_api.status_payload(),
     }
     dependency_notes = {
         "env_loader_error": env_error,
@@ -138,9 +151,12 @@ def _print_doctor(payload: dict[str, object]) -> None:
     checks = payload.get("checks", {}) if isinstance(payload, dict) else {}
     runtime = ((payload.get("runtime", {}) or {}).get("runtime", {}) or {}) if isinstance(payload, dict) else {}
     intel = payload.get("intel", {}) if isinstance(payload, dict) else {}
+    vantage = payload.get("vantage", {}) if isinstance(payload, dict) else {}
     print("SOCC Doctor:")
     for key in ("runtime_home", "agent_home", "env_file", "manifest_file", "intel_registry", "intel_index"):
         print(f"- {key}: {paths.get(key) or '-'}")
+    print(f"- package_root: {paths.get('package_root') or '-'}")
+    print(f"- installation_layout: {paths.get('installation_layout') or '-'}")
     print("\nChecks:")
     for key in sorted(checks):
         print(f"- {key}: {checks.get(key)}")
@@ -155,6 +171,12 @@ def _print_doctor(payload: dict[str, object]) -> None:
     print(f"- index_version: {intel.get('version')}")
     print(f"- indexed_documents: {intel.get('indexed_documents', 0)}")
     print(f"- indexed_chunks: {intel.get('indexed_chunks', 0)}")
+    print("\nVantage:")
+    print(f"- enabled: {vantage.get('enabled')}")
+    print(f"- configured: {vantage.get('configured')}")
+    print(f"- base_url: {vantage.get('base_url') or '-'}")
+    print(f"- auth_mode: {vantage.get('auth_mode')}")
+    print(f"- selected_modules: {', '.join(vantage.get('selected_modules', [])) or '-'}")
     probe = payload.get("probe")
     if isinstance(probe, dict):
         print("\nProbe:")
@@ -176,6 +198,7 @@ def _build_parser() -> argparse.ArgumentParser:
     onboard_parser.add_argument("--force", action="store_true", help="Overwrite generated runtime files")
     onboard_parser.add_argument("--probe", action="store_true", help="Probe the configured inference backend after bootstrap")
     onboard_parser.add_argument("--json", action="store_true", help="Emit JSON output")
+    onboard_parser.add_argument("--no-interactive", action="store_true", help="Skip interactive wizard (flag-only mode)")
 
     doctor_parser = subparsers.add_parser("doctor", help="Run local runtime diagnostics")
     doctor_parser.add_argument("--home", help="Alternative runtime home directory")
@@ -242,6 +265,12 @@ def _build_parser() -> argparse.ArgumentParser:
     chat_parser.add_argument("--file", help="Read the chat message from a file")
     chat_parser.add_argument("--session-id", default="", help="Reuse an existing session id")
     chat_parser.add_argument("--cliente", default="", help="Client context passed to the chat runtime")
+    chat_parser.add_argument(
+        "--response-mode",
+        default="balanced",
+        choices=["fast", "balanced", "deep"],
+        help="Response profile tuned for speed vs depth",
+    )
     chat_parser.add_argument("--json", action="store_true", help="Emit JSON output")
     chat_parser.add_argument("--stream", action="store_true", help="Stream reply chunks to stdout")
     chat_parser.add_argument("--interactive", action="store_true", help="Start a simple REPL chat loop")
@@ -267,6 +296,72 @@ def _build_parser() -> argparse.ArgumentParser:
     intel_ingest.add_argument("--source-id", required=True, help="Registered source id")
     intel_ingest.add_argument("--path", default="", help="Optional file or directory override")
     intel_ingest.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    # ---- configure ----
+    configure_parser = subparsers.add_parser("configure", help="Manage runtime configuration")
+    configure_parser.add_argument("--home", help="Alternative runtime home directory")
+    configure_subparsers = configure_parser.add_subparsers(dest="configure_command", required=True)
+
+    configure_show = configure_subparsers.add_parser("show", help="Show active configuration (secrets redacted)")
+    configure_show.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    configure_set = configure_subparsers.add_parser("set", help="Set a configuration key")
+    configure_set.add_argument("key", help="Environment variable name")
+    configure_set.add_argument("value", help="Value to set")
+    configure_set.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    configure_unset = configure_subparsers.add_parser("unset", help="Comment out a configuration key")
+    configure_unset.add_argument("key", help="Environment variable name")
+    configure_unset.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    configure_validate = configure_subparsers.add_parser("validate", help="Validate current configuration")
+    configure_validate.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    # ---- models ----
+    models_parser = subparsers.add_parser("models", help="Manage LLM models")
+    models_subparsers = models_parser.add_subparsers(dest="models_command", required=True)
+
+    models_list = models_subparsers.add_parser("list", help="List available models from active backends")
+    models_list.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    models_set = models_subparsers.add_parser("set", help="Set a model profile")
+    models_set.add_argument("model", help="Model name")
+    models_set_group = models_set.add_mutually_exclusive_group(required=True)
+    models_set_group.add_argument("--fast", action="store_true", help="Set as Fast profile")
+    models_set_group.add_argument("--balanced", action="store_true", help="Set as Balanced profile")
+    models_set_group.add_argument("--deep", action="store_true", help="Set as Deep profile")
+    models_set.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    models_fallback = models_subparsers.add_parser("fallback", help="Manage fallback provider chain")
+    models_fallback_sub = models_fallback.add_subparsers(dest="fallback_command", required=True)
+
+    fb_list = models_fallback_sub.add_parser("list", help="Show current fallback configuration")
+    fb_list.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    fb_add = models_fallback_sub.add_parser("add", help="Set fallback provider")
+    fb_add.add_argument("provider", help="Provider name (anthropic, ollama, cpu, deterministic, etc.)")
+    fb_add.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    fb_remove = models_fallback_sub.add_parser("remove", help="Disable fallback provider")
+    fb_remove.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    models_test = models_subparsers.add_parser("test", help="Smoke test inference with a model")
+    models_test.add_argument("--model", default="", help="Model to test (default: current balanced)")
+    models_test.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    # ---- vantage ----
+    vantage_parser = subparsers.add_parser("vantage", help="Inspect Vantage API integration status and module catalog")
+    vantage_subparsers = vantage_parser.add_subparsers(dest="vantage_command", required=True)
+
+    vantage_status = vantage_subparsers.add_parser("status", help="Show Vantage API integration status")
+    vantage_status.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    vantage_modules = vantage_subparsers.add_parser("modules", help="List mapped Vantage modules for SOCC")
+    vantage_modules.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    vantage_probe = vantage_subparsers.add_parser("probe", help="Probe a mapped Vantage module")
+    vantage_probe.add_argument("--module", required=True, help="Mapped module id, e.g. feed or hunting")
+    vantage_probe.add_argument("--json", action="store_true", help="Emit JSON output")
 
     return parser
 
@@ -295,7 +390,12 @@ def _run_interactive_chat(args: argparse.Namespace) -> int:
         if args.stream and not args.json:
             print("socc> ", end="", flush=True)
             final_payload: dict[str, object] | None = None
-            for event in stream_chat_events(message, session_id=session_id, cliente=args.cliente):
+            for event in stream_chat_events(
+                message,
+                session_id=session_id,
+                cliente=args.cliente,
+                response_mode=args.response_mode,
+            ):
                 if event.get("event") == "delta":
                     print(str(event.get("delta") or ""), end="", flush=True)
                 elif event.get("event") == "final":
@@ -306,7 +406,12 @@ def _run_interactive_chat(args: argparse.Namespace) -> int:
             if isinstance(final_payload, dict):
                 session_id = str(final_payload.get("session_id") or session_id)
         else:
-            response = chat_reply(message, session_id=session_id, cliente=args.cliente)
+            response = chat_reply(
+                message,
+                session_id=session_id,
+                cliente=args.cliente,
+                response_mode=args.response_mode,
+            )
             session_id = str(response.get("session_id") or session_id)
             print(f"socc> {response.get('content') or response.get('message') or ''}")
 
@@ -334,6 +439,22 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "onboard":
         home = _runtime_home_arg(args.home)
         bootstrap = bootstrap_runtime(home, force=args.force)
+
+        # Interactive wizard when TTY is available and not suppressed
+        use_wizard = (
+            sys.stdin.isatty()
+            and not getattr(args, "json", False)
+            and not getattr(args, "no_interactive", False)
+        )
+        if use_wizard:
+            from socc.cli.onboard_wizard import run_onboard_wizard
+
+            wizard_result = run_onboard_wizard(home)
+            doctor = _doctor_payload(home, include_probe=args.probe)
+            payload = {"bootstrap": bootstrap, "wizard": wizard_result, "doctor": doctor}
+            return 0
+
+        # Non-interactive fallback (original behavior)
         doctor = _doctor_payload(home, include_probe=args.probe)
         payload = {
             "bootstrap": bootstrap,
@@ -363,6 +484,9 @@ def main(argv: list[str] | None = None) -> int:
         doctor = _doctor_payload(_runtime_home_arg(args.home), include_probe=args.probe)
         if args.json:
             print(json.dumps(doctor, indent=2, ensure_ascii=False))
+        elif sys.stdin.isatty():
+            from socc.cli.doctor_interactive import run_interactive_doctor
+            run_interactive_doctor(doctor)
         else:
             _print_doctor(doctor)
         return 0
@@ -523,6 +647,231 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"- {name}: {features.get(name)}")
         return 0
 
+    if args.command == "configure":
+        from socc.cli.installer import runtime_home
+        from socc.utils.config_loader import (
+            batch_update_env,
+            read_all_env,
+            remove_env_assignment,
+            runtime_env_path,
+            update_env_assignment,
+        )
+
+        home = _runtime_home_arg(args.home)
+        env_path = runtime_home(home) / ".env"
+
+        if args.configure_command == "show":
+            values = read_all_env(env_path)
+            if args.json:
+                # redact secrets in JSON output
+                redacted = {}
+                for k, v in values.items():
+                    upper = k.upper()
+                    if any(tok in upper for tok in ("KEY", "TOKEN", "PASS", "SECRET", "PASSWORD", "BEARER")):
+                        redacted[k] = v[:4] + "****" if len(v) > 4 else "****"
+                    else:
+                        redacted[k] = v
+                print(json.dumps(redacted, indent=2, ensure_ascii=False))
+            else:
+                print("Configuração ativa:")
+                for k, v in sorted(values.items()):
+                    upper = k.upper()
+                    if any(tok in upper for tok in ("KEY", "TOKEN", "PASS", "SECRET", "PASSWORD", "BEARER")):
+                        display = v[:4] + "****" if len(v) > 4 else "****"
+                    else:
+                        display = v
+                    print(f"  {k}={display}")
+            return 0
+
+        if args.configure_command == "set":
+            update_env_assignment(env_path, args.key, args.value)
+            payload = {"updated": True, "key": args.key, "path": str(env_path)}
+            if args.json:
+                print(json.dumps(payload, indent=2, ensure_ascii=False))
+            else:
+                print(f"  OK: {args.key} atualizado em {env_path}")
+            return 0
+
+        if args.configure_command == "unset":
+            remove_env_assignment(env_path, args.key)
+            payload = {"removed": True, "key": args.key, "path": str(env_path)}
+            if args.json:
+                print(json.dumps(payload, indent=2, ensure_ascii=False))
+            else:
+                print(f"  OK: {args.key} comentado em {env_path}")
+            return 0
+
+        if args.configure_command == "validate":
+            values = read_all_env(env_path)
+            issues: list[dict[str, str]] = []
+            # Basic validation rules
+            url_keys = [k for k in values if "URL" in k.upper()]
+            for k in url_keys:
+                v = values[k]
+                if v and not (v.startswith("http://") or v.startswith("https://")):
+                    issues.append({"key": k, "issue": f"Value '{v}' does not look like a URL"})
+            bool_keys = [k for k in values if k.upper().startswith("SOCC_FEATURE_") or "ENABLED" in k.upper()]
+            for k in bool_keys:
+                v = values[k].lower()
+                if v not in {"true", "false", "1", "0", "yes", "no", "on", "off"}:
+                    issues.append({"key": k, "issue": f"Value '{values[k]}' is not a valid boolean"})
+            payload = {"valid": len(issues) == 0, "issues": issues, "keys_checked": len(values)}
+            if args.json:
+                print(json.dumps(payload, indent=2, ensure_ascii=False))
+            else:
+                if issues:
+                    print(f"Validação: {len(issues)} problema(s) encontrado(s)")
+                    for item in issues:
+                        print(f"  - {item['key']}: {item['issue']}")
+                else:
+                    print(f"  OK: {len(values)} chaves validadas sem problemas.")
+            return 0
+
+    if args.command == "models":
+        from socc.gateway.llm_gateway import list_backend_models, probe_inference_backend, runtime_status
+        from socc.utils.config_loader import runtime_env_path, update_env_assignment
+
+        if args.models_command == "list":
+            try:
+                models_data = list_backend_models()
+            except Exception as exc:
+                models_data = {"models": [], "error": str(exc)}
+            if args.json:
+                print(json.dumps(models_data, indent=2, ensure_ascii=False))
+            else:
+                models = models_data.get("models", [])
+                if models:
+                    print(f"Modelos disponíveis ({len(models)}):")
+                    for m in models:
+                        if isinstance(m, dict):
+                            print(f"  - {m.get('name', m.get('model', '?'))}")
+                        else:
+                            print(f"  - {m}")
+                else:
+                    print("Nenhum modelo encontrado.")
+                    if models_data.get("error"):
+                        print(f"  Erro: {models_data['error']}")
+            return 0
+
+        if args.models_command == "set":
+            env_path = runtime_env_path()
+            if args.fast:
+                key = "SOCC_OLLAMA_FAST_MODEL"
+            elif args.balanced:
+                key = "SOCC_OLLAMA_BALANCED_MODEL"
+            else:
+                key = "SOCC_OLLAMA_DEEP_MODEL"
+            update_env_assignment(env_path, key, args.model)
+            profile = "fast" if args.fast else ("balanced" if args.balanced else "deep")
+            payload = {"updated": True, "profile": profile, "model": args.model}
+            if args.json:
+                print(json.dumps(payload, indent=2, ensure_ascii=False))
+            else:
+                print(f"  OK: Perfil {profile} → {args.model}")
+            return 0
+
+        if args.models_command == "fallback":
+            from socc.utils.config_loader import read_env_value, remove_env_assignment, update_env_assignment
+
+            env_path = runtime_env_path()
+
+            if args.fallback_command == "list":
+                current = os.environ.get("SOCC_LLM_FALLBACK_PROVIDER", "")
+                if not current:
+                    current = read_env_value(env_path, "SOCC_LLM_FALLBACK_PROVIDER") or ""
+                priority = os.environ.get("SOCC_BACKEND_PRIORITY", "")
+                if not priority:
+                    priority = read_env_value(env_path, "SOCC_BACKEND_PRIORITY") or ""
+                payload = {
+                    "fallback_provider": current or "(não configurado)",
+                    "backend_priority": priority or "(não configurado)",
+                }
+                if args.json:
+                    print(json.dumps(payload, indent=2, ensure_ascii=False))
+                else:
+                    print("Fallback:")
+                    print(f"  - provider: {payload['fallback_provider']}")
+                    print(f"  - backend_priority: {payload['backend_priority']}")
+                return 0
+
+            if args.fallback_command == "add":
+                valid = {"anthropic", "ollama", "lmstudio", "vllm", "openai-compatible", "cpu", "deterministic"}
+                provider = args.provider.lower()
+                if provider not in valid:
+                    print(f"  ERRO: Provider '{provider}' inválido. Opções: {', '.join(sorted(valid))}")
+                    return 1
+                update_env_assignment(env_path, "SOCC_LLM_FALLBACK_PROVIDER", provider)
+                payload = {"updated": True, "fallback_provider": provider}
+                if args.json:
+                    print(json.dumps(payload, indent=2, ensure_ascii=False))
+                else:
+                    print(f"  OK: Fallback definido como '{provider}'")
+                return 0
+
+            if args.fallback_command == "remove":
+                remove_env_assignment(env_path, "SOCC_LLM_FALLBACK_PROVIDER")
+                payload = {"removed": True}
+                if args.json:
+                    print(json.dumps(payload, indent=2, ensure_ascii=False))
+                else:
+                    print("  OK: Fallback provider removido.")
+                return 0
+
+        if args.models_command == "test":
+            probe = probe_inference_backend()
+            payload = {
+                "reachable": probe.get("reachable", False),
+                "latency_ms": probe.get("latency_ms"),
+                "error": probe.get("error"),
+            }
+            if args.model:
+                payload["model_tested"] = args.model
+            if args.json:
+                print(json.dumps(payload, indent=2, ensure_ascii=False))
+            else:
+                if probe.get("reachable"):
+                    print(f"  OK: Backend acessível (latência: {probe.get('latency_ms', '?')} ms)")
+                else:
+                    print(f"  ERRO: Backend inacessível — {probe.get('error', 'desconhecido')}")
+            return 0
+
+    if args.command == "vantage":
+        from socc.core.engine import (
+            vantage_modules_payload,
+            vantage_probe_payload,
+            vantage_status_payload,
+        )
+
+        if args.vantage_command == "status":
+            payload = vantage_status_payload()
+        elif args.vantage_command == "modules":
+            payload = vantage_modules_payload()
+        else:
+            payload = vantage_probe_payload(args.module)
+
+        if args.json:
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+        elif args.vantage_command == "probe":
+            print(f"module: {payload.get('module')}")
+            print(f"ok: {payload.get('ok')}")
+            print(f"status_code: {payload.get('status_code')}")
+            print(f"error: {payload.get('error') or '-'}")
+        else:
+            print("Vantage:")
+            print(f"- enabled: {payload.get('enabled')}")
+            print(f"- base_url: {payload.get('base_url') or '-'}")
+            print(f"- auth_mode: {payload.get('auth_mode')}")
+            if args.vantage_command == "modules":
+                print(f"- selected_modules: {', '.join(payload.get('selected_modules', [])) or '-'}")
+                for item in payload.get("modules", []):
+                    if not isinstance(item, dict):
+                        continue
+                    print(
+                        f"  - {item.get('id')}: {item.get('path')} "
+                        f"(selected={item.get('selected')})"
+                    )
+        return 0
+
     if args.command == "analyze":
         from socc.core.engine import analyze_payload
 
@@ -567,6 +916,7 @@ def main(argv: list[str] | None = None) -> int:
                 message=message,
                 session_id=args.session_id,
                 cliente=args.cliente,
+                response_mode=args.response_mode,
             )
             print(json.dumps(result, indent=2, ensure_ascii=False))
             return 0
@@ -577,6 +927,7 @@ def main(argv: list[str] | None = None) -> int:
                 message=message,
                 session_id=args.session_id,
                 cliente=args.cliente,
+                response_mode=args.response_mode,
             ):
                 if event.get("event") == "delta":
                     print(str(event.get("delta") or ""), end="", flush=True)
@@ -593,6 +944,7 @@ def main(argv: list[str] | None = None) -> int:
             message=message,
             session_id=args.session_id,
             cliente=args.cliente,
+            response_mode=args.response_mode,
         )
         print(f"Sessao: {result.get('session_id', args.session_id or 'default')}")
         print(f"Skill: {result.get('skill', '-') or '-'}")

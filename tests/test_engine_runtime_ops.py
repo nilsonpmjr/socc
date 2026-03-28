@@ -125,6 +125,11 @@ try:
     check("engine_ops_seed_run", run_id > 0)
     check("engine_ops_analysis_priority_present", isinstance(analyzed.get("analysis_priority"), dict))
     check("engine_ops_analysis_priority_score", isinstance((analyzed.get("analysis_priority") or {}).get("score"), int))
+    check("engine_ops_operational_payload_present", isinstance(analyzed.get("operational_payload"), dict))
+    check("engine_ops_operational_payload_disposition", bool((analyzed.get("operational_payload") or {}).get("disposition")))
+    check("engine_ops_operational_payload_disposition_label", bool((analyzed.get("operational_payload") or {}).get("disposition_label")))
+    check("engine_ops_operational_payload_template_kind", bool((analyzed.get("operational_payload") or {}).get("template_kind")))
+    check("engine_ops_vantage_artifacts_present", isinstance(analyzed.get("vantage_artifacts"), dict))
 
     saved_note = save_note_submission(
         conteudo="Alerta consolidado para validacao.",
@@ -157,6 +162,7 @@ try:
         structured=analyzed.get("analysis_structured", {}),
         priority=analyzed.get("analysis_priority", {}),
         trace=analyzed.get("analysis_trace", {}),
+        operational_payload=analyzed.get("operational_payload", {}),
         draft=analyzed.get("draft", ""),
         cliente="Teste",
         regra="Bloqueio Firewall",
@@ -165,6 +171,26 @@ try:
     )
     check("engine_ops_export_json", exported.get("format") == "json" and '"summary"' in str(exported.get("content")))
     check("engine_ops_export_priority", '"analysis_priority"' in str(exported.get("content")))
+    check("engine_ops_export_operational_payload", '"operational_payload"' in str(exported.get("content")))
+
+    exported_ticket = export_analysis_submission(
+        export_format="ticket",
+        run_id=run_id,
+        fields=analyzed.get("campos_extraidos", {}),
+        ti_results=analyzed.get("ti_results", {}),
+        analysis=analyzed.get("analysis", {}),
+        structured=analyzed.get("analysis_structured", {}),
+        priority=analyzed.get("analysis_priority", {}),
+        trace=analyzed.get("analysis_trace", {}),
+        operational_payload=analyzed.get("operational_payload", {}),
+        draft=analyzed.get("draft", ""),
+        cliente="Teste",
+        regra="Bloqueio Firewall",
+        classificacao="TP",
+        payload_hash=analyzed.get("payload_hash", ""),
+    )
+    check("engine_ops_export_ticket", exported_ticket.get("format") == "ticket" and "Destino Operacional:" in str(exported_ticket.get("content")))
+    check("engine_ops_export_ticket_mime", exported_ticket.get("mime_type") == "text/plain")
 
     history = list_history_payload(limit=10)
     check("engine_ops_history_runs", any(item.get("id") == run_id for item in history.get("runs", [])))

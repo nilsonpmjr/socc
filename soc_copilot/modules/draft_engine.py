@@ -23,6 +23,22 @@ CLASSIFICACOES = {
     "LTF": "Log Transmission Failure",
 }
 
+_OPERACIONAL_ROTAS = {
+    "TP": "Abertura de alerta",
+    "BTP": "Encerramento administrativo",
+    "FP": "Correção de detecção",
+    "TN": "Encerramento benigno",
+    "LTF": "Tratativa operacional de telemetria",
+}
+
+_OPERACIONAL_SECOES = {
+    "TP": "Destino Operacional:",
+    "BTP": "Destino Operacional:",
+    "FP": "Destino Operacional:",
+    "TN": "Destino Operacional:",
+    "LTF": "Destino Operacional:",
+}
+
 _MARKDOWN_PATTERNS = ("```", "**", "__", "# ")
 
 
@@ -69,6 +85,10 @@ def _safe_join(parts: list[str], sep: str = " ") -> str:
 
 def _analysis_dict(analysis: dict | None) -> dict:
     return analysis if isinstance(analysis, dict) else {}
+
+
+def _operational_route(classificacao: str) -> str:
+    return _OPERACIONAL_ROTAS.get(classificacao.upper(), "Análise consultiva")
 
 
 def _top_hypothesis(analysis: dict) -> dict:
@@ -792,6 +812,7 @@ def _build_tp(fields: dict, ti_results: dict[str, str], analysis: dict, pack: Ru
         "\n".join(_build_detail_lines(fields)),
         "\n".join(_build_vertical_detail_lines(fields, analysis)),
         "",
+        f"{_OPERACIONAL_SECOES['TP']} {_operational_route('TP')}",
         f"Prioridade Operacional: {_operational_priority('TP', analysis)}",
         f"Recorte Analítico: {_vertical_label(analysis, fields)}",
     ]
@@ -837,6 +858,7 @@ def _build_btp(fields: dict, analysis: dict, pack: RulePack | None = None, ti_re
     sections = [
         "Classificação Final: Benign True Positive",
         "",
+        f"{_OPERACIONAL_SECOES['BTP']} {_operational_route('BTP')}",
         f"Prioridade Operacional: {_operational_priority('BTP', analysis)}",
         f"Recorte Analítico: {_vertical_label(analysis, fields)}",
         "",
@@ -870,8 +892,19 @@ def _build_fp_tn_ltf(classificacao: str, fields: dict, analysis: dict, pack: Rul
     sections = [
         f"Classificação Final: {label}",
         "",
+        f"{_OPERACIONAL_SECOES.get(classificacao, 'Destino Operacional:')} {_operational_route(classificacao)}",
         f"Prioridade Operacional: {_operational_priority(classificacao, analysis)}",
         f"Recorte Analítico: {_vertical_label(analysis, fields)}",
+        "",
+        "Resumo Operacional:",
+        _build_context_sentence(
+            fields,
+            {
+                "FP": "A telemetria disponível não sustenta risco real e indica disparo indevido ou excessivamente amplo da detecção.",
+                "TN": "O contexto observado é compatível com atividade legítima, sem evidência de comportamento malicioso no cenário analisado.",
+                "LTF": "Os elementos recebidos não permitem fechar a análise com segurança por limitação de coleta, transmissão ou integridade da telemetria.",
+            }.get(classificacao, "O caso foi consolidado para tratativa operacional conforme a classificação adotada."),
+        ),
         "",
         "Justificativa:",
         _build_context_sentence(fields, justificativa),
@@ -901,6 +934,7 @@ def _build_icatu_repasse(classificacao: str, fields: dict, ti_results: dict[str,
         "\n".join(_build_detail_lines(fields)),
         "\n".join(_build_vertical_detail_lines(fields, analysis)),
         "",
+        f"{_OPERACIONAL_SECOES.get(classificacao, 'Destino Operacional:')} {_operational_route(classificacao)}",
         f"Prioridade Operacional: {_operational_priority(classificacao, analysis)}",
         f"Recorte Analítico: {_vertical_label(analysis, fields)}",
     ]

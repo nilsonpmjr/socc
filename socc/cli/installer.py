@@ -10,6 +10,18 @@ import sys
 
 RUNTIME_DIRS = ("sessions", "logs", "cache", "mcp", "prompts", "workspace", "intel")
 SEED_AGENT_DIRNAME = "soc-copilot"
+RUNTIME_LAYOUTS = {"checkout", "package"}
+
+
+def package_root() -> Path:
+    return Path(__file__).resolve().parents[2].resolve()
+
+
+def resolve_runtime_layout(layout: str | None = None) -> str:
+    raw = str(layout or os.getenv("SOCC_INSTALL_LAYOUT", "") or "").strip().lower()
+    if raw in RUNTIME_LAYOUTS:
+        return raw
+    return "checkout"
 
 
 def runtime_home(home: Path | None = None) -> Path:
@@ -137,7 +149,7 @@ def _seed_agent_workspace(base_dir: Path, force: bool = False) -> tuple[Path, bo
 
 
 def _seed_project_link(base_dir: Path, force: bool = False) -> tuple[Path, bool]:
-    repo_root = Path(__file__).resolve().parents[2].resolve()
+    repo_root = package_root()
     targets = (
         runtime_checkout_link(base_dir),
         runtime_project_link(base_dir),
@@ -170,15 +182,32 @@ def _seed_project_link(base_dir: Path, force: bool = False) -> tuple[Path, bool]
     return runtime_checkout_link(base_dir), linked_any
 
 
-def _write_runtime_manifest(base_dir: Path, force: bool = False) -> Path:
+def _clear_project_links(base_dir: Path) -> None:
+    for target in (runtime_checkout_link(base_dir), runtime_project_link(base_dir)):
+        if target.is_symlink() or target.is_file():
+            target.unlink(missing_ok=True)
+        elif target.is_dir():
+            shutil.rmtree(target)
+
+def _write_runtime_manifest(
+    base_dir: Path,
+    *,
+    layout: str,
+    force: bool = False,
+) -> Path:
     manifest_path = base_dir / "socc.json"
     if manifest_path.exists() and not force:
         return manifest_path
 
+    source_root = package_root()
+    checkout_link = runtime_checkout_link(base_dir)
+    project_link = runtime_project_link(base_dir)
+    include_checkout_links = layout == "checkout"
     manifest = {
         "meta": {
             "runtime": "socc",
             "version": "0.1.0",
+            "installation_layout": layout,
         },
         "paths": {
             "runtime_home": str(base_dir),
@@ -186,10 +215,11 @@ def _write_runtime_manifest(base_dir: Path, force: bool = False) -> Path:
             "venv_dir": str(base_dir / "venv"),
             "cli_launcher": str(base_dir / "bin" / "socc"),
             "workspace": str(base_dir / "workspace"),
-            "checkout_link": str(runtime_checkout_link(base_dir)),
+            "checkout_link": str(checkout_link) if include_checkout_links else "",
             "agent_home": str(base_dir / "workspace" / SEED_AGENT_DIRNAME),
-            "project_link": str(runtime_project_link(base_dir)),
-            "source_checkout": str(Path(__file__).resolve().parents[2].resolve()),
+            "project_link": str(project_link) if include_checkout_links else "",
+            "source_checkout": str(source_root) if include_checkout_links else "",
+            "package_root": str(source_root),
             "env_file": str(base_dir / ".env"),
             "logs": str(base_dir / "logs"),
             "service_pid": str(runtime_service_pid_path(base_dir)),
@@ -239,9 +269,14 @@ def _write_runtime_manifest(base_dir: Path, force: bool = False) -> Path:
     return manifest_path
 
 
-def bootstrap_runtime(home: Path | None = None, force: bool = False) -> dict[str, str]:
+def bootstrap_runtime(
+    home: Path | None = None,
+    force: bool = False,
+    layout: str | None = None,
+) -> dict[str, str]:
     base_dir = runtime_home(home)
     base_dir.mkdir(parents=True, exist_ok=True)
+    resolved_layout = resolve_runtime_layout(layout)
 
     created_dirs: list[str] = []
     for dirname in RUNTIME_DIRS:
@@ -262,14 +297,20 @@ def bootstrap_runtime(home: Path | None = None, force: bool = False) -> dict[str
             shutil.copyfile(source_env, target_env)
 
     agent_home, workspace_seeded = _seed_agent_workspace(base_dir, force=force)
-    project_link, project_linked = _seed_project_link(base_dir, force=force)
-    manifest_path = _write_runtime_manifest(base_dir, force=force)
+    if resolved_layout == "checkout":
+        project_link, project_linked = _seed_project_link(base_dir, force=force)
+    else:
+        project_link = runtime_checkout_link(base_dir)
+        project_linked = False
+        if force:
+            _clear_project_links(base_dir)
+    manifest_path = _write_runtime_manifest(base_dir, layout=resolved_layout, force=force)
     from socc.core.knowledge_base import ensure_knowledge_base
 
     ensure_knowledge_base(base_dir)
     launcher_path = write_cli_launcher(
         base_dir,
-        project_root=Path(__file__).resolve().parents[2],
+        project_root=package_root(),
         force=force,
     )
 
@@ -287,12 +328,17 @@ def bootstrap_runtime(home: Path | None = None, force: bool = False) -> dict[str
                     "- prompts/: prompt overrides",
                     "- intel/: source registry, normalized documents, and local RAG index",
                     "- bin/: launcher scripts for the local runtime",
-                    "- project/: link visível para o checkout atual do código",
                     "- workspace/: runtime-local agent workspace inspired by OpenClaw",
                     "",
                     "Edit .env to override local runtime settings.",
                     f"Set SOCC_AGENT_HOME={agent_home} to force a specific agent workspace.",
-                    f"Workspace project link: {project_link}",
+                    f"Installation layout: {resolved_layout}",
+                    f"Package root: {package_root()}",
+                    (
+                        f"Workspace project link: {project_link}"
+                        if resolved_layout == "checkout"
+                        else "Code, templates and assets stay in the installed package; the runtime home keeps only user state and the agent workspace."
+                    ),
                     "Use `socc intel add-source` and `socc intel ingest` to seed the local knowledge base.",
                     f"Local launcher: {launcher_path}",
                 ]
@@ -306,6 +352,8 @@ def bootstrap_runtime(home: Path | None = None, force: bool = False) -> dict[str
         "agent_home": str(agent_home),
         "manifest_file": str(manifest_path),
         "launcher_file": str(launcher_path),
+        "layout": resolved_layout,
+        "package_root": str(package_root()),
         "workspace_seeded": "yes" if workspace_seeded else "no",
         "project_linked": "yes" if project_linked else "no",
         "created_dirs": ", ".join(created_dirs) if created_dirs else "",

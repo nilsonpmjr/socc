@@ -244,6 +244,11 @@ def _build_sources(analysis: dict[str, Any], ti_results: dict[str, str]) -> list
         sources.append("telemetry_context")
     if analysis.get("knowledge_matches"):
         sources.append("knowledge_base")
+    if analysis.get("vantage_sources") or any(
+        isinstance(match, dict) and str(match.get("module_id") or "").startswith(("feed", "watchlist", "recon", "hunting", "exposure", "users", "admin", "dashboard"))
+        for match in (analysis.get("knowledge_matches") or [])
+    ):
+        sources.append("vantage_api")
     deduped: list[str] = []
     for source in sources:
         if source not in deduped:

@@ -19,6 +19,7 @@ from socc.core import CONTRACT_VERSION
 from socc.core.engine import analyze_payload
 from socc.core import engine as engine_module
 from socc.core.tools import invoke_tool, list_tools
+from socc.gateway import vantage_api as vantage_gateway
 
 PASS = "PASS"
 FAIL = "FAIL"
@@ -212,17 +213,20 @@ try:
 
     original_chat_reply = engine_module.chat_reply
     original_stream_chat_events = engine_module.stream_chat_events
+    original_vantage_status = vantage_gateway.status_payload
+    original_vantage_probe = vantage_gateway.probe_module
     try:
-        engine_module.chat_reply = lambda message, session_id="", cliente="": {
+        engine_module.chat_reply = lambda message, session_id="", cliente="", response_mode="balanced": {
             "contract_version": CONTRACT_VERSION,
             "type": "message",
             "session_id": session_id or "sessao-cli",
             "skill": "triage",
             "content": f"eco: {message}",
+            "metadata": {"response_mode": response_mode},
             "runtime": {"provider": "stub"},
             "gateway": {"provider": "stub", "contract_version": CONTRACT_VERSION},
         }
-        engine_module.stream_chat_events = lambda message, session_id="", cliente="": iter(
+        engine_module.stream_chat_events = lambda message, session_id="", cliente="", response_mode="balanced": iter(
             [
                 {"event": "meta", "session_id": session_id or "sessao-stream", "skill": "triage"},
                 {"event": "delta", "delta": "eco"},
@@ -236,6 +240,7 @@ try:
                         "session_id": session_id or "sessao-stream",
                         "skill": "triage",
                         "content": f"eco: {message}",
+                        "metadata": {"response_mode": response_mode},
                         "runtime": {"provider": "stub"},
                         "gateway": {"provider": "stub", "contract_version": CONTRACT_VERSION},
                     },
@@ -245,19 +250,68 @@ try:
 
         json_stdout = io.StringIO()
         with redirect_stdout(json_stdout):
-            exit_code = main(["chat", "--message", "olá runtime", "--json"])
+            exit_code = main(["chat", "--message", "olá runtime", "--response-mode", "fast", "--json"])
         json_payload = json.loads(json_stdout.getvalue())
         check("cli_chat_json_exit_code", exit_code == 0)
         check("cli_chat_json_payload", json_payload.get("content") == "eco: olá runtime")
+        check("cli_chat_json_response_mode", (json_payload.get("metadata") or {}).get("response_mode") == "fast")
 
         stream_stdout = io.StringIO()
         with redirect_stdout(stream_stdout):
             exit_code = main(["chat", "--message", "olá runtime", "--stream"])
         check("cli_chat_stream_exit_code", exit_code == 0)
         check("cli_chat_stream_output", "eco: olá runtime" in stream_stdout.getvalue())
+
+        vantage_gateway.status_payload = lambda: {
+            "enabled": True,
+            "configured": True,
+            "base_url": "https://vantage.local",
+            "auth_mode": "bearer",
+            "timeout_seconds": 12,
+            "verify_tls": True,
+            "catalog_size": 2,
+            "selected_modules": ["feed", "hunting"],
+            "modules": [
+                {"id": "feed", "path": "/api/feed", "selected": True},
+                {"id": "hunting", "path": "/api/hunting", "selected": True},
+            ],
+            "future_rss_via_api": True,
+        }
+        vantage_gateway.probe_module = lambda module_id: {
+            "ok": module_id == "feed",
+            "module": module_id,
+            "status_code": 200 if module_id == "feed" else None,
+            "error": "" if module_id == "feed" else "not found",
+        }
+
+        vantage_status_stdout = io.StringIO()
+        with redirect_stdout(vantage_status_stdout):
+            exit_code = main(["vantage", "status", "--json"])
+        vantage_status_payload = json.loads(vantage_status_stdout.getvalue())
+        check("cli_vantage_status_exit_code", exit_code == 0)
+        check("cli_vantage_status_enabled", vantage_status_payload.get("enabled") is True)
+
+        vantage_modules_stdout = io.StringIO()
+        with redirect_stdout(vantage_modules_stdout):
+            exit_code = main(["vantage", "modules", "--json"])
+        vantage_modules_payload = json.loads(vantage_modules_stdout.getvalue())
+        check("cli_vantage_modules_exit_code", exit_code == 0)
+        check(
+            "cli_vantage_modules_feed",
+            any(item.get("id") == "feed" for item in vantage_modules_payload.get("modules", [])),
+        )
+
+        vantage_probe_stdout = io.StringIO()
+        with redirect_stdout(vantage_probe_stdout):
+            exit_code = main(["vantage", "probe", "--module", "feed", "--json"])
+        vantage_probe_payload = json.loads(vantage_probe_stdout.getvalue())
+        check("cli_vantage_probe_exit_code", exit_code == 0)
+        check("cli_vantage_probe_ok", vantage_probe_payload.get("ok") is True)
     finally:
         engine_module.chat_reply = original_chat_reply
         engine_module.stream_chat_events = original_stream_chat_events
+        vantage_gateway.status_payload = original_vantage_status
+        vantage_gateway.probe_module = original_vantage_probe
         try:
             tmpdir.cleanup()
         except Exception:

@@ -13,6 +13,10 @@ def load_agent_config(base_path: Path | None = None) -> Any:
     return soc_copilot_loader.load_soc_copilot(base_path=base_path)
 
 
+def list_available_agents() -> list[dict[str, Any]]:
+    return soc_copilot_loader.list_available_agents()
+
+
 def choose_skill(
     user_input: str,
     *,

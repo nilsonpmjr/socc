@@ -1,6 +1,8 @@
 from __future__ import annotations
+import asyncio
 import ipaddress
 import json
+import os
 import re
 import socket
 from time import perf_counter, time
@@ -8,6 +10,9 @@ from typing import Any
 from pathlib import Path
 
 from soc_copilot.config import LLM_ENABLED, OUTPUT_DIR, SOC_PORT
+from socc.cli.installer import runtime_home
+from socc.cli.service_manager import service_status as runtime_service_status
+from socc.core import agent_loader as agent_loader_runtime
 from socc.core import analysis as analysis_runtime
 from socc.core import chat as chat_runtime
 from socc.core import knowledge_base as knowledge_base_runtime
@@ -21,12 +26,16 @@ from socc.core import input_adapter as input_adapter_runtime
 from socc.core import parser as parser_runtime
 from socc.core import storage as storage_runtime
 from socc.gateway import threat_intel as ti_gateway
+from socc.gateway import vantage_api as vantage_gateway
 from socc.gateway.llm_gateway import (
+    list_backend_models,
     benchmark_runtime,
     record_analysis_event,
     runtime_brief,
     runtime_status,
+    warmup_backend_model,
 )
+from socc.utils.config_loader import load_environment, update_env_assignment
 from socc.utils.feature_flags import feature_flags_payload
 
 
@@ -165,6 +174,7 @@ def prepare_export_submission_inputs(body: dict[str, Any] | None) -> dict[str, A
     payload = {} if body is None else body
     if not isinstance(payload, dict):
         raise ValueError("Corpo JSON inválido para exportação.")
+    legacy_payload_key = "soar" + "_payload"
     return {
         "export_format": payload.get("format", "json"),
         "run_id": payload.get("run_id"),
@@ -175,6 +185,7 @@ def prepare_export_submission_inputs(body: dict[str, Any] | None) -> dict[str, A
         "structured": payload.get("analysis_structured") or {},
         "priority": payload.get("analysis_priority") or {},
         "trace": payload.get("analysis_trace") or {},
+        "operational_payload": payload.get("operational_payload") or payload.get(legacy_payload_key) or {},
         "draft": payload.get("draft", "") or "",
         "cliente": payload.get("cliente", ""),
         "regra": payload.get("regra", ""),
@@ -190,11 +201,15 @@ def prepare_chat_submission_inputs(body: dict[str, Any] | None) -> dict[str, Any
     message = str(payload.get("message", "") or "").strip()
     if not message:
         raise ValueError("Mensagem vazia")
+    response_mode = str(payload.get("response_mode", "balanced") or "balanced").strip().lower()
+    if response_mode not in {"fast", "balanced", "deep"}:
+        response_mode = "balanced"
     return {
         "message": message,
         "session_id": str(payload.get("session_id", "") or ""),
         "classificacao": str(payload.get("classificacao", "auto") or "auto").upper(),
         "cliente": str(payload.get("cliente", "") or ""),
+        "response_mode": response_mode,
     }
 
 
@@ -219,10 +234,16 @@ def infer_rule_context(regra: str, fields: dict[str, Any], raw_text: str) -> str
 
 
 def _infer_ioc_type(ioc: str) -> str:
-    if "." in ioc and "[" not in ioc and all(part.isdigit() for part in ioc.split(".") if part):
+    normalized = str(ioc or "").strip()
+    try:
+        ipaddress.ip_address(normalized)
         return "ip"
-    if len(ioc) in (32, 40, 64) and all(ch in "0123456789abcdefABCDEF" for ch in ioc):
+    except ValueError:
+        pass
+    if len(normalized) in (32, 40, 64) and all(ch in "0123456789abcdefABCDEF" for ch in normalized):
         return "hash"
+    if normalized.startswith(("http://", "https://")):
+        return "url"
     return "domain"
 
 
@@ -268,8 +289,35 @@ def _retrieve_knowledge(
         query_text=query_text,
         fields=fields,
     )
-    retrieval["context"] = knowledge_base_runtime.format_retrieval_context(retrieval)
+    kb_context = knowledge_base_runtime.format_retrieval_context(retrieval)
+    vantage = vantage_gateway.retrieve_context(query_text, fields=fields)
+    context_parts = [section for section in (kb_context, str(vantage.get("context") or "")) if section]
+    retrieval["context"] = "\n\n".join(context_parts).strip()
+    retrieval["vantage"] = vantage
+    retrieval["sources"] = list(retrieval.get("sources") or []) + list(vantage.get("sources") or [])
+    retrieval["matches"] = list(retrieval.get("matches") or []) + list(vantage.get("matches") or [])
     return retrieval
+
+
+def _build_operational_payload(
+    *,
+    metadata: dict[str, Any] | None = None,
+    fields: dict[str, Any],
+    analysis_payload: dict[str, Any],
+    structured_analysis: dict[str, Any],
+    analysis_priority: dict[str, Any],
+    analysis_trace: dict[str, Any],
+    draft: str = "",
+) -> dict[str, Any]:
+    return analysis_runtime.build_operational_payload(
+        metadata=metadata,
+        fields=fields,
+        analysis_structured=structured_analysis,
+        analysis_priority=analysis_priority,
+        analysis_trace=analysis_trace,
+        analysis_legacy=analysis_payload,
+        draft=draft,
+    )
 
 
 def _normalize_draft_fields(fields: dict[str, Any], iocs: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -414,6 +462,11 @@ def analyze_payload(
         analysis=analysis_payload,
         ti_results=ti_results or {},
     )
+    result_metadata = {
+        "cliente": cliente,
+        "regra": regra_contexto,
+        "classificacao": classificacao,
+    }
 
     result = AnalysisEnvelope(
         fields=fields,
@@ -455,9 +508,23 @@ def analyze_payload(
         result["draft"] = draft_text
         result["template_used"] = template_used
 
+    result["operational_payload"] = _build_operational_payload(
+        metadata=result_metadata,
+        fields=fields,
+        analysis_payload=analysis_payload,
+        structured_analysis=structured_analysis,
+        analysis_priority=analysis_priority,
+        analysis_trace=analysis_trace,
+        draft=str(result.get("draft") or ""),
+    )
+
     result["knowledge_matches"] = list(knowledge.get("matches") or [])
     result["knowledge_sources"] = list(knowledge.get("sources") or [])
     result["knowledge_query_terms"] = list(knowledge.get("query_terms") or [])
+    result["vantage_context"] = str((knowledge.get("vantage") or {}).get("context") or "")
+    result["vantage_sources"] = list((knowledge.get("vantage") or {}).get("sources") or [])
+    result["vantage_modules"] = list((knowledge.get("vantage") or {}).get("modules") or [])
+    result["vantage_artifacts"] = dict((knowledge.get("vantage") or {}).get("artifacts") or {})
 
     return result
 
@@ -550,6 +617,7 @@ def analyze_submission(
         "analysis_structured": result.get("analysis_structured", {}),
         "analysis_priority": result.get("analysis_priority", {}),
         "analysis_trace": result.get("analysis_trace", {}),
+        "operational_payload": result.get("operational_payload", {}),
         "analysis_schema_valid": not analysis_schema_errors,
         "analysis_schema_errors": analysis_schema_errors,
         "knowledge_matches": result.get("knowledge_matches", []),
@@ -562,6 +630,10 @@ def analyze_submission(
         "classificacao": classificacao,
         "template_usado": result.get("template_used"),
         "payload_hash": payload_hash,
+        "vantage_context": result.get("vantage_context", ""),
+        "vantage_sources": result.get("vantage_sources", []),
+        "vantage_modules": result.get("vantage_modules", []),
+        "vantage_artifacts": result.get("vantage_artifacts", {}),
     }
 
 
@@ -623,6 +695,20 @@ def generate_draft_submission(
             tipo_saida=f"{classificacao}_final",
             conteudo=draft_text,
         )
+    operational_payload = _build_operational_payload(
+        metadata={
+            "cliente": cliente,
+            "regra": regra_contexto,
+            "classificacao": classificacao,
+            "run_id": run_id,
+        },
+        fields=normalized_fields,
+        analysis_payload=analysis,
+        structured_analysis=analysis_structured,
+        analysis_priority=analysis_priority,
+        analysis_trace=analysis_trace,
+        draft=draft_text,
+    )
     record_analysis_event(
         source=source,
         latency_ms=(perf_counter() - started) * 1000,
@@ -638,6 +724,7 @@ def generate_draft_submission(
         "analysis_structured": analysis_structured,
         "analysis_priority": analysis_priority,
         "analysis_trace": analysis_trace,
+        "operational_payload": operational_payload,
         "runtime": runtime_brief(),
     }
 
@@ -649,6 +736,7 @@ def build_chat_payload_response(
     skill: str,
     classificacao: str = "AUTO",
     cliente: str = "",
+    response_mode: str = "balanced",
     threat_intel_enabled: bool = True,
     source: str = "chat_payload",
 ) -> dict[str, Any]:
@@ -713,9 +801,27 @@ def build_chat_payload_response(
         "analysis_structured": analysis_result.get("analysis_structured", {}),
         "analysis_priority": analysis_result.get("analysis_priority", {}),
         "analysis_trace": analysis_result.get("analysis_trace", {}),
+        "operational_payload": _build_operational_payload(
+            metadata={
+                "cliente": cliente,
+                "regra": regra_contexto,
+                "classificacao": cls,
+                "session_id": session_id,
+            },
+            fields=dict(analysis_result.get("fields", {}) or {}),
+            analysis_payload=analysis,
+            structured_analysis=dict(analysis_result.get("analysis_structured", {}) or {}),
+            analysis_priority=dict(analysis_result.get("analysis_priority", {}) or {}),
+            analysis_trace=dict(analysis_result.get("analysis_trace", {}) or {}),
+            draft=draft,
+        ),
         "knowledge_matches": analysis_result.get("knowledge_matches", []),
         "knowledge_sources": analysis_result.get("knowledge_sources", []),
         "knowledge_query_terms": analysis_result.get("knowledge_query_terms", []),
+        "vantage_context": analysis_result.get("vantage_context", ""),
+        "vantage_sources": analysis_result.get("vantage_sources", []),
+        "vantage_modules": analysis_result.get("vantage_modules", []),
+        "vantage_artifacts": analysis_result.get("vantage_artifacts", {}),
         "draft": draft,
         "template": template,
         "runtime": analysis_result.get("runtime", runtime_brief()),
@@ -723,6 +829,7 @@ def build_chat_payload_response(
         "regra_contexto": regra_contexto,
         "formato_detectado": str(prepared["format"]),
         "payload_hash": storage_runtime.hash_input(raw_text),
+        "response_mode": response_mode,
     }
     storage_runtime.save_chat_message(
         session_id=session_id,
@@ -757,10 +864,13 @@ def _merge_chat_metadata(
     response_metadata: dict[str, Any] | None = None,
     *,
     cliente: str = "",
+    response_mode: str = "",
 ) -> dict[str, Any]:
     metadata = dict(response_metadata or {})
     if cliente:
         metadata.setdefault("cliente", cliente)
+    if response_mode:
+        metadata.setdefault("response_mode", response_mode)
     return metadata
 
 
@@ -770,6 +880,7 @@ def chat_submission(
     session_id: str = "",
     classificacao: str = "AUTO",
     cliente: str = "",
+    response_mode: str = "balanced",
     threat_intel_enabled: bool = True,
     source: str = "chat_payload",
 ) -> dict[str, Any]:
@@ -781,6 +892,7 @@ def chat_submission(
             skill=chat_runtime.select_skill(message),
             classificacao=classificacao,
             cliente=cliente,
+            response_mode=response_mode,
             threat_intel_enabled=threat_intel_enabled,
             source=source,
         )
@@ -788,6 +900,7 @@ def chat_submission(
         message=message,
         session_id=effective_session,
         cliente=cliente,
+        response_mode=response_mode,
     )
 
 
@@ -811,6 +924,7 @@ async def stream_chat_payload_events(
     session_id: str,
     classificacao: str,
     cliente: str,
+    response_mode: str = "balanced",
     threat_intel_enabled: bool = True,
     source: str = "chat_payload",
 ):
@@ -821,6 +935,7 @@ async def stream_chat_payload_events(
             "session_id": session_id,
             "skill": selected_skill,
             "runtime": runtime_brief(),
+            "response_mode": response_mode,
         },
     }
     for step, phase, label in (
@@ -834,12 +949,14 @@ async def stream_chat_payload_events(
             "event": "phase",
             "payload": {"step": step, "phase": phase, "label": label},
         }
-    response_payload = build_chat_payload_response(
+    response_payload = await asyncio.to_thread(
+        build_chat_payload_response,
         message=message,
         session_id=session_id,
         skill=selected_skill,
         classificacao=classificacao,
         cliente=cliente,
+        response_mode=response_mode,
         threat_intel_enabled=threat_intel_enabled,
         source=source,
     )
@@ -852,6 +969,7 @@ async def stream_chat_submission_events(
     session_id: str = "",
     classificacao: str = "AUTO",
     cliente: str = "",
+    response_mode: str = "balanced",
     threat_intel_enabled: bool = True,
     source: str = "chat_payload",
 ):
@@ -862,6 +980,7 @@ async def stream_chat_submission_events(
             session_id=effective_session,
             classificacao=classificacao,
             cliente=cliente,
+            response_mode=response_mode,
             threat_intel_enabled=threat_intel_enabled,
             source=source,
         ):
@@ -872,6 +991,7 @@ async def stream_chat_submission_events(
         message=message,
         session_id=effective_session,
         cliente=cliente,
+        response_mode=response_mode,
     ):
         event_name = str(event.get("event") or "message")
         if event_name == "final":
@@ -989,6 +1109,7 @@ def export_analysis_submission(
     structured: dict[str, Any] | None = None,
     priority: dict[str, Any] | None = None,
     trace: dict[str, Any] | None = None,
+    operational_payload: dict[str, Any] | None = None,
     draft: str = "",
     cliente: str = "",
     regra: str = "",
@@ -996,7 +1117,7 @@ def export_analysis_submission(
     payload_hash: str = "",
 ) -> dict[str, Any]:
     export_format_norm = str(export_format or "json").strip().lower()
-    if export_format_norm not in {"json", "markdown", "md"}:
+    if export_format_norm not in {"json", "markdown", "md", "ticket"}:
         raise ValueError("format inválido.")
 
     fields_payload = fields or {}
@@ -1005,6 +1126,7 @@ def export_analysis_submission(
     structured_payload = structured or {}
     priority_payload = priority or {}
     trace_payload = trace or {}
+    operational_payload_data = operational_payload or {}
     if not structured_payload and analysis_payload:
         structured_payload = analysis_runtime.build_structured_analysis(
             analysis=analysis_payload,
@@ -1023,6 +1145,23 @@ def export_analysis_submission(
             analysis=analysis_payload,
             ti_results=ti_payload,
         )
+    if not operational_payload_data and (analysis_payload or structured_payload):
+        operational_payload_data = _build_operational_payload(
+            metadata={
+                "run_id": run_id,
+                "session_id": str(session_id or "").strip(),
+                "cliente": cliente,
+                "regra": regra,
+                "classificacao": classificacao,
+                "payload_hash": payload_hash,
+            },
+            fields=fields_payload,
+            analysis_payload=analysis_payload,
+            structured_analysis=structured_payload,
+            analysis_priority=priority_payload,
+            analysis_trace=trace_payload,
+            draft=str(draft or ""),
+        )
 
     bundle = analysis_runtime.build_export_bundle(
         metadata={
@@ -1038,6 +1177,7 @@ def export_analysis_submission(
         analysis_structured=structured_payload,
         analysis_priority=priority_payload,
         analysis_trace=trace_payload,
+        operational_payload=operational_payload_data,
         draft=str(draft or ""),
         analysis_legacy=analysis_payload,
     )
@@ -1051,7 +1191,7 @@ def export_analysis_submission(
         try:
             storage_runtime.save_output(
                 run_id=int(run_id),
-                tipo_saida=f"analysis_export_{'json' if export_format_norm == 'json' else 'md'}",
+                tipo_saida=f"analysis_export_{'json' if export_format_norm == 'json' else 'md' if export_format_norm in {'markdown', 'md'} else 'ticket'}",
                 conteudo=content,
             )
         except (TypeError, ValueError):
@@ -1059,7 +1199,7 @@ def export_analysis_submission(
     return {
         "filename": filename,
         "mime_type": mime_type,
-        "format": "json" if export_format_norm == "json" else "markdown",
+        "format": "json" if export_format_norm == "json" else "markdown" if export_format_norm in {"markdown", "md"} else "ticket",
         "content": content,
     }
 
@@ -1076,10 +1216,243 @@ def list_chat_session_messages_payload(session_id: str, limit: int = 100) -> dic
     }
 
 
+def _active_agent_payload() -> dict[str, Any]:
+    available = agent_loader_runtime.list_available_agents()
+    selected = next((item for item in available if item.get("selected")), None)
+    if not selected and available:
+        selected = available[0]
+
+    payload: dict[str, Any] = {
+        "selected": selected or {},
+        "available": available,
+    }
+    if not isinstance(selected, dict) or not selected.get("path"):
+        return payload
+
+    try:
+        config = agent_loader_runtime.load_agent_config(Path(str(selected["path"])))
+        payload["selected"] = {
+            **selected,
+            "schema_path": str(config.schema_path),
+            "skills": sorted(config.skills.keys()),
+            "references": sorted(config.references.keys()),
+        }
+    except Exception as exc:
+        payload["selected"] = {
+            **selected,
+            "error": str(exc),
+        }
+    return payload
+
+
+def control_center_summary_payload(limit_sessions: int = 12) -> dict[str, Any]:
+    home = runtime_home()
+    env_paths = load_environment()
+    intel = knowledge_base_runtime.inspect_index(home)
+    runtime_payload = runtime_status_payload()
+    available_models = list_backend_models()
+    agent_payload = _active_agent_payload()
+    service_payload = runtime_service_status(home)
+    vantage_payload = vantage_status_payload()
+    recent_sessions = storage_runtime.list_chat_sessions(limit=max(1, min(limit_sessions, 30)))
+    checks = {
+        "runtime_home_exists": home.exists(),
+        "env_file_exists": (home / ".env").exists(),
+        "manifest_exists": (home / "socc.json").exists(),
+        "agent_selected_exists": Path(str((agent_payload.get("selected") or {}).get("path") or "")).exists(),
+        "intel_registry_exists": Path(str((intel.get("paths") or {}).get("registry") or "")).exists(),
+        "intel_index_exists": Path(str((intel.get("paths") or {}).get("index") or "")).exists(),
+    }
+    return {
+        "runtime": runtime_payload,
+        "runtime_models": {
+            "catalog": available_models,
+            "profiles": {
+                "fast": os.getenv("SOCC_OLLAMA_FAST_MODEL", "llama3.2:3b"),
+                "balanced": os.getenv("SOCC_OLLAMA_BALANCED_MODEL", os.getenv("OLLAMA_MODEL", "")),
+                "deep": os.getenv("SOCC_OLLAMA_DEEP_MODEL", os.getenv("OLLAMA_MODEL", "")),
+                "default": os.getenv("OLLAMA_MODEL", ""),
+            },
+            "keep_alive": os.getenv("SOCC_OLLAMA_KEEP_ALIVE", "15m"),
+        },
+        "service": service_payload,
+        "vantage": vantage_payload,
+        "agents": agent_payload,
+        "knowledge_base": {
+            "manifest": intel.get("manifest", {}),
+            "sources": intel.get("sources", []),
+            "paths": intel.get("paths", {}),
+        },
+        "sessions": {
+            "count": len(recent_sessions),
+            "items": recent_sessions,
+        },
+        "diagnostics": {
+            "paths": {
+                "runtime_home": str(home),
+                "runtime_env_loaded_from": env_paths.get("runtime_env"),
+                "repo_env_loaded_from": env_paths.get("repo_env"),
+            },
+            "checks": checks,
+            "feature_flags": feature_flags_payload(),
+        },
+    }
+
+
+def select_runtime_model_payload(
+    *,
+    response_mode: str,
+    model: str,
+    home: Path | None = None,
+) -> dict[str, Any]:
+    mode = str(response_mode or "").strip().lower()
+    if mode not in {"fast", "balanced", "deep"}:
+        raise ValueError("response_mode inválido. Use fast, balanced ou deep.")
+
+    normalized_model = str(model or "").strip()
+    if not normalized_model:
+        raise ValueError("model é obrigatório.")
+
+    env_file = runtime_home(home) / ".env"
+    env_key = {
+        "fast": "SOCC_OLLAMA_FAST_MODEL",
+        "balanced": "SOCC_OLLAMA_BALANCED_MODEL",
+        "deep": "SOCC_OLLAMA_DEEP_MODEL",
+    }[mode]
+    update_env_assignment(env_file, env_key, normalized_model)
+    os.environ[env_key] = normalized_model
+
+    if mode == "balanced":
+        update_env_assignment(env_file, "OLLAMA_MODEL", normalized_model)
+        os.environ["OLLAMA_MODEL"] = normalized_model
+
+    return {
+        "response_mode": mode,
+        "model": normalized_model,
+        "persisted_env_file": str(env_file),
+        "control_center": control_center_summary_payload(),
+    }
+
+
+def warmup_runtime_model_payload(
+    *,
+    response_mode: str = "balanced",
+) -> dict[str, Any]:
+    mode = str(response_mode or "balanced").strip().lower()
+    if mode not in {"fast", "balanced", "deep"}:
+        raise ValueError("response_mode inválido. Use fast, balanced ou deep.")
+
+    model = {
+        "fast": os.getenv("SOCC_OLLAMA_FAST_MODEL", "llama3.2:3b"),
+        "balanced": os.getenv("SOCC_OLLAMA_BALANCED_MODEL", os.getenv("OLLAMA_MODEL", "")),
+        "deep": os.getenv("SOCC_OLLAMA_DEEP_MODEL", os.getenv("OLLAMA_MODEL", "")),
+    }[mode]
+    result = warmup_backend_model(
+        model=model,
+        keep_alive=os.getenv("SOCC_OLLAMA_KEEP_ALIVE", "15m"),
+    )
+    return {
+        "response_mode": mode,
+        "result": result,
+        "control_center": control_center_summary_payload(),
+    }
+
+
+def select_active_agent_payload(agent_id: str, *, home: Path | None = None) -> dict[str, Any]:
+    target = str(agent_id or "").strip()
+    if not target:
+        raise ValueError("agent_id é obrigatório.")
+
+    available = agent_loader_runtime.list_available_agents()
+    selected = next(
+        (
+            item
+            for item in available
+            if str(item.get("id") or "") == target or str(item.get("path") or "") == target
+        ),
+        None,
+    )
+    if not isinstance(selected, dict):
+        raise LookupError("Agente solicitado não foi encontrado.")
+
+    agent_path = Path(str(selected.get("path") or "")).expanduser()
+    if not agent_path.exists():
+        raise LookupError("Caminho do agente não existe mais.")
+
+    os.environ["SOCC_AGENT_HOME"] = str(agent_path)
+    env_file = runtime_home(home) / ".env"
+    update_env_assignment(env_file, "SOCC_AGENT_HOME", str(agent_path))
+
+    return {
+        "selected_agent": {
+            "id": str(selected.get("id") or ""),
+            "label": str(selected.get("label") or ""),
+            "path": str(agent_path),
+        },
+        "persisted_env_file": str(env_file),
+        "control_center": control_center_summary_payload(),
+    }
+
+
+def select_vantage_modules_payload(
+    *,
+    module_ids: list[str] | tuple[str, ...],
+    enabled: bool | None = None,
+    home: Path | None = None,
+) -> dict[str, Any]:
+    catalog = vantage_gateway.module_catalog()
+    valid_ids = {str(item.get("id") or "").strip().lower() for item in catalog if item.get("id")}
+    selected: list[str] = []
+    for item in module_ids:
+        module_id = str(item or "").strip().lower()
+        if module_id and module_id in valid_ids and module_id not in selected:
+            selected.append(module_id)
+
+    env_file = runtime_home(home) / ".env"
+    selected_value = ",".join(selected)
+    update_env_assignment(env_file, "SOCC_VANTAGE_ENABLED_MODULES", selected_value)
+    os.environ["SOCC_VANTAGE_ENABLED_MODULES"] = selected_value
+
+    enabled_value = bool(selected) if enabled is None else bool(enabled)
+    enabled_text = "true" if enabled_value else "false"
+    update_env_assignment(env_file, "SOCC_VANTAGE_ENABLED", enabled_text)
+    os.environ["SOCC_VANTAGE_ENABLED"] = enabled_text
+
+    return {
+        "enabled": enabled_value,
+        "selected_modules": selected,
+        "persisted_env_file": str(env_file),
+        "control_center": control_center_summary_payload(),
+    }
+
+
 def runtime_status_payload() -> dict[str, Any]:
     payload = runtime_status()
     payload["features"] = feature_flags_payload()
     return payload
+
+
+def vantage_status_payload() -> dict[str, Any]:
+    return vantage_gateway.status_payload()
+
+
+def vantage_modules_payload() -> dict[str, Any]:
+    status = vantage_gateway.status_payload()
+    return {
+        "enabled": bool(status.get("enabled")),
+        "base_url": str(status.get("base_url") or ""),
+        "auth_mode": str(status.get("auth_mode") or "none"),
+        "modules": list(status.get("modules") or []),
+        "selected_modules": list(status.get("selected_modules") or []),
+        "future_rss_via_api": bool(status.get("future_rss_via_api")),
+    }
+
+
+def vantage_probe_payload(module_id: str) -> dict[str, Any]:
+    module = str(module_id or "").strip().lower()
+    if not module:
+        raise ValueError("module é obrigatório.")
+    return vantage_gateway.probe_module(module)
 
 
 def runtime_benchmark_payload(
@@ -1107,12 +1480,14 @@ def chat_reply(
     message: str,
     session_id: str = "",
     cliente: str = "",
+    response_mode: str = "balanced",
 ) -> dict[str, Any]:
     storage_runtime.init_db()
     response = chat_runtime.generate_chat_reply(
         message=message,
         session_id=session_id,
         cliente=cliente,
+        response_mode=response_mode,
     )
     response_type = str(response.get("type") or "message")
     content = str(response.get("content") or "")
@@ -1137,6 +1512,7 @@ def chat_reply(
         metadata=_merge_chat_metadata(
             response.get("metadata") if isinstance(response.get("metadata"), dict) else None,
             cliente=cliente,
+            response_mode=response_mode,
         ),
     ).to_dict()
 
@@ -1145,12 +1521,14 @@ def stream_chat_events(
     message: str,
     session_id: str = "",
     cliente: str = "",
+    response_mode: str = "balanced",
 ):
     storage_runtime.init_db()
     for event in chat_runtime.stream_chat_reply_events(
         message=message,
         session_id=session_id,
         cliente=cliente,
+        response_mode=response_mode,
     ):
         if event.get("event") != "final":
             yield event
@@ -1184,6 +1562,7 @@ def stream_chat_events(
                 metadata=_merge_chat_metadata(
                     data.get("metadata") if isinstance(data.get("metadata"), dict) else None,
                     cliente=cliente,
+                    response_mode=response_mode,
                 ),
             ).to_dict(),
         }
