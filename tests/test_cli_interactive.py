@@ -329,6 +329,105 @@ check("wizard explains reason", "non-interactive" in result.get("reason", ""))
 set_non_interactive(False)
 
 # ============================================================
+# oauth_flow — unit tests (no network)
+# ============================================================
+_header("oauth_flow — PKCE, providers, credentials")
+
+from socc.cli.oauth_flow import (
+    _generate_pkce,
+    _generate_state,
+    PROVIDERS,
+    save_credentials,
+    load_credentials,
+    credentials_valid,
+    clear_credentials,
+)
+
+# PKCE generation
+verifier, challenge = _generate_pkce()
+check("pkce verifier is non-empty string", isinstance(verifier, str) and len(verifier) > 20)
+check("pkce challenge is non-empty string", isinstance(challenge, str) and len(challenge) > 20)
+check("pkce verifier != challenge", verifier != challenge)
+
+# State generation
+state = _generate_state()
+check("state is 32-char hex", len(state) == 32 and all(c in "0123456789abcdef" for c in state))
+
+# Providers
+check("anthropic provider exists", "anthropic" in PROVIDERS)
+check("openai provider exists", "openai" in PROVIDERS)
+check("anthropic authorize_url set", "claude.ai" in PROVIDERS["anthropic"].authorize_url)
+check("openai authorize_url set", "openai.com" in PROVIDERS["openai"].authorize_url)
+check("anthropic has client_id", bool(PROVIDERS["anthropic"].client_id))
+check("openai has client_id", bool(PROVIDERS["openai"].client_id))
+check("anthropic has scopes", bool(PROVIDERS["anthropic"].scopes))
+
+# Credential storage (use temp dir)
+import tempfile as _tf
+with _tf.TemporaryDirectory() as _cred_tmp:
+    import socc.cli.oauth_flow as _oflow
+    _orig_cred_dir = _oflow._credentials_dir
+
+    def _mock_cred_dir() -> Path:
+        return Path(_cred_tmp)
+
+    _oflow._credentials_dir = _mock_cred_dir
+    try:
+        # Save
+        tokens = {"access_token": "test-token-123", "expires_in": 3600}
+        path = save_credentials("test_provider", tokens)
+        check("save_credentials returns path", path.exists())
+
+        # Load
+        loaded = load_credentials("test_provider")
+        check("load_credentials returns dict", loaded is not None)
+        check("loaded has access_token", loaded.get("access_token") == "test-token-123")
+        check("loaded has expires_at", "expires_at" in loaded)
+        check("loaded has provider", loaded.get("provider") == "test_provider")
+
+        # Valid
+        valid = credentials_valid("test_provider")
+        check("credentials_valid returns True for fresh token", valid is True)
+
+        # Non-existent provider
+        check("credentials_valid returns False for unknown", credentials_valid("nope") is False)
+        check("load_credentials returns None for unknown", load_credentials("nope") is None)
+
+        # Clear
+        cleared = clear_credentials("test_provider")
+        check("clear_credentials returns True", cleared is True)
+        check("credentials gone after clear", load_credentials("test_provider") is None)
+        check("clear non-existent returns False", clear_credentials("nope") is False)
+    finally:
+        _oflow._credentials_dir = _orig_cred_dir
+
+# ============================================================
+# llm_gateway — resolve_api_key
+# ============================================================
+_header("llm_gateway — resolve_api_key with OAuth fallback")
+
+# When env var is set, it takes priority
+old_key = os.environ.get("ANTHROPIC_API_KEY", "")
+os.environ["ANTHROPIC_API_KEY"] = "env-key-123"
+try:
+    # reload config to pick up new env
+    import importlib
+    import soc_copilot.config as _cfg
+    importlib.reload(_cfg)
+    import socc.gateway.llm_gateway as _gw
+    importlib.reload(_gw)
+    from socc.gateway.llm_gateway import resolve_api_key as _rak
+    key = _rak("anthropic")
+    check("resolve_api_key prefers env var", key == "env-key-123")
+finally:
+    if old_key:
+        os.environ["ANTHROPIC_API_KEY"] = old_key
+    else:
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+    importlib.reload(_cfg)
+    importlib.reload(_gw)
+
+# ============================================================
 # Summary
 # ============================================================
 print(f"\n{'='*60}")

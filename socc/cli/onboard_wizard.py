@@ -139,19 +139,16 @@ def step_runtime_home(env: dict[str, str], current_home: Path | None) -> Path:
     return chosen
 
 
-def step_knowledge_base(env: dict[str, str]) -> None:
-    step(2, TOTAL_STEPS, "Base Local de Conhecimento")
-    if not confirm("Deseja apontar uma pasta de conhecimento local (SOPs, playbooks, regras)?", default=False):
-        skip("Knowledge base será configurada depois.")
-        return
+def _configure_one_kb_source(env: dict[str, str], index: int) -> dict[str, str] | None:
+    """Configure a single knowledge base source. Returns source dict or None."""
     candidates = _scan_candidate_kb_paths()
-    default_path = candidates[0] if candidates else ""
-    if candidates:
+    default_path = candidates[0] if candidates and index == 0 else ""
+    if candidates and index == 0:
         print(f"  Candidatos detectados: {', '.join(candidates)}")
+
     kb_path = ask_path("Caminho da pasta de conhecimento", default=default_path, must_exist=True)
     if not kb_path:
-        skip("Nenhum caminho informado.")
-        return
+        return None
 
     file_count = _count_indexable_files(kb_path)
     print(f"  {file_count} arquivos indexáveis encontrados.")
@@ -163,16 +160,57 @@ def step_knowledge_base(env: dict[str, str]) -> None:
     trust = select("Nível de confiança:", trust_options)
 
     tags = ask("Tags (separadas por vírgula)", default="sop,playbook")
+    ingest = file_count > 0 and confirm("Indexar agora?")
 
-    env["ALERTAS_ROOT"] = str(kb_path)
-    env["_KB_SOURCE_PATH"] = str(kb_path)
-    env["_KB_SOURCE_KIND"] = kind
-    env["_KB_SOURCE_TRUST"] = trust
-    env["_KB_SOURCE_TAGS"] = tags
+    success(f"Fonte adicionada: {kb_path} ({file_count} arquivos)")
+    return {
+        "path": str(kb_path),
+        "kind": kind,
+        "trust": trust,
+        "tags": tags,
+        "file_count": file_count,
+        "ingest": ingest,
+    }
 
-    if file_count > 0 and confirm("Indexar agora?"):
+
+def step_knowledge_base(env: dict[str, str]) -> None:
+    step(2, TOTAL_STEPS, "Base Local de Conhecimento")
+    if not confirm("Deseja apontar pastas de conhecimento local (SOPs, playbooks, regras)?", default=False):
+        skip("Knowledge base será configurada depois.")
+        return
+
+    sources: list[dict[str, str]] = []
+    while True:
+        source = _configure_one_kb_source(env, len(sources))
+        if source:
+            sources.append(source)
+
+        options = ["Adicionar outra pasta", "Continuar >>"]
+        chosen = select("", options, default=1)
+        if chosen.startswith("Continuar"):
+            break
+        print()
+
+    if not sources:
+        skip("Nenhuma fonte configurada.")
+        return
+
+    # Store first source in main env keys (backwards compat)
+    first = sources[0]
+    env["ALERTAS_ROOT"] = first["path"]
+    env["_KB_SOURCE_PATH"] = first["path"]
+    env["_KB_SOURCE_KIND"] = first["kind"]
+    env["_KB_SOURCE_TRUST"] = first["trust"]
+    env["_KB_SOURCE_TAGS"] = first["tags"]
+    if first.get("ingest"):
         env["_KB_INGEST_NOW"] = "true"
-    success(f"Knowledge base: {kb_path} ({file_count} arquivos)")
+
+    # Store all sources as JSON for bulk ingestion
+    if len(sources) > 1:
+        import json
+        env["_KB_SOURCES_JSON"] = json.dumps(sources)
+
+    success(f"{len(sources)} fonte(s) de conhecimento configurada(s).")
 
 
 def step_backend(env: dict[str, str]) -> None:
@@ -198,33 +236,69 @@ def step_backend(env: dict[str, str]) -> None:
     else:
         warning("Nenhuma GPU detectada. Device será configurado como 'cpu'.")
 
-    all_backends = ["ollama", "lmstudio", "vllm", "openai-compatible", "anthropic", "auto"]
-    default_idx = 0
-    if detected:
-        default_idx = all_backends.index(detected[0]) if detected[0] in all_backends else 0
-    chosen = select("Qual backend de inferência usar?", all_backends, default=default_idx)
-
-    env["SOCC_INFERENCE_BACKEND"] = chosen
     env["SOCC_INFERENCE_DEVICE"] = "gpu" if gpu else "cpu"
 
-    if chosen == "ollama":
-        url = ask("URL do Ollama", default=backends_to_probe["ollama"])
-        env["OLLAMA_URL"] = url
-    elif chosen == "lmstudio":
-        url = ask("URL do LM Studio", default=backends_to_probe["lmstudio"])
-        env["SOCC_LMSTUDIO_URL"] = url
-    elif chosen == "vllm":
-        url = ask("URL do vLLM", default=backends_to_probe["vllm"])
-        env["SOCC_VLLM_URL"] = url
-    elif chosen == "openai-compatible":
-        url = ask("URL do endpoint OpenAI-compatible", default="")
-        if url:
-            env["SOCC_OPENAI_COMPAT_URL"] = url
-        model = ask("Modelo padrão", default="")
-        if model:
-            env["SOCC_OPENAI_COMPAT_MODEL"] = model
+    # Loop: configure multiple backends, pick one as primary
+    configured_backends: list[str] = list(detected)
 
-    success(f"Backend: {chosen} (device: {'gpu' if gpu else 'cpu'})")
+    while True:
+        options: list[str] = []
+        for b in ["ollama", "lmstudio", "vllm", "openai-compatible"]:
+            tag = " [configurado]" if b in configured_backends else ""
+            options.append(f"{b}{tag}")
+        options.append("Continuar >>")
+
+        chosen = select("Configurar backend:", options)
+
+        if chosen.startswith("Continuar"):
+            break
+
+        backend_key = chosen.split(" [")[0]  # strip [configurado] tag
+
+        if backend_key == "ollama":
+            url = ask("URL do Ollama", default=backends_to_probe.get("ollama", "http://localhost:11434"))
+            env["OLLAMA_URL"] = url
+            if backend_key not in configured_backends:
+                configured_backends.append(backend_key)
+        elif backend_key == "lmstudio":
+            url = ask("URL do LM Studio", default=backends_to_probe.get("lmstudio", "http://127.0.0.1:1234/v1"))
+            env["SOCC_LMSTUDIO_URL"] = url
+            if backend_key not in configured_backends:
+                configured_backends.append(backend_key)
+        elif backend_key == "vllm":
+            url = ask("URL do vLLM", default=backends_to_probe.get("vllm", "http://127.0.0.1:8000/v1"))
+            env["SOCC_VLLM_URL"] = url
+            if backend_key not in configured_backends:
+                configured_backends.append(backend_key)
+        elif backend_key == "openai-compatible":
+            url = ask("URL do endpoint OpenAI-compatible", default="")
+            if url:
+                env["SOCC_OPENAI_COMPAT_URL"] = url
+            model = ask("Modelo padrão", default="")
+            if model:
+                env["SOCC_OPENAI_COMPAT_MODEL"] = model
+            if backend_key not in configured_backends:
+                configured_backends.append(backend_key)
+
+        print()
+
+    # Pick primary backend
+    if configured_backends:
+        all_choices = configured_backends + ["anthropic", "auto"]
+        primary = select("Backend primário:", all_choices, default=0)
+        env["SOCC_INFERENCE_BACKEND"] = primary
+    else:
+        all_backends = ["ollama", "lmstudio", "vllm", "openai-compatible", "anthropic", "auto"]
+        default_idx = 0
+        if detected:
+            default_idx = all_backends.index(detected[0]) if detected[0] in all_backends else 0
+        primary = select("Backend primário:", all_backends, default=default_idx)
+        env["SOCC_INFERENCE_BACKEND"] = primary
+
+    if configured_backends:
+        env["SOCC_BACKEND_PRIORITY"] = ",".join(configured_backends)
+
+    success(f"Backend primário: {primary} (device: {'gpu' if gpu else 'cpu'})")
 
 
 def step_models(env: dict[str, str]) -> None:
@@ -268,42 +342,45 @@ def step_models(env: dict[str, str]) -> None:
     success(f"Fast={fast}  Balanced={balanced}  Deep={deep}")
 
 
-def _anthropic_oauth_login() -> str | None:
-    """Open browser for Anthropic Console login and retrieve API key.
+def _oauth_login(provider_name: str) -> str | None:
+    """Run OAuth PKCE login flow for Anthropic or OpenAI.
 
-    Returns the API key if the user provides it after logging in, or None.
+    Opens the provider's login page in the browser, waits for the callback,
+    exchanges the authorization code for tokens, and stores credentials
+    in ``~/.socc/credentials/<provider>.json``.
+
+    Returns the access_token on success, or None on failure.
     """
-    import webbrowser
-
-    print("\n  Abrindo o Anthropic Console no navegador...")
-    print("  1. Faça login em https://console.anthropic.com/")
-    print("  2. Vá em Settings > API Keys")
-    print("  3. Crie ou copie uma API key")
-    print()
     try:
-        webbrowser.open("https://console.anthropic.com/settings/keys")
-    except Exception:
-        warning("Não foi possível abrir o navegador. Acesse manualmente.")
-    return ask_secret("Cole a API Key Anthropic aqui") or None
+        from socc.cli.oauth_flow import oauth_login, PROVIDERS
 
+        provider = PROVIDERS.get(provider_name)
+        if not provider:
+            warning(f"Provider OAuth desconhecido: {provider_name}")
+            return None
 
-def _openai_oauth_login() -> str | None:
-    """Open browser for OpenAI Platform login and retrieve API key.
+        result = oauth_login(provider_name)
 
-    Returns the API key if the user provides it after logging in, or None.
-    """
-    import webbrowser
+        if result.get("error"):
+            error(f"OAuth falhou: {result['error']}")
+            return None
 
-    print("\n  Abrindo o OpenAI Platform no navegador...")
-    print("  1. Faça login em https://platform.openai.com/")
-    print("  2. Vá em API Keys")
-    print("  3. Crie ou copie uma API key")
-    print()
-    try:
-        webbrowser.open("https://platform.openai.com/api-keys")
-    except Exception:
-        warning("Não foi possível abrir o navegador. Acesse manualmente.")
-    return ask_secret("Cole a API Key OpenAI aqui") or None
+        token = result.get("access_token", "")
+        if token:
+            if result.get("reused"):
+                success(f"Credencial {provider.label} existente reutilizada.")
+            else:
+                success(f"Login {provider.label} realizado com sucesso!")
+            return token
+
+        warning("Nenhum token obtido.")
+        return None
+    except ImportError:
+        warning("Módulo oauth_flow não encontrado. Use API key manual.")
+        return None
+    except Exception as exc:
+        error(f"Erro no login OAuth: {exc}")
+        return None
 
 
 def _test_openai_key(api_key: str, url: str = "https://api.openai.com/v1") -> bool:
@@ -319,90 +396,136 @@ def _test_openai_key(api_key: str, url: str = "https://api.openai.com/v1") -> bo
         return False
 
 
-def step_cloud_provider(env: dict[str, str]) -> None:
-    step(5, TOTAL_STEPS, "Provider de Nuvem (fallback)")
-
-    if not confirm("Configurar um provider de nuvem como fallback?", default=False):
-        skip("Sem fallback de nuvem configurado.")
-        return
-
-    providers = [
-        "Anthropic (login via navegador)",
-        "OpenAI (login via navegador)",
-        "API key manual (qualquer provider)",
-        "Pular",
-    ]
-    chosen = select("Provider:", providers)
-
-    if chosen == "Pular":
-        skip("Provider de nuvem ignorado.")
-        return
-
-    if chosen.startswith("Anthropic"):
-        auth_method = select("Método de autenticação:", [
-            "Login no navegador (abre console.anthropic.com)",
-            "Colar API key diretamente",
-        ])
-        if auth_method.startswith("Login"):
-            api_key = _anthropic_oauth_login()
-        else:
-            api_key = ask_secret("API Key Anthropic")
-
-        if not api_key:
-            warning("Nenhuma API key informada.")
-            return
-        env["ANTHROPIC_API_KEY"] = api_key
-        env["SOCC_LLM_FALLBACK_PROVIDER"] = "anthropic"
-        model = ask("Modelo Anthropic", default="claude-haiku-4-5-20251001")
-        env["LLM_MODEL"] = model
-        if confirm("Testar conexão?"):
-            if _test_anthropic_key(api_key):
-                success("Conexão OK — provider Anthropic validado.")
-            else:
-                warning("Falha na validação. Verifique a API key.")
-        success("Fallback: anthropic")
-
-    elif chosen.startswith("OpenAI"):
-        auth_method = select("Método de autenticação:", [
-            "Login no navegador (abre platform.openai.com)",
-            "Colar API key diretamente",
-        ])
-        if auth_method.startswith("Login"):
-            api_key = _openai_oauth_login()
-        else:
-            api_key = ask_secret("API Key OpenAI")
-
-        if not api_key:
-            warning("Nenhuma API key informada.")
-            return
-
-        url = ask("URL da API OpenAI", default="https://api.openai.com/v1")
-        env["SOCC_OPENAI_COMPAT_URL"] = url
-        env["SOCC_OPENAI_COMPAT_MODEL"] = ask("Modelo", default="gpt-4o-mini")
-        env["SOCC_LLM_FALLBACK_PROVIDER"] = "openai-compatible"
-        # Armazenar key como bearer (OpenAI-compatible usa Authorization header)
-        env["SOCC_OPENAI_COMPAT_API_KEY"] = api_key
-
-        if confirm("Testar conexão?"):
-            if _test_openai_key(api_key, url):
-                success("Conexão OK — provider OpenAI validado.")
-            else:
-                warning("Falha na validação. Verifique a API key.")
-        success("Fallback: openai")
-
+def _configure_anthropic(env: dict[str, str]) -> None:
+    """Configure Anthropic provider (OAuth or API key)."""
+    auth_method = select("Método de autenticação:", [
+        "Login com conta (OAuth no navegador)",
+        "Colar API key diretamente",
+    ])
+    if auth_method.startswith("Login"):
+        api_key = _oauth_login("anthropic")
+        env["SOCC_AUTH_METHOD_ANTHROPIC"] = "oauth"
     else:
-        # API key manual genérica
-        url = ask("URL do endpoint OpenAI-compatible", default="")
-        if url:
-            env["SOCC_OPENAI_COMPAT_URL"] = url
-        api_key = ask_secret("API Key")
-        if api_key:
-            env["SOCC_OPENAI_COMPAT_API_KEY"] = api_key
-        model = ask("Modelo", default="")
-        if model:
-            env["SOCC_OPENAI_COMPAT_MODEL"] = model
+        api_key = ask_secret("API Key Anthropic")
+        env["SOCC_AUTH_METHOD_ANTHROPIC"] = "api_key"
+
+    if not api_key:
+        warning("Nenhuma credencial obtida para Anthropic.")
+        return
+    env["ANTHROPIC_API_KEY"] = api_key
+    if not env.get("SOCC_LLM_FALLBACK_PROVIDER"):
+        env["SOCC_LLM_FALLBACK_PROVIDER"] = "anthropic"
+    model = ask("Modelo Anthropic", default="claude-haiku-4-5-20251001")
+    env["LLM_MODEL"] = model
+    if confirm("Testar conexão?"):
+        if _test_anthropic_key(api_key):
+            success("Conexão OK — provider Anthropic validado.")
+        else:
+            warning("Falha na validação. Verifique a credencial.")
+    success("Anthropic configurado.")
+
+
+def _configure_openai(env: dict[str, str]) -> None:
+    """Configure OpenAI provider (OAuth or API key)."""
+    auth_method = select("Método de autenticação:", [
+        "Login com conta (OAuth no navegador)",
+        "Colar API key diretamente",
+    ])
+    if auth_method.startswith("Login"):
+        api_key = _oauth_login("openai")
+        env["SOCC_AUTH_METHOD_OPENAI"] = "oauth"
+    else:
+        api_key = ask_secret("API Key OpenAI")
+        env["SOCC_AUTH_METHOD_OPENAI"] = "api_key"
+
+    if not api_key:
+        warning("Nenhuma credencial obtida para OpenAI.")
+        return
+
+    url = ask("URL da API OpenAI", default="https://api.openai.com/v1")
+    env["SOCC_OPENAI_COMPAT_URL"] = url
+    env["SOCC_OPENAI_COMPAT_MODEL"] = ask("Modelo", default="gpt-4o-mini")
+    if not env.get("SOCC_LLM_FALLBACK_PROVIDER"):
         env["SOCC_LLM_FALLBACK_PROVIDER"] = "openai-compatible"
-        success("Fallback: openai-compatible")
+    env["SOCC_OPENAI_COMPAT_API_KEY"] = api_key
+
+    if confirm("Testar conexão?"):
+        if _test_openai_key(api_key, url):
+            success("Conexão OK — provider OpenAI validado.")
+        else:
+            warning("Falha na validação. Verifique a credencial.")
+    success("OpenAI configurado.")
+
+
+def _configure_manual_provider(env: dict[str, str]) -> None:
+    """Configure a generic OpenAI-compatible provider via API key."""
+    url = ask("URL do endpoint OpenAI-compatible", default="")
+    if url:
+        env["SOCC_OPENAI_COMPAT_URL"] = url
+    api_key = ask_secret("API Key")
+    if api_key:
+        env["SOCC_OPENAI_COMPAT_API_KEY"] = api_key
+    model = ask("Modelo", default="")
+    if model:
+        env["SOCC_OPENAI_COMPAT_MODEL"] = model
+    if not env.get("SOCC_LLM_FALLBACK_PROVIDER"):
+        env["SOCC_LLM_FALLBACK_PROVIDER"] = "openai-compatible"
+    success("Provider manual configurado.")
+
+
+def step_cloud_provider(env: dict[str, str]) -> None:
+    step(5, TOTAL_STEPS, "Providers de Nuvem")
+
+    if not confirm("Configurar providers de nuvem?", default=False):
+        skip("Sem provider de nuvem configurado.")
+        return
+
+    configured: list[str] = []
+
+    while True:
+        # Build menu showing what's already configured
+        options: list[str] = []
+        anthropic_done = "ANTHROPIC_API_KEY" in env
+        openai_done = "SOCC_OPENAI_COMPAT_API_KEY" in env
+
+        if anthropic_done:
+            options.append("Anthropic (login via navegador) [configurado]")
+        else:
+            options.append("Anthropic (login via navegador)")
+
+        if openai_done:
+            options.append("OpenAI (login via navegador) [configurado]")
+        else:
+            options.append("OpenAI (login via navegador)")
+
+        options.append("API key manual (qualquer provider)")
+        options.append("Continuar >>")
+
+        chosen = select("Adicionar provider:", options)
+
+        if chosen.startswith("Continuar"):
+            break
+
+        if chosen.startswith("Anthropic"):
+            _configure_anthropic(env)
+            if "ANTHROPIC_API_KEY" in env:
+                configured.append("Anthropic")
+
+        elif chosen.startswith("OpenAI"):
+            _configure_openai(env)
+            if "SOCC_OPENAI_COMPAT_API_KEY" in env:
+                configured.append("OpenAI")
+
+        elif chosen.startswith("API key manual"):
+            _configure_manual_provider(env)
+            configured.append("Manual")
+
+        print()  # visual separator before next iteration
+
+    if configured:
+        success(f"Providers configurados: {', '.join(configured)}")
+    else:
+        skip("Nenhum provider de nuvem configurado.")
 
 
 def step_threat_intel(env: dict[str, str]) -> None:

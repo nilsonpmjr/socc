@@ -8,6 +8,7 @@ import stat
 import sys
 
 
+IS_WINDOWS = os.name == "nt"
 RUNTIME_DIRS = ("sessions", "logs", "cache", "mcp", "prompts", "workspace", "intel")
 SEED_AGENT_DIRNAME = "soc-copilot"
 RUNTIME_LAYOUTS = {"checkout", "package"}
@@ -57,6 +58,14 @@ def runtime_venv_dir(home: Path | None = None) -> Path:
     return runtime_home(home) / "venv"
 
 
+def runtime_venv_python(home: Path | None = None) -> Path:
+    """Return the venv Python executable path, OS-aware."""
+    venv = runtime_venv_dir(home)
+    if IS_WINDOWS:
+        return venv / "Scripts" / "python.exe"
+    return venv / "bin" / "python"
+
+
 def runtime_logs_dir(home: Path | None = None) -> Path:
     return runtime_home(home) / "logs"
 
@@ -88,13 +97,37 @@ def write_cli_launcher(
     base_dir = runtime_home(home)
     bin_dir = runtime_bin_dir(base_dir)
     bin_dir.mkdir(parents=True, exist_ok=True)
-    launcher_path = bin_dir / "socc"
-    if launcher_path.exists() and not force:
-        return launcher_path
 
     python_cmd = python_executable or sys.executable
     fallback_python_cmd = fallback_python_executable or sys.executable
     source_root = (project_root or Path(__file__).resolve().parents[2]).resolve()
+
+    paths: list[Path] = []
+
+    if IS_WINDOWS:
+        paths = _write_windows_launchers(
+            bin_dir, base_dir, source_root, python_cmd, fallback_python_cmd, force,
+        )
+    else:
+        paths = _write_unix_launcher(
+            bin_dir, base_dir, source_root, python_cmd, fallback_python_cmd, force,
+        )
+
+    return paths[0]
+
+
+def _write_unix_launcher(
+    bin_dir: Path,
+    base_dir: Path,
+    source_root: Path,
+    python_cmd: str,
+    fallback_python_cmd: str,
+    force: bool,
+) -> list[Path]:
+    launcher_path = bin_dir / "socc"
+    if launcher_path.exists() and not force:
+        return [launcher_path]
+
     launcher = "\n".join(
         [
             "#!/usr/bin/env bash",
@@ -117,7 +150,79 @@ def write_cli_launcher(
     )
     launcher_path.write_text(launcher, encoding="utf-8")
     launcher_path.chmod(launcher_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    return launcher_path
+    return [launcher_path]
+
+
+def _write_windows_launchers(
+    bin_dir: Path,
+    base_dir: Path,
+    source_root: Path,
+    python_cmd: str,
+    fallback_python_cmd: str,
+    force: bool,
+) -> list[Path]:
+    """Generate .cmd and .ps1 launchers for Windows."""
+    cmd_path = bin_dir / "socc.cmd"
+    ps1_path = bin_dir / "socc.ps1"
+
+    if cmd_path.exists() and not force:
+        return [cmd_path, ps1_path]
+
+    # --- socc.cmd (works in cmd.exe and PowerShell) ---
+    cmd_launcher = "\r\n".join(
+        [
+            "@echo off",
+            f'if not defined SOCC_HOME set "SOCC_HOME={base_dir}"',
+            f'if not defined SOCC_PROJECT_ROOT set "SOCC_PROJECT_ROOT={source_root}"',
+            "",
+            "rem Resolve Python executable",
+            'if defined SOCC_PYTHON (',
+            '  set "PYTHON_BIN=%SOCC_PYTHON%"',
+            "  goto :run",
+            ")",
+            "",
+            f'"{python_cmd}" -c "import socc.cli.main" >nul 2>&1',
+            "if %errorlevel%==0 (",
+            f'  set "PYTHON_BIN={python_cmd}"',
+            "  goto :run",
+            ")",
+            "",
+            f'set "PYTHON_BIN={fallback_python_cmd}"',
+            "",
+            ":run",
+            'set "PYTHONPATH=%SOCC_PROJECT_ROOT%;%PYTHONPATH%"',
+            '"%PYTHON_BIN%" -m socc.cli.main %*',
+            "",
+        ]
+    )
+    cmd_path.write_text(cmd_launcher, encoding="utf-8")
+
+    # --- socc.ps1 (native PowerShell) ---
+    ps1_launcher = "\n".join(
+        [
+            f'$env:SOCC_HOME = if ($env:SOCC_HOME) {{ $env:SOCC_HOME }} else {{ "{base_dir}" }}',
+            f'$env:SOCC_PROJECT_ROOT = if ($env:SOCC_PROJECT_ROOT) {{ $env:SOCC_PROJECT_ROOT }} else {{ "{source_root}" }}',
+            "",
+            "# Resolve Python executable",
+            "if ($env:SOCC_PYTHON) {",
+            "    $pythonBin = $env:SOCC_PYTHON",
+            "} else {",
+            f'    $testResult = & "{python_cmd}" -c "import socc.cli.main" 2>&1',
+            "    if ($LASTEXITCODE -eq 0) {",
+            f'        $pythonBin = "{python_cmd}"',
+            "    } else {",
+            f'        $pythonBin = "{fallback_python_cmd}"',
+            "    }",
+            "}",
+            "",
+            '$env:PYTHONPATH = "$env:SOCC_PROJECT_ROOT;$env:PYTHONPATH"',
+            '& $pythonBin -m socc.cli.main @args',
+            "",
+        ]
+    )
+    ps1_path.write_text(ps1_launcher, encoding="utf-8")
+
+    return [cmd_path, ps1_path]
 
 
 def _seed_agent_workspace(base_dir: Path, force: bool = False) -> tuple[Path, bool]:
@@ -213,7 +318,7 @@ def _write_runtime_manifest(
             "runtime_home": str(base_dir),
             "bin_dir": str(base_dir / "bin"),
             "venv_dir": str(base_dir / "venv"),
-            "cli_launcher": str(base_dir / "bin" / "socc"),
+            "cli_launcher": str(base_dir / "bin" / ("socc.cmd" if IS_WINDOWS else "socc")),
             "workspace": str(base_dir / "workspace"),
             "checkout_link": str(checkout_link) if include_checkout_links else "",
             "agent_home": str(base_dir / "workspace" / SEED_AGENT_DIRNAME),

@@ -268,6 +268,33 @@ def _endpoint_looks_local(endpoint: str) -> bool:
     return hostname in {"127.0.0.1", "localhost", "::1"}
 
 
+def _resolve_oauth_token(provider_name: str) -> str:
+    """Try to get a valid access token from OAuth credentials store."""
+    try:
+        from socc.cli.oauth_flow import get_access_token
+        return get_access_token(provider_name) or ""
+    except Exception:
+        return ""
+
+
+def resolve_api_key(provider_name: str) -> str:
+    """Return the best available API key/token for a provider.
+
+    Checks env vars first, then falls back to stored OAuth credentials.
+    """
+    if provider_name == "anthropic":
+        key = ANTHROPIC_API_KEY
+        if key:
+            return key
+        return _resolve_oauth_token("anthropic")
+    if provider_name in ("openai", "openai-compatible"):
+        key = os.getenv("SOCC_OPENAI_COMPAT_API_KEY", "").strip()
+        if key:
+            return key
+        return _resolve_oauth_token("openai")
+    return ""
+
+
 def describe_backend_choice() -> dict[str, Any]:
     specs = supported_backend_specs()
     configured = configured_backend()
@@ -335,9 +362,9 @@ def resolve_runtime() -> LLMRuntimeConfig:
     effective_device = preferred if backend_local else "remote"
     runtime_enabled = False
     if provider == "anthropic":
-        runtime_enabled = LLM_ENABLED and bool(ANTHROPIC_API_KEY)
+        runtime_enabled = LLM_ENABLED and bool(resolve_api_key("anthropic"))
     elif provider == "openai-compatible":
-        runtime_enabled = LLM_ENABLED and bool(endpoint)
+        runtime_enabled = LLM_ENABLED and (bool(endpoint) or bool(resolve_api_key("openai")))
     else:
         runtime_enabled = LLM_ENABLED and bool(endpoint)
 
@@ -664,8 +691,9 @@ def probe_inference_backend(timeout: float = 2.0) -> dict[str, Any]:
     }
 
     if runtime.backend == "anthropic":
-        result["reachable"] = bool(ANTHROPIC_API_KEY)
-        result["details"] = {"api_key_configured": bool(ANTHROPIC_API_KEY)}
+        has_key = bool(resolve_api_key("anthropic"))
+        result["reachable"] = has_key
+        result["details"] = {"api_key_configured": has_key}
         if not result["reachable"]:
             result["error"] = "anthropic_api_key_missing"
         return result

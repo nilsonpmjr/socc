@@ -866,6 +866,12 @@ def _call_llm_anthropic(
     """
     api_key = getattr(cfg, "ANTHROPIC_API_KEY", "")
     if not api_key:
+        try:
+            from socc.gateway.llm_gateway import resolve_api_key
+            api_key = resolve_api_key("anthropic")
+        except Exception:
+            pass
+    if not api_key:
         _logger.warning("ANTHROPIC_API_KEY não configurada; usando análise determinística.")
         record_inference_event(
             source="semi_llm_adapter",
