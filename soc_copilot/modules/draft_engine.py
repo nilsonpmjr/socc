@@ -76,6 +76,116 @@ def _top_hypothesis(analysis: dict) -> dict:
     return hipoteses[0] if isinstance(hipoteses, list) and hipoteses else {}
 
 
+def _contexts(analysis: dict) -> list[dict]:
+    contexts = analysis.get("contextos_investigativos", [])
+    return contexts if isinstance(contexts, list) else []
+
+
+_VERTICAL_LABELS = {
+    "email_auth": "Email e Identidade",
+    "dns_http_tls": "Rede e Web",
+    "process_endpoint": "Endpoint e Execução",
+    "cloud_identity": "Cloud e Identidade",
+    "network_flow_nat": "Fluxo de Rede",
+    "kubernetes_container": "Kubernetes e Containers",
+    "generic": "Geral",
+}
+
+
+def _infer_vertical(analysis: dict, fields: dict) -> str:
+    contexts = _contexts(analysis)
+    if contexts:
+        family = _clean_inline(contexts[0].get("family", ""))
+        if family in _VERTICAL_LABELS:
+            return family
+
+    if _has_value(fields.get("Email_Remetente")) or _has_value(fields.get("Email_Assunto")):
+        return "email_auth"
+    if _has_value(fields.get("Processo")) or _has_value(fields.get("Registro")):
+        return "process_endpoint"
+    if _has_value(fields.get("Cloud_Conta_ID")) or _has_value(fields.get("Cloud_Recurso")):
+        return "cloud_identity"
+    if _has_value(fields.get("Kubernetes_Pod")) or _has_value(fields.get("Container_ID")):
+        return "kubernetes_container"
+    if _has_value(fields.get("DNS_Consulta")) or _has_value(fields.get("URL_Completa")) or _has_value(fields.get("HTTP_Host")):
+        return "dns_http_tls"
+    if _has_value(fields.get("Bytes_Entrada")) or _has_value(fields.get("Bytes_Saida")) or _has_value(fields.get("NAT_IP_Origem")):
+        return "network_flow_nat"
+    return "generic"
+
+
+def _vertical_label(analysis: dict, fields: dict) -> str:
+    return _VERTICAL_LABELS.get(_infer_vertical(analysis, fields), "Geral")
+
+
+def _vertical_focus_sentence(analysis: dict, fields: dict) -> str:
+    vertical = _infer_vertical(analysis, fields)
+    messages = {
+        "email_auth": (
+            "O foco analítico principal está no vetor de entrega por e-mail e no uso de identidade, "
+            "priorizando remetente, assunto, URL, anexo e sinais de autenticação."
+        ),
+        "dns_http_tls": (
+            "O foco analítico principal está no canal de rede e web, priorizando domínio, URL, SNI, "
+            "fingerprint TLS, direção do tráfego e possível comunicação externa."
+        ),
+        "process_endpoint": (
+            "O foco analítico principal está na execução no endpoint, priorizando processo, linha de comando, "
+            "persistência, módulo carregado e artefatos locais."
+        ),
+        "cloud_identity": (
+            "O foco analítico principal está no escopo de identidade e recurso cloud, priorizando conta, papel, "
+            "tenant, recurso acessado e trilha de auditoria."
+        ),
+        "network_flow_nat": (
+            "O foco analítico principal está no fluxo de rede, priorizando volumetria, direção, sessão e "
+            "tradução NAT para atribuição correta de origem e destino."
+        ),
+        "kubernetes_container": (
+            "O foco analítico principal está no workload em Kubernetes ou container, priorizando pod, namespace, "
+            "imagem, service account e cluster afetado."
+        ),
+    }
+    return _ensure_sentence(messages.get(vertical, ""))
+
+
+def _operational_priority(classificacao: str, analysis: dict) -> str:
+    fallback = {
+        "TP": "Alta",
+        "BTP": "Média",
+        "FP": "Baixa",
+        "TN": "Baixa",
+        "LTF": "Operacional",
+    }
+    contexts = _contexts(analysis)
+    if not contexts:
+        return fallback.get(classificacao.upper(), "Média")
+
+    top = contexts[0]
+    severity = _clean_inline(top.get("severity", "")).lower()
+    confidence = top.get("confidence", 0)
+    if severity == "high" or (isinstance(confidence, (int, float)) and confidence >= 0.8):
+        return "Alta"
+    if severity == "medium" or (isinstance(confidence, (int, float)) and confidence >= 0.65):
+        return "Média"
+    return fallback.get(classificacao.upper(), "Baixa")
+
+
+def _context_highlights(analysis: dict, limit: int = 2) -> str:
+    titles = [
+        _clean_inline(item.get("title", ""))
+        for item in _contexts(analysis)[:limit]
+        if _clean_inline(item.get("title", ""))
+    ]
+    if not titles:
+        return ""
+    if len(titles) == 1:
+        return _ensure_sentence(f"Contexto investigativo prioritário: {titles[0]}")
+    return _ensure_sentence(
+        "Contextos investigativos prioritários: " + "; ".join(titles)
+    )
+
+
 def _build_title(fields: dict, analysis: dict, fallback: str) -> str:
     assunto = _field(fields.get("Assunto"))
     if assunto != "N/A":
@@ -127,6 +237,81 @@ def _build_detail_lines(fields: dict) -> list[str]:
     if caminho != "N/A":
         lines.append(f"Diretório/Caminho: {caminho}")
     lines.append(f"Log Source: {log_source}")
+    return lines
+
+
+def _build_vertical_detail_lines(fields: dict, analysis: dict) -> list[str]:
+    vertical = _infer_vertical(analysis, fields)
+    lines: list[str] = []
+
+    if vertical == "email_auth":
+        for label, key in (
+            ("E-mail Remetente", "Email_Remetente"),
+            ("E-mail Destinatário", "Email_Destinatario"),
+            ("Assunto do E-mail", "Email_Assunto"),
+            ("URL", "URL_Completa"),
+            ("DNS", "DNS_Consulta"),
+            ("Resultado de Autenticação", "Resultado_Autenticacao"),
+        ):
+            value = _field(fields.get(key))
+            if value != "N/A":
+                lines.append(f"{label}: {value}")
+
+    elif vertical == "process_endpoint":
+        for label, key in (
+            ("Processo", "Processo"),
+            ("Processo Pai", "Processo_Pai"),
+            ("Linha de Comando", "Linha_De_Comando"),
+            ("Registro", "Registro"),
+            ("Serviço", "Servico"),
+            ("Arquivo", "Arquivo"),
+            ("Hash", "Hash_Observado"),
+        ):
+            value = _field(fields.get(key))
+            if value != "N/A":
+                lines.append(f"{label}: {value}")
+
+    elif vertical == "cloud_identity":
+        for label, key in (
+            ("Cloud Conta", "Cloud_Conta_ID"),
+            ("Cloud Papel", "Cloud_Papel"),
+            ("Cloud Recurso", "Cloud_Recurso"),
+            ("Cloud Tenant", "Cloud_Tenant_ID"),
+            ("Cloud Região", "Cloud_Regiao"),
+        ):
+            value = _field(fields.get(key))
+            if value != "N/A":
+                lines.append(f"{label}: {value}")
+
+    elif vertical == "kubernetes_container":
+        for label, key in (
+            ("Kubernetes Pod", "Kubernetes_Pod"),
+            ("Kubernetes Namespace", "Kubernetes_Namespace"),
+            ("Container ID", "Container_ID"),
+            ("Container Imagem", "Container_Imagem"),
+            ("Kubernetes Cluster", "Kubernetes_Cluster"),
+            ("ServiceAccount", "Kubernetes_ServiceAccount"),
+        ):
+            value = _field(fields.get(key))
+            if value != "N/A":
+                lines.append(f"{label}: {value}")
+
+    elif vertical in {"dns_http_tls", "network_flow_nat"}:
+        for label, key in (
+            ("HTTP Host", "HTTP_Host"),
+            ("DNS", "DNS_Consulta"),
+            ("TLS SNI", "TLS_SNI"),
+            ("Protocolo", "Protocolo"),
+            ("Porta de Destino", "Porta_Destino"),
+            ("Bytes de Entrada", "Bytes_Entrada"),
+            ("Bytes de Saída", "Bytes_Saida"),
+            ("NAT Origem", "NAT_IP_Origem"),
+            ("NAT Destino", "NAT_IP_Destino"),
+        ):
+            value = _field(fields.get(key))
+            if value != "N/A":
+                lines.append(f"{label}: {value}")
+
     return lines
 
 
@@ -480,6 +665,12 @@ def _build_technical_analysis(
             paragraph,
             _ensure_sentence(f"Persistem limitações de evidência a serem consideradas: {'; '.join(itens_limpos)}{sufixo}", ""),
         ])
+    context_line = _context_highlights(analysis)
+    if context_line:
+        paragraph = _safe_join([paragraph, context_line])
+    vertical_line = _vertical_focus_sentence(analysis, fields or {})
+    if vertical_line:
+        paragraph = _safe_join([paragraph, vertical_line])
     return paragraph
 
 
@@ -562,8 +753,16 @@ def _build_proximos_passos_text(
         return _clean_inline(frag.recomendacao)
 
     # 2. proximos_passos da análise
-    proximos = analysis.get("proximos_passos", [])
-    itens = [_clean_inline(p) for p in (proximos or []) if _clean_inline(p)]
+    itens: list[str] = []
+    for context in _contexts(analysis)[:2]:
+        for action in context.get("recommended_actions") or []:
+            cleaned = _clean_inline(action)
+            if cleaned and cleaned not in itens:
+                itens.append(cleaned)
+    for item in analysis.get("proximos_passos", []) or []:
+        cleaned = _clean_inline(item)
+        if cleaned and cleaned not in itens:
+            itens.append(cleaned)
     if itens:
         return " ".join(
             item if item.endswith((".", "!", "?")) else item + "."
@@ -591,6 +790,10 @@ def _build_tp(fields: dict, ti_results: dict[str, str], analysis: dict, pack: Ru
         narrativa,
         "",
         "\n".join(_build_detail_lines(fields)),
+        "\n".join(_build_vertical_detail_lines(fields, analysis)),
+        "",
+        f"Prioridade Operacional: {_operational_priority('TP', analysis)}",
+        f"Recorte Analítico: {_vertical_label(analysis, fields)}",
     ]
 
     bloco_ip = _build_ip_analysis(ti_results)
@@ -634,6 +837,9 @@ def _build_btp(fields: dict, analysis: dict, pack: RulePack | None = None, ti_re
     sections = [
         "Classificação Final: Benign True Positive",
         "",
+        f"Prioridade Operacional: {_operational_priority('BTP', analysis)}",
+        f"Recorte Analítico: {_vertical_label(analysis, fields)}",
+        "",
         "Resumo Técnico:",
         _build_context_sentence(fields, summary),
         "",
@@ -664,6 +870,9 @@ def _build_fp_tn_ltf(classificacao: str, fields: dict, analysis: dict, pack: Rul
     sections = [
         f"Classificação Final: {label}",
         "",
+        f"Prioridade Operacional: {_operational_priority(classificacao, analysis)}",
+        f"Recorte Analítico: {_vertical_label(analysis, fields)}",
+        "",
         "Justificativa:",
         _build_context_sentence(fields, justificativa),
         "",
@@ -690,6 +899,10 @@ def _build_icatu_repasse(classificacao: str, fields: dict, ti_results: dict[str,
         _build_context_sentence(fields, lead),
         "",
         "\n".join(_build_detail_lines(fields)),
+        "\n".join(_build_vertical_detail_lines(fields, analysis)),
+        "",
+        f"Prioridade Operacional: {_operational_priority(classificacao, analysis)}",
+        f"Recorte Analítico: {_vertical_label(analysis, fields)}",
     ]
 
     bloco_ip = _build_ip_analysis(ti_results)

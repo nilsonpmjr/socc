@@ -1,10 +1,22 @@
 import os
 from pathlib import Path
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:  # pragma: no cover - ambiente mínimo sem dependências
+    def load_dotenv(*_args, **_kwargs):
+        return False
 
-# Carrega .env da pasta pai (Automacao/)
-_env_path = Path(__file__).parent.parent / ".env"
-load_dotenv(_env_path)
+try:
+    from socc.utils.config_loader import load_environment
+except ImportError:  # pragma: no cover - fallback para bootstraps mínimos
+    load_environment = None
+
+# Prioriza ~/.socc/.env quando existir, mantendo compatibilidade com .env do repositório.
+if callable(load_environment):
+    load_environment()
+else:
+    _env_path = Path(__file__).parent.parent / ".env"
+    load_dotenv(_env_path)
 
 THREAT_CHECK_SCRIPT = os.getenv(
     "THREAT_CHECK_SCRIPT",
@@ -48,7 +60,7 @@ LLM_MODEL = os.getenv("LLM_MODEL", "claude-haiku-4-5-20251001")
 
 # Ollama (local)
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:9b")
 
 # Caminhos derivados
 AGENT_MD = ALERTAS_ROOT / ".agents" / "rules" / "AGENT.md"

@@ -27,12 +27,19 @@ from __future__ import annotations
 import json
 import logging
 from copy import deepcopy
+from time import perf_counter
 
 _logger = logging.getLogger(__name__)
 
 from soc_copilot.modules.classification_helper import analyze as deterministic_analyze
 from soc_copilot.modules.rule_loader import RulePack
 from soc_copilot.modules.soc_copilot_loader import build_prompt_context
+from socc.gateway.llm_gateway import (
+    inference_guard,
+    record_inference_event,
+    record_prompt_audit,
+    resolve_runtime,
+)
 
 # ---------------------------------------------------------------------------
 # Schema de entrada obrigatório (o que _call_llm recebe)
@@ -135,12 +142,16 @@ def _build_llm_input(
     pack: RulePack | None,
     deterministic_result: dict,
     raw_text: str = "",
+    knowledge_context: str = "",
+    knowledge_sources: str = "",
 ) -> dict:
     soc_context = _build_soc_copilot_context(
         fields=fields,
         raw_text=raw_text,
         cliente=cliente,
         regra=regra,
+        knowledge_context=knowledge_context,
+        knowledge_sources=knowledge_sources,
     )
     return {
         "fields": fields,
@@ -324,6 +335,8 @@ def _build_soc_copilot_context(
     raw_text: str,
     cliente: str,
     regra: str,
+    knowledge_context: str = "",
+    knowledge_sources: str = "",
 ) -> dict:
     artifact_type = _infer_artifact_type(fields, raw_text)
     seed_parts = []
@@ -342,6 +355,8 @@ def _build_soc_copilot_context(
             user_input=seed_input or "payload de seguranca",
             artifact_type=artifact_type,
             session_context="",
+            knowledge_context=knowledge_context,
+            knowledge_sources=knowledge_sources,
         )
     except Exception:
         return {
@@ -352,10 +367,19 @@ def _build_soc_copilot_context(
             "memory": "",
             "tools": "",
             "skills_index": "",
+            "references_index": "",
+            "evidence_rules": "",
+            "ioc_extraction": "",
+            "security_json_patterns": "",
+            "telemetry_investigation_patterns": "",
+            "mitre_guidance": "",
+            "output_contract": "",
             "selected_skill": "payload-triage",
             "skill_content": "",
             "schema_path": "",
             "session_context": "",
+            "knowledge_context": knowledge_context,
+            "knowledge_sources": knowledge_sources,
             "user_input": seed_input,
         }
 
@@ -404,6 +428,12 @@ def _build_system_prompt(llm_input: dict | None = None) -> str:
         soc_context.get("agents", ""),
         soc_context.get("memory", ""),
         soc_context.get("tools", ""),
+        soc_context.get("evidence_rules", ""),
+        soc_context.get("ioc_extraction", ""),
+        soc_context.get("security_json_patterns", ""),
+        soc_context.get("telemetry_investigation_patterns", ""),
+        soc_context.get("mitre_guidance", ""),
+        soc_context.get("output_contract", ""),
         f"Skill selecionada: {soc_context.get('selected_skill', '')}",
         soc_context.get("skill_content", ""),
     ]
@@ -425,6 +455,27 @@ SKILL DO SOC COPILOT:
 
 ORIENTACAO DO PLAYBOOK:
 {skill_content}
+
+REGRAS DE EVIDENCIA:
+{evidence_rules}
+
+GUIA DE EXTRAÇÃO DE IOCS:
+{ioc_extraction}
+
+CATALOGO DE CAMPOS JSON DE SEGURANCA:
+{security_json_patterns}
+
+PADROES DE CONTEXTO INVESTIGATIVO:
+{telemetry_investigation_patterns}
+
+GUIA MITRE:
+{mitre_guidance}
+
+CONTRATO OFICIAL DE SAIDA:
+{output_contract}
+
+CONTEXTO RECUPERADO DA BASE LOCAL:
+{knowledge_context}
 
 DADOS DO EVENTO:
 {payload_json}
@@ -618,6 +669,7 @@ def _call_llm_ollama_with_mcp(
     """
     import requests as _requests
 
+    runtime = resolve_runtime()
     model = getattr(cfg, "OLLAMA_MODEL", "qwen2.5:3b")
     base_url = getattr(cfg, "OLLAMA_URL", "http://localhost:11434").rstrip("/")
     timeout = float(getattr(cfg, "LLM_TIMEOUT", 90))
@@ -659,8 +711,21 @@ def _call_llm_ollama_with_mcp(
         + _USER_PROMPT_TEMPLATE.format(
             selected_skill=(llm_input.get("soc_copilot", {}) or {}).get("selected_skill", ""),
             skill_content=(llm_input.get("soc_copilot", {}) or {}).get("skill_content", ""),
+            evidence_rules=(llm_input.get("soc_copilot", {}) or {}).get("evidence_rules", ""),
+            ioc_extraction=(llm_input.get("soc_copilot", {}) or {}).get("ioc_extraction", ""),
+            security_json_patterns=(llm_input.get("soc_copilot", {}) or {}).get("security_json_patterns", ""),
+            mitre_guidance=(llm_input.get("soc_copilot", {}) or {}).get("mitre_guidance", ""),
+            output_contract=(llm_input.get("soc_copilot", {}) or {}).get("output_contract", ""),
+            knowledge_context=(llm_input.get("soc_copilot", {}) or {}).get("knowledge_context", ""),
             payload_json=json.dumps(payload_summary, ensure_ascii=False, indent=2),
         )
+    )
+    record_prompt_audit(
+        source="semi_llm_adapter",
+        provider="ollama",
+        model=model,
+        prompt_text=_build_system_prompt(llm_input) + "\n\n" + user_content,
+        skill=(llm_input.get("soc_copilot", {}) or {}).get("selected_skill", ""),
     )
 
     messages = [
@@ -670,6 +735,7 @@ def _call_llm_ollama_with_mcp(
 
     MAX_TURNS = 4
     raw_result = None
+    started = perf_counter()
 
     try:
         for turn in range(MAX_TURNS):
@@ -742,24 +808,57 @@ def _call_llm_ollama_with_mcp(
 
     except Exception as exc:
         _logger.error("Falha no Ollama MCP (%s): %s; ativando fallback Claude.", model, exc)
+        record_inference_event(
+            source="semi_llm_adapter",
+            provider="ollama",
+            model=model,
+            requested_device=runtime.device,
+            effective_device=runtime.device,
+            latency_ms=(perf_counter() - started) * 1000,
+            success=False,
+            fallback_used=True,
+            error=str(exc),
+        )
         raw_result = None
 
     # --- Validação de qualidade ---
     if raw_result is not None and _is_quality_sufficient(raw_result):
         _logger.info("Ollama/%s — qualidade OK, resultado aceito.", model)
+        record_inference_event(
+            source="semi_llm_adapter",
+            provider="ollama",
+            model=model,
+            requested_device=runtime.device,
+            effective_device=runtime.device,
+            latency_ms=(perf_counter() - started) * 1000,
+            success=True,
+            fallback_used=False,
+        )
         return raw_result
 
     _logger.warning(
         "Ollama/%s — qualidade insuficiente ou JSON inválido. Ativando fallback Claude.",
         model,
     )
-    return _call_llm_anthropic(llm_input, fallback_analysis, cfg)
+    record_inference_event(
+        source="semi_llm_adapter",
+        provider="ollama",
+        model=model,
+        requested_device=runtime.device,
+        effective_device=runtime.device,
+        latency_ms=(perf_counter() - started) * 1000,
+        success=False,
+        fallback_used=True,
+        error="quality_insufficient_or_invalid_json",
+    )
+    return _call_llm_anthropic(llm_input, fallback_analysis, cfg, fallback_used=True)
 
 
 def _call_llm_anthropic(
     llm_input: dict,
     fallback_analysis: dict,
     cfg,
+    fallback_used: bool = False,
 ) -> dict:
     """
     Chama o Claude via API Anthropic (nuvem).
@@ -767,16 +866,39 @@ def _call_llm_anthropic(
     api_key = getattr(cfg, "ANTHROPIC_API_KEY", "")
     if not api_key:
         _logger.warning("ANTHROPIC_API_KEY não configurada; usando análise determinística.")
+        record_inference_event(
+            source="semi_llm_adapter",
+            provider="anthropic",
+            model=getattr(cfg, "LLM_MODEL", "claude-haiku-4-5-20251001"),
+            requested_device="gpu" if resolve_runtime().gpu_available else "cpu",
+            effective_device="remote",
+            latency_ms=0,
+            success=False,
+            fallback_used=fallback_used,
+            error="missing_api_key",
+        )
         return fallback_analysis
 
     try:
         import anthropic as _anthropic
     except ImportError:
         _logger.error("Pacote 'anthropic' não instalado; usando análise determinística.")
+        record_inference_event(
+            source="semi_llm_adapter",
+            provider="anthropic",
+            model=getattr(cfg, "LLM_MODEL", "claude-haiku-4-5-20251001"),
+            requested_device="gpu" if resolve_runtime().gpu_available else "cpu",
+            effective_device="remote",
+            latency_ms=0,
+            success=False,
+            fallback_used=fallback_used,
+            error="anthropic_package_missing",
+        )
         return fallback_analysis
 
     model = getattr(cfg, "LLM_MODEL", "claude-haiku-4-5-20251001")
     timeout = float(getattr(cfg, "LLM_TIMEOUT", 30))
+    started = perf_counter()
 
     fields = llm_input.get("fields", {})
     iocs = fields.get("IOCs", {})
@@ -802,7 +924,20 @@ def _call_llm_anthropic(
     user_prompt = _USER_PROMPT_TEMPLATE.format(
         selected_skill=(llm_input.get("soc_copilot", {}) or {}).get("selected_skill", ""),
         skill_content=(llm_input.get("soc_copilot", {}) or {}).get("skill_content", ""),
+        evidence_rules=(llm_input.get("soc_copilot", {}) or {}).get("evidence_rules", ""),
+        ioc_extraction=(llm_input.get("soc_copilot", {}) or {}).get("ioc_extraction", ""),
+        security_json_patterns=(llm_input.get("soc_copilot", {}) or {}).get("security_json_patterns", ""),
+        mitre_guidance=(llm_input.get("soc_copilot", {}) or {}).get("mitre_guidance", ""),
+        output_contract=(llm_input.get("soc_copilot", {}) or {}).get("output_contract", ""),
+        knowledge_context=(llm_input.get("soc_copilot", {}) or {}).get("knowledge_context", ""),
         payload_json=json.dumps(payload_summary, ensure_ascii=False, indent=2),
+    )
+    record_prompt_audit(
+        source="semi_llm_adapter",
+        provider="anthropic",
+        model=model,
+        prompt_text=_build_system_prompt(llm_input) + "\n\n" + user_prompt,
+        skill=(llm_input.get("soc_copilot", {}) or {}).get("selected_skill", ""),
     )
 
     try:
@@ -822,9 +957,30 @@ def _call_llm_anthropic(
                 response_text = response_text[4:].lstrip()
         result = json.loads(response_text)
         _logger.info("Análise LLM concluída via Anthropic/%s.", model)
+        record_inference_event(
+            source="semi_llm_adapter",
+            provider="anthropic",
+            model=model,
+            requested_device="gpu" if resolve_runtime().gpu_available else "cpu",
+            effective_device="remote",
+            latency_ms=(perf_counter() - started) * 1000,
+            success=True,
+            fallback_used=fallback_used,
+        )
         return result
     except Exception as exc:
         _logger.error("Falha na chamada Anthropic (%s): %s; usando análise determinística.", model, exc)
+        record_inference_event(
+            source="semi_llm_adapter",
+            provider="anthropic",
+            model=model,
+            requested_device="gpu" if resolve_runtime().gpu_available else "cpu",
+            effective_device="remote",
+            latency_ms=(perf_counter() - started) * 1000,
+            success=False,
+            fallback_used=fallback_used,
+            error=str(exc),
+        )
         return fallback_analysis
 
 
@@ -847,6 +1003,22 @@ def _call_llm(
     if not getattr(_cfg, "LLM_ENABLED", False):
         return fallback_analysis
 
+    runtime = resolve_runtime()
+    with inference_guard(runtime) as (allowed, reason):
+        if not allowed:
+            record_inference_event(
+                source="semi_llm_adapter",
+                provider=runtime.provider,
+                model=runtime.model,
+                requested_device=runtime.device,
+                effective_device=runtime.device,
+                latency_ms=0,
+                success=False,
+                fallback_used=True,
+                error=reason,
+            )
+            return fallback_analysis
+
     provider = getattr(_cfg, "LLM_PROVIDER", "ollama").lower()
 
     if provider == "anthropic":
@@ -866,6 +1038,8 @@ def run(
     regra: str = "",
     cliente: str = "",
     pack: RulePack | None = None,
+    knowledge_context: str = "",
+    knowledge_sources: str = "",
 ) -> dict:
     """
     Executa a análise semi-LLM e retorna o pacote estruturado validado.
@@ -880,6 +1054,8 @@ def run(
         pack=pack,
         deterministic_result=deterministic_result,
         raw_text=raw_text,
+        knowledge_context=knowledge_context,
+        knowledge_sources=knowledge_sources,
     )
     raw_output = _call_llm(llm_input, deterministic_result)
     return _validate_output(raw_output, fallback=deterministic_result)

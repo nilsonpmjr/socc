@@ -54,15 +54,17 @@ def _flatten_json(data, prefix: str = "") -> dict[str, str]:
             if not key_str:
                 continue
             nested_prefix = f"{prefix}.{key_str}" if prefix else key_str
-            flat.update(_flatten_json(value, nested_prefix))
+            for nested_key, nested_value in _flatten_json(value, nested_prefix).items():
+                flat.setdefault(nested_key, nested_value)
     elif isinstance(data, list):
         for idx, item in enumerate(data):
             nested_prefix = f"{prefix}[{idx}]" if prefix else f"[{idx}]"
-            flat.update(_flatten_json(item, nested_prefix))
+            for nested_key, nested_value in _flatten_json(item, nested_prefix).items():
+                flat.setdefault(nested_key, nested_value)
     else:
         value = "" if data is None else str(data).strip()
         if prefix:
-            flat[prefix] = value
+            flat.setdefault(prefix, value)
             last = prefix.split(".")[-1].split("[")[0]
             flat.setdefault(last, value)
 

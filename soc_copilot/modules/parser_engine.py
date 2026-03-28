@@ -12,6 +12,8 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
+from socc.core.security_field_patterns import SECURITY_JSON_FIELD_PATTERNS
+
 try:
     import pytz
 except ModuleNotFoundError:  # pragma: no cover - fallback para ambientes sem pytz
@@ -20,68 +22,13 @@ except ModuleNotFoundError:  # pragma: no cover - fallback para ambientes sem py
 # ---------------------------------------------------------------------------
 # Mapeamento de chaves do payload para campos normalizados
 # ---------------------------------------------------------------------------
-KEY_MAP = {
-    "Horario": [
-        "CreationTime", "StartTime", "LogTime",
-        "time",       # FortiGate: campo time (09:25:05, hora local) — antes de EventTime/epoch
-        "Timestamp", "timestamp", "datetime", "Time",
-        "EventTime",  # FortiGate eventtime = nanosecond epoch — deixar por último
-        "date",       # FortiGate: fallback para data
-    ],
-    "Usuario": [
-        "UserId", "Username", "User", "UserName", "user", "AccountName",
-        "SamAccountName", "InitiatingUserName", "SourceUser", "usrName",
-        "TargetUserName", "NetworkAccountName",
-        "srcuser",  # FortiGate
-    ],
-    "IP_Origem": [
-        "ClientIP", "SourceIP", "SourceIp", "src_ip", "sourceip",
-        "CallerIpAddress", "IpAddress", "RemoteIP", "src", "Source IP",
-        "srcip",    # FortiGate
-    ],
-    "Destino": [
-        "DestinationIp", "DestinationIP", "dst_ip", "ObjectId",
-        "Destination", "TargetIP", "RequestURL",
-        "Destination IP", "HostUrl",
-        "dstip",    # FortiGate (IP destino real — prioridade sobre URL/hostname)
-        "hostname", # FortiGate (hostname HTTP do alvo)
-        "URL", "url", "dst",
-    ],
-    "Caminho": [
-        "FilePath", "Directory", "Path", "ObjectName",
-        "TargetObject", "CommandLine", "File Name", "FolderPath",
-        "url",      # FortiGate IPS: URL acessada pelo atacante
-    ],
-    "LogSource": [
-        "LogSource", "Workload", "Category", "source", "DeviceName",
-        "ComputerName", "Log Source",
-        "devname",  # FortiGate: nome do dispositivo (mais específico que hostname)
-        "hostname",
-    ],
-    "Assunto": [
-        "ItemName", "Subject", "FileName", "ProcessName",
-        "TaskName", "RuleName", "title", "Event Name",
-        "attack",   # FortiGate IPS: nome do ataque detectado
-        "msg",      # FortiGate: mensagem resumida da assinatura
-    ],
-    "Acao": [
-        "action",       # FortiGate: dropped, blocked, pass, reset
-        "Action", "EventAction", "ActionType",
-    ],
-    "Protocolo": [
-        "proto", "protocol", "Protocol",
-    ],
-    "Porta_Destino": [
-        "dstport", "DestinationPort", "destinationport", "PortaDestino",
-    ],
-}
+KEY_MAP = {key: values[:] for key, values in SECURITY_JSON_FIELD_PATTERNS.items()}
 
 _EMAIL_RE = re.compile(r"\b[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}\b")
 _TS_PATTERN = re.compile(r"(\d{4}-\d{2}-\d{2})[T\s](\d{2}:\d{2}:\d{2})")
 _ISO_TS_WITH_OFFSET_RE = re.compile(
     r"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\b"
 )
-_IP_PATTERN = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 _URL_PATTERN = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
 _SYSLOG_HEADER_RE = re.compile(
     r"^<\d+>\d+\s+\S+\s+(?P<host>\S+)\s+(?P<service>[A-Za-z0-9_.-]+)\s+\d+\s+-\s+-\s+",
@@ -213,7 +160,7 @@ def _build_lookup(raw: dict) -> dict[str, str]:
         key_str = str(key).strip()
         if not key_str:
             continue
-        lookup[_normalize_key(key_str)] = _sanitize_value(value)
+        lookup.setdefault(_normalize_key(key_str), _sanitize_value(value))
     return lookup
 
 
@@ -222,6 +169,23 @@ def _is_private_ip(ip: str) -> bool:
         return ipaddress.ip_address(ip).is_private or ipaddress.ip_address(ip).is_loopback or ipaddress.ip_address(ip).is_link_local
     except ValueError:
         return False
+
+
+def _extract_ip_candidates(text: str) -> set[str]:
+    candidates: set[str] = set()
+    token_pattern = re.compile(r"(?<![0-9A-Za-z])(?:\d{1,3}(?:\.\d{1,3}){3}|[0-9A-Fa-f:]{2,})(?![0-9A-Za-z])")
+    for raw_candidate in token_pattern.findall(text or ""):
+        candidate = raw_candidate.strip("[](){}<>,;\"'")
+        if "." not in candidate and ":" not in candidate:
+            continue
+        if ":" in candidate and candidate.count(":") < 2:
+            continue
+        try:
+            parsed = ipaddress.ip_address(candidate)
+        except ValueError:
+            continue
+        candidates.add(str(parsed))
+    return candidates
 
 
 def _resolve_field(raw: dict, candidates: list[str], default: str = "N/A") -> str:
@@ -325,11 +289,7 @@ def extract_iocs(text: str) -> dict:
     ips_ext: set[str] = set()
     ips_int: set[str] = set()
 
-    for ip in set(_IP_PATTERN.findall(text or "")):
-        try:
-            ipaddress.ip_address(ip)
-        except ValueError:
-            continue
+    for ip in _extract_ip_candidates(text or ""):
         if _is_private_ip(ip):
             ips_int.add(ip)
         else:
@@ -385,20 +345,20 @@ def _fallback_usuario(raw_text: str) -> str:
 
 
 def _fallback_ip(raw_text: str, kind: str) -> str:
-    label_map = {
-        "origem": [
-            re.compile(r"(?i)\bsrcip=((?:\d{1,3}\.){3}\d{1,3})"),                      # FortiGate
-            re.compile(r"(?i)\b(?:source ip|sourceip|src_ip|src|clientip|ip de origem)\s*[:=]\s*((?:\d{1,3}\.){3}\d{1,3})"),
-        ],
-        "destino": [
-            re.compile(r"(?i)\bdstip=((?:\d{1,3}\.){3}\d{1,3})"),                       # FortiGate
-            re.compile(r"(?i)\b(?:destination ip|destinationip|dst_ip|dst|targetip|destino)\s*[:=]\s*((?:\d{1,3}\.){3}\d{1,3})"),
-        ],
-    }
-    for pattern in label_map[kind]:
+    alias_field = "IP_Origem" if kind == "origem" else "IP_Destino"
+    aliases = KEY_MAP.get(alias_field, [])
+    for alias in aliases:
+        pattern = re.compile(
+            rf"(?i)\b{re.escape(alias)}\s*[:=]\s*([\[\]0-9a-fA-F:.]+)"
+        )
         match = pattern.search(raw_text or "")
-        if match:
-            return match.group(1)
+        if not match:
+            continue
+        candidate = match.group(1).strip("[]")
+        try:
+            return str(ipaddress.ip_address(candidate))
+        except ValueError:
+            continue
     return "N/A"
 
 
@@ -731,13 +691,65 @@ def parse(raw_fields: dict, raw_text: str) -> dict:
     horario_raw = _resolve_field(raw_fields, KEY_MAP["Horario"])
     usuario = _resolve_field(raw_fields, KEY_MAP["Usuario"])
     ip_origem = _resolve_field(raw_fields, KEY_MAP["IP_Origem"])
+    ip_destino = _resolve_field(raw_fields, KEY_MAP["IP_Destino"])
     destino = _resolve_field(raw_fields, KEY_MAP["Destino"])
     destino_raw = destino
     caminho = _resolve_field(raw_fields, KEY_MAP["Caminho"])
+    hostname = _resolve_field(raw_fields, KEY_MAP["Hostname"])
+    servidor = _resolve_field(raw_fields, KEY_MAP["Servidor"])
+    arquivo = _resolve_field(raw_fields, KEY_MAP["Arquivo"])
+    hash_observado = _resolve_field(raw_fields, KEY_MAP["Hash_Observado"])
+    email_remetente = _resolve_field(raw_fields, KEY_MAP["Email_Remetente"])
+    email_destinatario = _resolve_field(raw_fields, KEY_MAP["Email_Destinatario"])
+    email_reply_to = _resolve_field(raw_fields, KEY_MAP["Email_ReplyTo"])
+    email_assunto = _resolve_field(raw_fields, KEY_MAP["Email_Assunto"])
+    resultado_autenticacao = _resolve_field(raw_fields, KEY_MAP["Resultado_Autenticacao"])
+    mfa_status = _resolve_field(raw_fields, KEY_MAP["MFA_Status"])
+    sessao_id = _resolve_field(raw_fields, KEY_MAP["Sessao_ID"])
+    tipo_logon = _resolve_field(raw_fields, KEY_MAP["Tipo_Logon"])
+    dns_consulta = _resolve_field(raw_fields, KEY_MAP["DNS_Consulta"])
+    http_host = _resolve_field(raw_fields, KEY_MAP["HTTP_Host"])
+    url_completa = _resolve_field(raw_fields, KEY_MAP["URL_Completa"])
+    user_agent = _resolve_field(raw_fields, KEY_MAP["User_Agent"])
+    tls_sni = _resolve_field(raw_fields, KEY_MAP["TLS_SNI"])
+    tls_ja3 = _resolve_field(raw_fields, KEY_MAP["TLS_JA3"])
+    tls_ja3s = _resolve_field(raw_fields, KEY_MAP["TLS_JA3S"])
+    certificado_assunto = _resolve_field(raw_fields, KEY_MAP["Certificado_Assunto"])
+    processo = _resolve_field(raw_fields, KEY_MAP["Processo"])
+    processo_pai = _resolve_field(raw_fields, KEY_MAP["Processo_Pai"])
+    linha_de_comando = _resolve_field(raw_fields, KEY_MAP["Linha_De_Comando"])
+    registro = _resolve_field(raw_fields, KEY_MAP["Registro"])
+    servico = _resolve_field(raw_fields, KEY_MAP["Servico"])
+    modulo = _resolve_field(raw_fields, KEY_MAP["Modulo"])
+    cloud_conta_id = _resolve_field(raw_fields, KEY_MAP["Cloud_Conta_ID"])
+    cloud_regiao = _resolve_field(raw_fields, KEY_MAP["Cloud_Regiao"])
+    cloud_recurso = _resolve_field(raw_fields, KEY_MAP["Cloud_Recurso"])
+    cloud_papel = _resolve_field(raw_fields, KEY_MAP["Cloud_Papel"])
+    cloud_tenant_id = _resolve_field(raw_fields, KEY_MAP["Cloud_Tenant_ID"])
+    cloud_projeto_id = _resolve_field(raw_fields, KEY_MAP["Cloud_Projeto_ID"])
+    bytes_entrada = _resolve_field(raw_fields, KEY_MAP["Bytes_Entrada"])
+    bytes_saida = _resolve_field(raw_fields, KEY_MAP["Bytes_Saida"])
+    pacotes_entrada = _resolve_field(raw_fields, KEY_MAP["Pacotes_Entrada"])
+    pacotes_saida = _resolve_field(raw_fields, KEY_MAP["Pacotes_Saida"])
+    direcao_rede = _resolve_field(raw_fields, KEY_MAP["Direcao_Rede"])
+    nat_ip_origem = _resolve_field(raw_fields, KEY_MAP["NAT_IP_Origem"])
+    nat_ip_destino = _resolve_field(raw_fields, KEY_MAP["NAT_IP_Destino"])
+    sessao_rede_id = _resolve_field(raw_fields, KEY_MAP["Sessao_Rede_ID"])
+    zona_rede = _resolve_field(raw_fields, KEY_MAP["Zona_Rede"])
+    interface_rede = _resolve_field(raw_fields, KEY_MAP["Interface_Rede"])
+    kubernetes_pod = _resolve_field(raw_fields, KEY_MAP["Kubernetes_Pod"])
+    kubernetes_namespace = _resolve_field(raw_fields, KEY_MAP["Kubernetes_Namespace"])
+    container_id = _resolve_field(raw_fields, KEY_MAP["Container_ID"])
+    container_imagem = _resolve_field(raw_fields, KEY_MAP["Container_Imagem"])
+    kubernetes_node = _resolve_field(raw_fields, KEY_MAP["Kubernetes_Node"])
+    kubernetes_cluster = _resolve_field(raw_fields, KEY_MAP["Kubernetes_Cluster"])
+    kubernetes_serviceaccount = _resolve_field(raw_fields, KEY_MAP["Kubernetes_ServiceAccount"])
+    kubernetes_workload = _resolve_field(raw_fields, KEY_MAP["Kubernetes_Workload"])
     log_source = _resolve_field(raw_fields, KEY_MAP["LogSource"])
     assunto = _resolve_field(raw_fields, KEY_MAP["Assunto"])
     acao = _resolve_field(raw_fields, KEY_MAP["Acao"])
     protocolo = _resolve_field(raw_fields, KEY_MAP["Protocolo"])
+    porta_origem = _resolve_field(raw_fields, KEY_MAP["Porta_Origem"])
     porta_destino = _resolve_field(raw_fields, KEY_MAP["Porta_Destino"])
 
     iocs = extract_iocs(raw_text)
@@ -760,12 +772,53 @@ def parse(raw_fields: dict, raw_text: str) -> dict:
     if ip_origem == "N/A" and scan_summary.get("fonte_principal"):
         ip_origem = scan_summary["fonte_principal"]
 
+    if ip_destino == "N/A":
+        ip_destino = _fallback_ip(raw_text, "destino")
+
     if destino == "N/A":
         destino = _fallback_destino(raw_text, iocs)
+    if ip_destino == "N/A" and destino != "N/A":
+        try:
+            ip_destino = str(ipaddress.ip_address(destino))
+        except ValueError:
+            pass
     if scan_summary.get("tipo") == "vertical" and destino_raw == "N/A" and scan_summary.get("alvo_principal"):
         destino = scan_summary["alvo_principal"]
     elif "horizontal" in scan_summary.get("tipo", "") and destino_raw == "N/A":
         destino = "N/A"
+    if destino == "N/A" and ip_destino != "N/A":
+        destino = ip_destino
+    if destino == "N/A" and hostname != "N/A":
+        destino = hostname
+    if destino == "N/A" and servidor != "N/A":
+        destino = servidor
+
+    if caminho == "N/A" and arquivo != "N/A":
+        caminho = arquivo
+
+    if arquivo == "N/A" and processo != "N/A":
+        arquivo = processo
+
+    if arquivo == "N/A" and caminho != "N/A":
+        arquivo = caminho.rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
+
+    if hash_observado == "N/A" and iocs["hashes"]:
+        hash_observado = iocs["hashes"][0]
+
+    if destino == "N/A" and url_completa != "N/A":
+        destino = defang(url_completa)
+    if destino == "N/A" and http_host != "N/A":
+        destino = defang(http_host)
+    if destino == "N/A" and dns_consulta != "N/A":
+        destino = defang(dns_consulta)
+    if destino == "N/A" and tls_sni != "N/A":
+        destino = defang(tls_sni)
+
+    if usuario == "N/A" and email_remetente != "N/A":
+        usuario = email_remetente
+
+    if assunto == "N/A" and email_assunto != "N/A":
+        assunto = email_assunto
 
     if log_source == "N/A":
         log_source = _fallback_log_source(raw_text)
@@ -799,12 +852,64 @@ def parse(raw_fields: dict, raw_text: str) -> dict:
         "Usuario": usuario,
         "IP_Origem": ip_origem,
         "IP_Origem_Privado": _is_private_ip(ip_origem) if ip_origem != "N/A" else True,
+        "IP_Destino": ip_destino,
         "Destino": destino,
+        "Hostname": hostname,
+        "Servidor": servidor,
         "Caminho": caminho,
+        "Arquivo": arquivo,
+        "Hash_Observado": hash_observado,
+        "Email_Remetente": email_remetente,
+        "Email_Destinatario": email_destinatario,
+        "Email_ReplyTo": email_reply_to,
+        "Email_Assunto": email_assunto,
+        "Resultado_Autenticacao": resultado_autenticacao,
+        "MFA_Status": mfa_status,
+        "Sessao_ID": sessao_id,
+        "Tipo_Logon": tipo_logon,
+        "DNS_Consulta": dns_consulta,
+        "HTTP_Host": http_host,
+        "URL_Completa": url_completa,
+        "User_Agent": user_agent,
+        "TLS_SNI": tls_sni,
+        "TLS_JA3": tls_ja3,
+        "TLS_JA3S": tls_ja3s,
+        "Certificado_Assunto": certificado_assunto,
+        "Processo": processo,
+        "Processo_Pai": processo_pai,
+        "Linha_De_Comando": linha_de_comando,
+        "Registro": registro,
+        "Servico": servico,
+        "Modulo": modulo,
+        "Cloud_Conta_ID": cloud_conta_id,
+        "Cloud_Regiao": cloud_regiao,
+        "Cloud_Recurso": cloud_recurso,
+        "Cloud_Papel": cloud_papel,
+        "Cloud_Tenant_ID": cloud_tenant_id,
+        "Cloud_Projeto_ID": cloud_projeto_id,
+        "Bytes_Entrada": bytes_entrada,
+        "Bytes_Saida": bytes_saida,
+        "Pacotes_Entrada": pacotes_entrada,
+        "Pacotes_Saida": pacotes_saida,
+        "Direcao_Rede": direcao_rede,
+        "NAT_IP_Origem": nat_ip_origem,
+        "NAT_IP_Destino": nat_ip_destino,
+        "Sessao_Rede_ID": sessao_rede_id,
+        "Zona_Rede": zona_rede,
+        "Interface_Rede": interface_rede,
+        "Kubernetes_Pod": kubernetes_pod,
+        "Kubernetes_Namespace": kubernetes_namespace,
+        "Container_ID": container_id,
+        "Container_Imagem": container_imagem,
+        "Kubernetes_Node": kubernetes_node,
+        "Kubernetes_Cluster": kubernetes_cluster,
+        "Kubernetes_ServiceAccount": kubernetes_serviceaccount,
+        "Kubernetes_Workload": kubernetes_workload,
         "LogSource": log_source,
         "Assunto": assunto,
         "Acao": acao,
         "Protocolo": protocolo,
+        "Porta_Origem": porta_origem,
         "Porta_Destino": porta_destino,
         "IOCs": iocs,
         "Resumo_Scan": scan_summary.get("resumo", "N/A"),

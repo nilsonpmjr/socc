@@ -50,6 +50,20 @@ def init_db():
                 FOREIGN KEY (run_id) REFERENCES runs(id)
             );
 
+            CREATE TABLE IF NOT EXISTS analyst_feedback (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at        TEXT NOT NULL,
+                run_id            INTEGER,
+                session_id        TEXT,
+                payload_hash      TEXT,
+                feedback_type     TEXT NOT NULL,
+                verdict_correction TEXT,
+                comments          TEXT,
+                source            TEXT,
+                FOREIGN KEY (run_id) REFERENCES runs(id),
+                FOREIGN KEY (session_id) REFERENCES chat_sessions(session_id)
+            );
+
             CREATE TABLE IF NOT EXISTS outputs (
                 id        INTEGER PRIMARY KEY AUTOINCREMENT,
                 run_id    INTEGER NOT NULL,
@@ -61,6 +75,8 @@ def init_db():
 
             CREATE INDEX IF NOT EXISTS idx_runs_cliente  ON runs(cliente);
             CREATE INDEX IF NOT EXISTS idx_runs_regra    ON runs(regra);
+            CREATE INDEX IF NOT EXISTS idx_feedback_run  ON analyst_feedback(run_id);
+            CREATE INDEX IF NOT EXISTS idx_feedback_session ON analyst_feedback(session_id, id DESC);
 
             CREATE TABLE IF NOT EXISTS chat_sessions (
                 session_id        TEXT PRIMARY KEY,
@@ -83,6 +99,7 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id, id DESC);
         """)
         _ensure_column(conn, "chat_messages", "metadata_json", "TEXT")
+        _ensure_column(conn, "analysis_helper", "structured_json", "TEXT")
 
 
 def _ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, definition: str) -> None:
@@ -144,18 +161,19 @@ def save_intel(run_id: int, ioc: str, tipo: str, ferramenta: str, resultado: str
         )
 
 
-def save_analysis(run_id: int, analysis: dict):
+def save_analysis(run_id: int, analysis: dict, structured_analysis: dict | None = None):
     with get_conn() as conn:
         conn.execute(
             """INSERT OR REPLACE INTO analysis_helper
-               (run_id, resumo_json, hipoteses_json, lacunas_json, qualidade_json)
-               VALUES (?, ?, ?, ?, ?)""",
+               (run_id, resumo_json, hipoteses_json, lacunas_json, qualidade_json, structured_json)
+               VALUES (?, ?, ?, ?, ?, ?)""",
             (
                 run_id,
                 json.dumps(analysis.get("resumo_factual", {}), ensure_ascii=False),
                 json.dumps(analysis.get("hipoteses", []), ensure_ascii=False),
                 json.dumps(analysis.get("lacunas", []), ensure_ascii=False),
                 json.dumps(analysis.get("alertas_de_qualidade", []), ensure_ascii=False),
+                json.dumps(structured_analysis or {}, ensure_ascii=False),
             ),
         )
 
@@ -178,6 +196,17 @@ def list_runs(limit: int = 50) -> list[dict]:
             (limit,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+def get_run(run_id: int) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT id, created_at, ofensa_id, cliente, regra, input_hash,
+                      classificacao_sugerida, template_usado, status_execucao
+               FROM runs WHERE id=?""",
+            (run_id,),
+        ).fetchone()
+    return dict(row) if row else None
 
 
 def ensure_chat_session(session_id: str, cliente: str = "", titulo: str = "") -> None:
@@ -289,3 +318,32 @@ def list_chat_sessions(limit: int = 50) -> list[dict]:
             (max(1, min(limit, 200)),),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def save_feedback(
+    feedback_type: str,
+    run_id: int | None = None,
+    session_id: str = "",
+    payload_hash: str = "",
+    verdict_correction: str = "",
+    comments: str = "",
+    source: str = "ui",
+) -> int:
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO analyst_feedback
+               (created_at, run_id, session_id, payload_hash, feedback_type,
+                verdict_correction, comments, source)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                datetime.now().isoformat(timespec="seconds"),
+                run_id,
+                session_id,
+                payload_hash,
+                feedback_type,
+                verdict_correction,
+                comments,
+                source,
+            ),
+        )
+        return cur.lastrowid

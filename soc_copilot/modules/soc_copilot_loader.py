@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,11 +25,23 @@ class SocCopilotConfig:
     identity: str
     skills_index: str
     schema_path: Path
+    references: Dict[str, str]
     skills: Dict[str, SkillDefinition]
 
 
 def _default_base_path() -> Path:
-    return Path(__file__).resolve().parents[2] / ".agents" / "soc-copilot"
+    explicit = os.getenv("SOCC_AGENT_HOME", "").strip()
+    candidates = []
+    if explicit:
+        candidates.append(Path(explicit).expanduser())
+    candidates.append(Path.home().expanduser() / ".socc" / "workspace" / "soc-copilot")
+    candidates.append(Path(__file__).resolve().parents[2] / ".agents" / "soc-copilot")
+
+    for candidate in candidates:
+        if (candidate / "SOUL.md").exists():
+            return candidate
+
+    return candidates[-1]
 
 
 def _read_text(path: Path) -> str:
@@ -64,6 +77,17 @@ def _load_skills(skills_dir: Path) -> Dict[str, SkillDefinition]:
     return result
 
 
+def _load_references(references_dir: Path) -> Dict[str, str]:
+    result: Dict[str, str] = {}
+    if not references_dir.exists():
+        return result
+
+    for path in sorted(references_dir.glob("*.md")):
+        result[path.stem] = _read_text(path)
+
+    return result
+
+
 def load_soc_copilot(base_path: Optional[Path] = None) -> SocCopilotConfig:
     root = base_path or _default_base_path()
 
@@ -77,6 +101,7 @@ def load_soc_copilot(base_path: Optional[Path] = None) -> SocCopilotConfig:
         identity=_read_text(root / "identity.md"),
         skills_index=_read_text(root / "skills.md"),
         schema_path=root / "schemas" / "analysis_response.json",
+        references=_load_references(root / "references"),
         skills=_load_skills(root / "skills"),
     )
 
@@ -153,6 +178,8 @@ def build_prompt_context(
     artifact_type: Optional[str] = None,
     session_context: Optional[str] = None,
     selected_skill: Optional[str] = None,
+    knowledge_context: Optional[str] = None,
+    knowledge_sources: Optional[str] = None,
     base_path: Optional[Path] = None,
 ) -> Dict[str, str]:
     config = load_soc_copilot(base_path=base_path)
@@ -171,9 +198,18 @@ def build_prompt_context(
         "memory": config.memory,
         "tools": config.tools,
         "skills_index": config.skills_index,
+        "references_index": ", ".join(sorted(config.references.keys())),
+        "evidence_rules": config.references.get("evidence-rules", ""),
+        "ioc_extraction": config.references.get("ioc-extraction", ""),
+        "security_json_patterns": config.references.get("security-json-patterns", ""),
+        "telemetry_investigation_patterns": config.references.get("telemetry-investigation-patterns", ""),
+        "mitre_guidance": config.references.get("mitre-guidance", ""),
+        "output_contract": config.references.get("output-contract", ""),
         "selected_skill": skill_name,
         "skill_content": skill.content,
         "schema_path": str(config.schema_path),
         "session_context": (session_context or "").strip(),
+        "knowledge_context": (knowledge_context or "").strip(),
+        "knowledge_sources": (knowledge_sources or "").strip(),
         "user_input": user_input.strip(),
     }

@@ -199,6 +199,13 @@ O sistema deve declarar de forma auditavel quais ferramentas, modulos e adaptado
 
 O sistema deve poder ser instalado como pacote executavel com CLI, incluindo comandos de bootstrap local, inicializacao do ambiente do agente e execucao de fluxos de analise fora da interface web.
 
+Como evolucao imediata dessa experiencia instalavel, o fluxo deve se aproximar do OpenClaw com:
+
+- onboarding guiado via CLI
+- comando de diagnostico do ambiente
+- instalacao local previsivel em `~/.socc` com manifesto, workspace seedado e trilha clara de configuracao
+- caminho progressivo de "instalar -> configurar -> validar -> servir"
+
 ### RF-14 Gateway local para LLM e MCP
 
 O sistema deve prover um gateway local ou camada de runtime capaz de intermediar chamadas ao LLM, execucao de ferramentas e integracao com servidores MCP de forma reutilizavel entre chat, CLI e automacoes.
@@ -508,6 +515,14 @@ Relacoes iniciais:
 - RAG em bases internas
 - automacoes n8n
 - score de priorizacao
+
+### Proximo passo imediato
+
+- alinhar a experiencia de instalacao do `socc` ao modelo do OpenClaw
+- adicionar `socc onboard` para bootstrap + validacao inicial
+- adicionar `socc doctor` para diagnostico local e verificacao do runtime
+- adicionar instalador one-shot local no estilo `install.sh`/`install-cli.sh`
+- adicionar controle local de servico/daemon e atalho de dashboard por CLI
 
 ### P4
 

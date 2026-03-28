@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:  # pragma: no cover - ambiente mínimo sem dependências
+    def load_dotenv(*_args, **_kwargs) -> bool:
+        return False
 
 
 def repo_env_path() -> Path:

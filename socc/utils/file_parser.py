@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from soc_copilot.modules import parser_engine
+from socc.core import parser as parser_runtime
 
 
 def parse_text_payload(payload: str, raw_fields: dict | None = None) -> dict:
-    return parser_engine.parse(raw_fields or {}, payload)
+    return parser_runtime.parse_payload(payload, raw_fields=raw_fields)
 
 
 def parse_file(path: str | Path, raw_fields: dict | None = None) -> dict:
@@ -16,4 +16,4 @@ def parse_file(path: str | Path, raw_fields: dict | None = None) -> dict:
 
 def extract_iocs_from_file(path: str | Path) -> dict:
     payload = Path(path).read_text(encoding="utf-8", errors="replace")
-    return parser_engine.extract_iocs(payload)
+    return parser_runtime.extract_iocs(payload)

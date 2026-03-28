@@ -474,10 +474,87 @@
                       <strong>Alertas de Qualidade</strong>
                       <div id="analysis-alertas" class="muted">Nenhum alerta de qualidade.</div>
                     </div>
+                    <div class="note-block">
+                      <strong>Contextos Investigativos</strong>
+                      <div id="analysis-contextos" class="muted">Nenhum contexto investigativo consolidado.</div>
+                    </div>
+                    <div class="note-block">
+                      <strong>Priorização Operacional</strong>
+                      <div id="analysis-priority" class="muted">Priorização estruturada ainda não disponível.</div>
+                    </div>
+                    <div class="note-block">
+                      <strong>Contrato Oficial</strong>
+                      <div id="official-summary" class="muted">Resumo oficial ainda não disponível.</div>
+                    </div>
+                    <div class="note-block">
+                      <strong>Verdict Oficial</strong>
+                      <div id="official-verdict" class="muted">-</div>
+                    </div>
+                    <div class="note-block">
+                      <strong>TTPs</strong>
+                      <div id="official-ttps" class="muted">Nenhuma TTP sugerida.</div>
+                    </div>
+                    <div class="note-block warning">
+                      <strong>Motivos de Risco</strong>
+                      <div id="official-risk" class="muted">Nenhum motivo de risco registrado.</div>
+                    </div>
+                    <div class="note-block success">
+                      <strong>Fontes</strong>
+                      <div id="official-sources" class="muted">Sem fontes registradas.</div>
+                    </div>
+                    <div class="note-block">
+                      <strong>Fatos Observados</strong>
+                      <div id="trace-facts" class="muted">Nenhum fato observado registrado.</div>
+                    </div>
+                    <div class="note-block">
+                      <strong>Inferências</strong>
+                      <div id="trace-inferences" class="muted">Nenhuma inferência registrada.</div>
+                    </div>
+                    <div class="note-block warning">
+                      <strong>Limitações Consolidadas</strong>
+                      <div id="trace-limitations" class="muted">Nenhuma limitação consolidada.</div>
+                    </div>
                   </div>
                 </section>
               </div>
             </div>
+
+            <section class="subcard" style="margin-top:18px;">
+              <h3 class="subcard-title">Exportação Operacional</h3>
+              <p style="color:var(--muted);font-size:0.83rem;margin:0 0 14px;">
+                Exporte a análise estruturada para reaproveitar em automações, documentação técnica ou futura integração com o Vantage.
+              </p>
+              <div class="btn-row">
+                <button class="btn btn-copy" onclick="copiarAnaliseJson()">Copiar JSON</button>
+                <button class="btn btn-secondary" onclick="exportarAnalise('json')">Exportar JSON</button>
+                <button class="btn btn-secondary" onclick="exportarAnalise('markdown')">Exportar Markdown</button>
+              </div>
+            </section>
+
+            <section class="subcard" style="margin-top:18px;">
+              <h3 class="subcard-title">Feedback do Analista</h3>
+              <p style="color:var(--muted);font-size:0.83rem;margin:0 0 14px;">
+                Registre se a sugestão da IA foi útil, incorreta ou precisa de ajuste antes de seguir para o fluxo do Vantage.
+              </p>
+              <label for="feedback-verdict" style="display:block;margin:0 0 6px;color:var(--muted);font-size:0.73rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">Correção de Verdict</label>
+              <select id="feedback-verdict" style="width:100%;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);padding:12px;font:inherit;">
+                <option value="">Sem correção</option>
+                <option value="benigno">Benigno</option>
+                <option value="suspeito">Suspeito</option>
+                <option value="malicioso">Malicioso</option>
+                <option value="inconclusivo">Inconclusivo</option>
+              </select>
+
+              <label for="feedback-comments" style="display:block;margin:14px 0 6px;color:var(--muted);font-size:0.73rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">Observações</label>
+              <textarea id="feedback-comments" style="min-height:110px;" placeholder="Ex.: a classificação está correta, mas faltou considerar a origem interna do IOC."></textarea>
+
+              <div class="btn-row" style="margin-top:14px;">
+                <button class="btn btn-secondary" onclick="enviarFeedback('approve')">Aprovar</button>
+                <button class="btn btn-primary" onclick="enviarFeedback('correct')">Corrigir</button>
+                <button class="btn btn-save" onclick="enviarFeedback('reject')">Rejeitar</button>
+              </div>
+              <div class="alert alert-success" id="feedback-status" style="margin-top:12px;"></div>
+            </section>
 
             <section class="subcard" style="margin-top:18px;" id="draft-config-section">
               <h3 class="subcard-title">Classificação e Dados Complementares</h3>
@@ -544,12 +621,54 @@
     let _tiState = {};
     let _regraState = "";
     let _clienteState = "";
+    let _payloadHash = "";
+    let _analysisState = {};
+    let _analysisStructuredState = {};
+    let _analysisPriorityState = {};
+    let _analysisTraceState = {};
 
     const badgeClass = { TP: "badge-tp", BTP: "badge-btp", FP: "badge-fp", TN: "badge-tn", LTF: "badge-ltf" };
 
-    const CAMPO_LABELS = {
+    const DISPLAY_CAMPO_LABELS = {
       Horario: "Horário (SP)", Usuario: "Usuário", IP_Origem: "IP de Origem",
-      Destino: "Destino", Caminho: "Caminho", LogSource: "Log Source", Assunto: "Assunto"
+      IP_Destino: "IP de Destino", Destino: "Destino", Hostname: "Hostname",
+      Servidor: "Servidor", Caminho: "Caminho", Arquivo: "Arquivo",
+      Hash_Observado: "Hash Observado", LogSource: "Log Source", Assunto: "Assunto",
+      Porta_Origem: "Porta de Origem", Porta_Destino: "Porta de Destino",
+      Email_Remetente: "E-mail Remetente", Email_Destinatario: "E-mail Destinatário",
+      Email_ReplyTo: "E-mail Reply-To", Email_Assunto: "E-mail Assunto",
+      Resultado_Autenticacao: "Resultado da Autenticação", MFA_Status: "MFA",
+      Sessao_ID: "Sessão", Tipo_Logon: "Tipo de Logon",
+      DNS_Consulta: "DNS Consulta", HTTP_Host: "HTTP Host", URL_Completa: "URL Completa",
+      User_Agent: "User-Agent", TLS_SNI: "TLS SNI", TLS_JA3: "TLS JA3",
+      TLS_JA3S: "TLS JA3S", Certificado_Assunto: "Assunto do Certificado",
+      Processo: "Processo", Processo_Pai: "Processo Pai",
+      Linha_De_Comando: "Linha de Comando", Registro: "Registro",
+      Servico: "Serviço", Modulo: "Módulo",
+      Cloud_Conta_ID: "Cloud Conta", Cloud_Regiao: "Cloud Região",
+      Cloud_Recurso: "Cloud Recurso", Cloud_Papel: "Cloud Papel",
+      Cloud_Tenant_ID: "Cloud Tenant", Cloud_Projeto_ID: "Cloud Projeto",
+      Bytes_Entrada: "Bytes Entrada", Bytes_Saida: "Bytes Saída",
+      Pacotes_Entrada: "Pacotes Entrada", Pacotes_Saida: "Pacotes Saída",
+      Direcao_Rede: "Direção de Rede", NAT_IP_Origem: "NAT IP Origem",
+      NAT_IP_Destino: "NAT IP Destino", Sessao_Rede_ID: "Sessão de Rede",
+      Zona_Rede: "Zona de Rede", Interface_Rede: "Interface de Rede",
+      Kubernetes_Pod: "Kubernetes Pod", Kubernetes_Namespace: "Kubernetes Namespace",
+      Container_ID: "Container ID", Container_Imagem: "Container Imagem",
+      Kubernetes_Node: "Kubernetes Node", Kubernetes_Cluster: "Kubernetes Cluster",
+      Kubernetes_ServiceAccount: "Kubernetes ServiceAccount", Kubernetes_Workload: "Kubernetes Workload"
+    };
+
+    const MANUAL_CAMPO_LABELS = {
+      Horario: "Horário (SP)", Usuario: "Usuário", IP_Origem: "IP de Origem",
+      IP_Destino: "IP de Destino", Destino: "Destino", Hostname: "Hostname",
+      Servidor: "Servidor", Caminho: "Caminho", Arquivo: "Arquivo",
+      Hash_Observado: "Hash Observado", Assunto: "Assunto",
+      Porta_Origem: "Porta de Origem", Porta_Destino: "Porta de Destino",
+      Email_Remetente: "E-mail Remetente", Email_Destinatario: "E-mail Destinatário",
+      DNS_Consulta: "DNS Consulta", HTTP_Host: "HTTP Host",
+      URL_Completa: "URL Completa", Processo: "Processo",
+      Cloud_Recurso: "Cloud Recurso", Kubernetes_Pod: "Kubernetes Pod"
     };
 
     document.getElementById("arquivo").addEventListener("change", atualizarArquivoMeta);
@@ -607,6 +726,11 @@
       _tiState = data.ti_results || {};
       _regraState = document.getElementById("regra").value.trim();
       _clienteState = document.getElementById("cliente").value.trim();
+      _payloadHash = data.payload_hash || "";
+      _analysisState = data.analysis || {};
+      _analysisStructuredState = data.analysis_structured || {};
+      _analysisPriorityState = data.analysis_priority || {};
+      _analysisTraceState = data.analysis_trace || {};
 
       document.getElementById("resultado-vazio").classList.add("hidden");
       document.getElementById("resultado-conteudo").classList.remove("hidden");
@@ -619,7 +743,10 @@
       renderCampos(data.campos_extraidos || {});
       renderIocs(data.iocs || {});
       renderTI(data.ti_results || {});
-      renderAnalysis(data.analysis || {});
+      renderAnalysis(_analysisState, _analysisStructuredState, _analysisPriorityState, _analysisTraceState);
+      document.getElementById("feedback-comments").value = "";
+      document.getElementById("feedback-verdict").value = "";
+      esconderStatusFeedback();
 
       // Pre-fill classification select with suggested classification
       const sugestao = (data.analysis && data.analysis.classificacao_sugerida && data.analysis.classificacao_sugerida.tipo) || "";
@@ -654,23 +781,22 @@
     }
 
     function renderCampos(campos) {
-      const labels = {
-        Horario: "Horário (SP)", Usuario: "Usuário", IP_Origem: "IP de Origem",
-        Destino: "Destino", Caminho: "Caminho", LogSource: "Log Source", Assunto: "Assunto"
-      };
       const grid = document.getElementById("campos-grid");
-      grid.innerHTML = "";
-      Object.entries(labels).forEach(([key, label]) => {
-        const val = campos[key] || "N/A";
-        grid.innerHTML += `<div><span class="field-key">${escHtml(label)}</span><span class="field-val">${escHtml(val)}</span></div>`;
-      });
+      const entries = Object.entries(DISPLAY_CAMPO_LABELS).filter(([key]) => campos[key] && campos[key] !== "N/A");
+      if (!entries.length) {
+        grid.innerHTML = '<div><span class="field-key">Campos extraídos</span><span class="field-val">Nenhum campo estruturado disponível.</span></div>';
+        return;
+      }
+      grid.innerHTML = entries.map(([key, label]) =>
+        `<div><span class="field-key">${escHtml(label)}</span><span class="field-val">${escHtml(campos[key])}</span></div>`
+      ).join("");
     }
 
     // ── Manual fields (campos manuais) ─────────────────────────────────────────
     function renderCamposManuais(campos) {
       _camposState = Object.assign({}, campos);
       const container = document.getElementById("campos-manuais-container");
-      const naFields = Object.entries(CAMPO_LABELS).filter(([k]) => !campos[k] || campos[k] === "N/A");
+      const naFields = Object.entries(MANUAL_CAMPO_LABELS).filter(([k]) => !campos[k] || campos[k] === "N/A");
       if (!naFields.length) {
         container.innerHTML = '<p style="color:var(--muted);font-size:0.83rem;margin:0;">Todos os campos foram extraídos automaticamente.</p>';
         return;
@@ -724,10 +850,14 @@
           return;
         }
         _classificacao = data.classificacao;
+        _analysisStructuredState = data.analysis_structured || _analysisStructuredState;
+        _analysisPriorityState = data.analysis_priority || _analysisPriorityState;
+        _analysisTraceState = data.analysis_trace || _analysisTraceState;
         document.getElementById("draft-output").value = data.draft || "";
         document.getElementById("draft-final-section").classList.remove("hidden");
         document.getElementById("summary-template").textContent = data.template_usado || "-";
         renderBadge(data);
+        renderAnalysis(_analysisState, _analysisStructuredState, _analysisPriorityState, _analysisTraceState);
         document.getElementById("draft-output").scrollIntoView({ behavior: "smooth", block: "start" });
       } catch (error) {
         mostrarErro("Falha ao gerar draft: " + error.message);
@@ -778,7 +908,7 @@
       section.classList.remove("hidden");
     }
 
-    function renderAnalysis(analysis) {
+    function renderAnalysis(analysis, structured, priority, trace) {
       const factual = analysis.resumo_factual || {};
       document.getElementById("analysis-oque").textContent = factual.o_que || "N/A";
       document.getElementById("analysis-quando").textContent = factual.quando || "N/A";
@@ -801,6 +931,59 @@
       renderSimpleList("analysis-lacunas", analysis.lacunas, "Nenhuma lacuna apontada.");
       renderSimpleList("analysis-proximos", analysis.proximos_passos, "Nenhum próximo passo sugerido.");
       renderSimpleList("analysis-alertas", analysis.alertas_de_qualidade, "Nenhum alerta de qualidade.");
+      renderStructuredList("analysis-contextos", analysis.contextos_investigativos, item => {
+        const confidence = Number.isFinite(item.confidence) ? ` (${Math.round(item.confidence * 100)}%)` : "";
+        const summary = item.summary || item.rationale || "Sem resumo consolidado.";
+        const family = item.family ? `<br><span class="muted">${escHtml(item.family)}</span>` : "";
+        return `<strong>${escHtml(item.title || "Contexto")}${escHtml(confidence)}</strong><p>${escHtml(summary)}${family}</p>`;
+      }, "Nenhum contexto investigativo consolidado.");
+      renderPriority(priority || {});
+      renderOfficialAnalysis(structured || {});
+      renderTrace(trace || {});
+    }
+
+    function renderPriority(priority) {
+      const target = document.getElementById("analysis-priority");
+      const level = priority.level || "-";
+      const score = Number.isFinite(priority.score) ? priority.score : "-";
+      const rank = Number.isFinite(priority.rank) ? priority.rank : "-";
+      const family = priority.primary_label || priority.primary_family || "-";
+      const rationale = priority.rationale || "";
+      const reasons = Array.isArray(priority.reasons) ? priority.reasons.slice(0, 3) : [];
+      if (level === "-" && score === "-" && !rationale && !reasons.length) {
+        target.innerHTML = `<p class="muted">Priorização estruturada ainda não disponível.</p>`;
+        return;
+      }
+      target.innerHTML = `
+        <strong>Nível:</strong> ${escHtml(String(level))}<br>
+        <strong>Score:</strong> ${escHtml(String(score))}<br>
+        <strong>Rank:</strong> ${escHtml(String(rank))}<br>
+        <strong>Família:</strong> ${escHtml(String(family))}
+        ${rationale ? `<p>${escHtml(rationale)}</p>` : ""}
+        ${reasons.length ? `<ul>${reasons.map(item => `<li>${escHtml(String(item))}</li>`).join("")}</ul>` : ""}
+      `;
+    }
+
+    function renderOfficialAnalysis(structured) {
+      document.getElementById("official-summary").textContent = structured.summary || "Resumo oficial ainda não disponível.";
+      const confidence = Number.isFinite(structured.confidence) ? ` (${Math.round(structured.confidence * 100)}%)` : "";
+      document.getElementById("official-verdict").textContent = structured.verdict ? `${structured.verdict}${confidence}` : "-";
+      renderStructuredList("official-ttps", structured.ttps, item => {
+        return `<strong>${escHtml(item.id || item.name || "Técnica")}</strong><p>${escHtml(item.reason || item.name || "")}</p>`;
+      }, "Nenhuma TTP sugerida.");
+      renderSimpleList("official-risk", structured.risk_reasons, "Nenhum motivo de risco registrado.");
+      renderSimpleList("official-sources", structured.sources, "Sem fontes registradas.");
+    }
+
+    function renderTrace(trace) {
+      renderStructuredList("trace-facts", trace.observed_facts, item => {
+        return `<strong>${escHtml(item.label || item.category || "Fato")}</strong><p>${escHtml(item.value || "")}<br><span class="muted">${escHtml(item.source || "")}</span></p>`;
+      }, "Nenhum fato observado registrado.");
+      renderStructuredList("trace-inferences", trace.inferences, item => {
+        const confidence = Number.isFinite(item.confidence) ? ` (${Math.round(item.confidence * 100)}%)` : "";
+        return `<strong>${escHtml(item.statement || "Inferência")}${escHtml(confidence)}</strong><p>${escHtml(item.rationale || "Sem racional registrado.")}</p>`;
+      }, "Nenhuma inferência registrada.");
+      renderSimpleList("trace-limitations", trace.limitations, "Nenhuma limitação consolidada.");
     }
 
     function renderStructuredList(id, items, renderer, emptyText) {
@@ -860,6 +1043,121 @@
         mostrarSucesso("Arquivo salvo em: " + data.salvo_em);
       } catch (error) {
         mostrarErro("Falha ao salvar: " + error.message);
+      }
+    }
+
+    function montarPayloadExportacao() {
+      return {
+        run_id: _runId || null,
+        cliente: _clienteState,
+        regra: _regraState,
+        classificacao: _classificacao,
+        payload_hash: _payloadHash,
+        fields: _camposState || {},
+        ti_results: _tiState || {},
+        analysis: _analysisState || {},
+        analysis_structured: _analysisStructuredState || {},
+        analysis_priority: _analysisPriorityState || {},
+        analysis_trace: _analysisTraceState || {},
+        draft: document.getElementById("draft-output").value || ""
+      };
+    }
+
+    async function copiarAnaliseJson() {
+      if (!_analysisStructuredState || !Object.keys(_analysisStructuredState).length) {
+        mostrarErro("Nenhuma análise estruturada disponível para cópia.");
+        return;
+      }
+      const content = JSON.stringify(montarPayloadExportacao(), null, 2);
+      try {
+        await navigator.clipboard.writeText(content);
+        mostrarSucesso("Análise JSON copiada para a área de transferência.");
+      } catch {
+        mostrarErro("Não foi possível copiar a análise JSON.");
+      }
+    }
+
+    async function exportarAnalise(format) {
+      if (!_analysisStructuredState || !Object.keys(_analysisStructuredState).length) {
+        mostrarErro("Nenhuma análise estruturada disponível para exportação.");
+        return;
+      }
+      try {
+        const resp = await fetch("/api/export-analysis", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...montarPayloadExportacao(),
+            format
+          })
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          mostrarErro(data.error || "Erro ao exportar a análise.");
+          return;
+        }
+        baixarConteudo(data.content || "", data.filename || `analysis.${format === "json" ? "json" : "md"}`, data.mime_type || "text/plain");
+        mostrarSucesso("Análise exportada com sucesso.");
+      } catch (error) {
+        mostrarErro("Falha ao exportar análise: " + error.message);
+      }
+    }
+
+    function baixarConteudo(content, filename, mimeType) {
+      const blob = new Blob([content], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }
+
+    function esconderStatusFeedback() {
+      const status = document.getElementById("feedback-status");
+      status.classList.remove("visible", "alert-error");
+      status.classList.add("alert-success");
+      status.textContent = "";
+    }
+
+    async function enviarFeedback(feedbackType) {
+      if (!_runId) {
+        mostrarErro("Execute uma análise antes de registrar feedback.");
+        return;
+      }
+      const status = document.getElementById("feedback-status");
+      status.classList.remove("alert-error");
+      status.classList.add("alert-success");
+
+      try {
+        const resp = await fetch("/api/feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            run_id: _runId,
+            payload_hash: _payloadHash,
+            feedback_type: feedbackType,
+            verdict: document.getElementById("feedback-verdict").value,
+            comments: document.getElementById("feedback-comments").value.trim(),
+            source: "index-ui"
+          })
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          status.textContent = data.error || "Erro ao salvar feedback.";
+          status.classList.remove("alert-success");
+          status.classList.add("alert-error", "visible");
+          return;
+        }
+        status.textContent = `Feedback registrado (#${data.feedback_id}).`;
+        status.classList.remove("alert-error");
+        status.classList.add("alert-success", "visible");
+      } catch (error) {
+        status.textContent = "Falha ao enviar feedback: " + error.message;
+        status.classList.remove("alert-success");
+        status.classList.add("alert-error", "visible");
       }
     }
 

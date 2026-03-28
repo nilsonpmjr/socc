@@ -170,6 +170,12 @@ body { background: var(--bg); color: var(--text); }
   flex-shrink: 0;
 }
 
+.sidebar-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .btn-theme {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -183,6 +189,22 @@ body { background: var(--bg); color: var(--text); }
   transition: background 0.15s;
 }
 .btn-theme:hover { background: var(--surface-hover); }
+
+.btn-header-settings {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s;
+}
+.btn-header-settings:hover { background: var(--surface-hover); border-color: var(--accent); }
 
 /* ===== MAIN ===== */
 #main {
@@ -227,6 +249,13 @@ body { background: var(--bg); color: var(--text); }
   text-overflow: ellipsis;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .badge-online {
   background: var(--fp-soft);
   color: var(--fp);
@@ -236,6 +265,22 @@ body { background: var(--bg); color: var(--text); }
   font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
+}
+
+.badge-online.warn {
+  background: var(--btp-soft);
+  color: var(--btp);
+  border-color: var(--btp);
+}
+
+.badge-online.offline {
+  background: var(--tp-soft);
+  color: var(--tp);
+  border-color: var(--tp);
+}
+
+.badge-online.hidden {
+  display: none;
 }
 
 /* ===== MESSAGES ===== */
@@ -534,6 +579,272 @@ body { background: var(--bg); color: var(--text); }
   color: var(--text);
 }
 
+html[data-compact-cards="true"] .analysis-card {
+  max-width: 620px;
+}
+
+html[data-compact-cards="true"] .card-header,
+html[data-compact-cards="true"] .card-section,
+html[data-compact-cards="true"] .card-actions,
+html[data-compact-cards="true"] .draft-content {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+html[data-show-official="false"] .section-official,
+html[data-show-contexts="false"] .section-contexts,
+html[data-show-trace="false"] .section-trace {
+  display: none;
+}
+
+/* ===== SETTINGS PANEL ===== */
+#settings-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.48);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 120;
+}
+
+#settings-overlay.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+#settings-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: min(420px, 100vw);
+  height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(59,130,246,0.12), transparent 42%),
+    linear-gradient(180deg, var(--sidebar), var(--surface));
+  border-left: 1px solid var(--border);
+  box-shadow: -16px 0 40px rgba(0,0,0,0.22);
+  transform: translateX(100%);
+  transition: transform 0.24s ease;
+  z-index: 121;
+  display: flex;
+  flex-direction: column;
+}
+
+#settings-panel.open {
+  transform: translateX(0);
+}
+
+.settings-header {
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.settings-subtitle {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 4px;
+}
+
+.settings-close {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.settings-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.settings-section {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.settings-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  margin-bottom: 10px;
+}
+
+.settings-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-grid.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.setting-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.setting-label {
+  font-size: 12px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.setting-help {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.settings-input,
+.settings-select,
+.settings-textarea {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 9px 10px;
+  font: inherit;
+  outline: none;
+}
+
+.settings-input:focus,
+.settings-select:focus,
+.settings-textarea:focus {
+  border-color: var(--accent);
+}
+
+.toggle-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.toggle-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.toggle-switch {
+  position: relative;
+  width: 46px;
+  height: 26px;
+  flex-shrink: 0;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.toggle-slider::before {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  left: 3px;
+  top: 3px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+  transition: transform 0.2s ease;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(20px);
+}
+
+.runtime-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.runtime-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.runtime-pill {
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 11px;
+  color: var(--text);
+}
+
+.runtime-details {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.btn-settings-action {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.btn-settings-action.primary {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 /* ===== INPUT BAR ===== */
 #input-area {
   padding: 14px 20px;
@@ -756,7 +1067,10 @@ body { background: var(--bg); color: var(--text); }
     </div>
 
     <div class="sidebar-footer">
-      <button class="btn-theme" id="btn-theme">&#9788; Alternar tema</button>
+      <div class="sidebar-actions">
+        <button class="btn-theme" id="btn-theme">&#9788; Alternar tema</button>
+        <button class="btn-theme" id="btn-sidebar-settings">&#9881; Configurações</button>
+      </div>
     </div>
   </aside>
 
@@ -768,7 +1082,10 @@ body { background: var(--bg); color: var(--text); }
     <div id="main-header">
       <button class="btn-hamburger" id="btn-hamburger">&#9776;</button>
       <span id="session-title">Nova sessão</span>
-      <span class="badge-online">&#9679; Online</span>
+      <div class="header-actions">
+        <span class="badge-online" id="runtime-badge">&#9679; Runtime local</span>
+        <button class="btn-header-settings" id="btn-settings" title="Configurações">&#9881;</button>
+      </div>
     </div>
 
     <div id="messages">
@@ -818,6 +1135,159 @@ body { background: var(--bg); color: var(--text); }
   </main>
 </div>
 
+<div id="settings-overlay"></div>
+<aside id="settings-panel" aria-hidden="true">
+  <div class="settings-header">
+    <div>
+      <div class="settings-title">Configurações do Chat</div>
+      <div class="settings-subtitle">Preferências locais inspiradas no fluxo configurável do ClawDBot: interface, comportamento, exportação e status do runtime.</div>
+    </div>
+    <button class="settings-close" id="btn-settings-close" title="Fechar">&#10005;</button>
+  </div>
+  <div class="settings-body">
+    <section class="settings-section">
+      <div class="settings-section-title">Interface</div>
+      <div class="settings-grid">
+        <label class="setting-field">
+          <span class="setting-label">Tema</span>
+          <select class="settings-select" id="settings-theme">
+            <option value="dark">Escuro</option>
+            <option value="light">Claro</option>
+          </select>
+        </label>
+        <label class="toggle-row">
+          <span class="toggle-copy">
+            <span class="setting-label">Cards compactos</span>
+            <span class="setting-help">Reduz espaçamento para filas mais densas.</span>
+          </span>
+          <span class="toggle-switch">
+            <input type="checkbox" id="settings-compact-cards">
+            <span class="toggle-slider"></span>
+          </span>
+        </label>
+        <label class="toggle-row">
+          <span class="toggle-copy">
+            <span class="setting-label">Mostrar contexts investigativos</span>
+            <span class="setting-help">Esconde ou exibe a seção contextual derivada do parser.</span>
+          </span>
+          <span class="toggle-switch">
+            <input type="checkbox" id="settings-show-contexts">
+            <span class="toggle-slider"></span>
+          </span>
+        </label>
+        <label class="toggle-row">
+          <span class="toggle-copy">
+            <span class="setting-label">Mostrar trilha analítica</span>
+            <span class="setting-help">Útil para auditoria e revisão técnica.</span>
+          </span>
+          <span class="toggle-switch">
+            <input type="checkbox" id="settings-show-trace">
+            <span class="toggle-slider"></span>
+          </span>
+        </label>
+        <label class="toggle-row">
+          <span class="toggle-copy">
+            <span class="setting-label">Mostrar contrato oficial</span>
+            <span class="setting-help">Controla a exibição do bloco estruturado da análise.</span>
+          </span>
+          <span class="toggle-switch">
+            <input type="checkbox" id="settings-show-official">
+            <span class="toggle-slider"></span>
+          </span>
+        </label>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <div class="settings-section-title">Comportamento</div>
+      <div class="settings-grid">
+        <label class="toggle-row">
+          <span class="toggle-copy">
+            <span class="setting-label">Preferir streaming SSE</span>
+            <span class="setting-help">Usa `/api/chat/stream` quando disponível e cai para síncrono se necessário.</span>
+          </span>
+          <span class="toggle-switch">
+            <input type="checkbox" id="settings-prefer-streaming">
+            <span class="toggle-slider"></span>
+          </span>
+        </label>
+        <label class="toggle-row">
+          <span class="toggle-copy">
+            <span class="setting-label">Abrir draft automaticamente</span>
+            <span class="setting-help">Expande o draft final sempre que um card analítico chega.</span>
+          </span>
+          <span class="toggle-switch">
+            <input type="checkbox" id="settings-auto-open-draft">
+            <span class="toggle-slider"></span>
+          </span>
+        </label>
+        <div class="settings-grid two">
+          <label class="setting-field">
+            <span class="setting-label">Classificação padrão</span>
+            <select class="settings-select" id="settings-default-classification">
+              <option value="auto">Auto</option>
+              <option value="TP">TP</option>
+              <option value="BTP">BTP</option>
+              <option value="FP">FP</option>
+              <option value="TN">TN</option>
+              <option value="LTF">LTF</option>
+            </select>
+          </label>
+          <label class="setting-field">
+            <span class="setting-label">Ordenação de sessões</span>
+            <select class="settings-select" id="settings-session-sort">
+              <option value="recent">Mais recentes</option>
+              <option value="title">Título</option>
+            </select>
+          </label>
+        </div>
+        <label class="setting-field">
+          <span class="setting-label">Cliente padrão</span>
+          <input class="settings-input" id="settings-default-client" maxlength="40" placeholder="Ex.: vantage" />
+          <span class="setting-help">Pré-preenche novas sessões e exportações sem obrigar edição manual toda vez.</span>
+        </label>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <div class="settings-section-title">Exportação</div>
+      <div class="settings-grid">
+        <label class="setting-field">
+          <span class="setting-label">Formato padrão</span>
+          <select class="settings-select" id="settings-default-export">
+            <option value="markdown">Markdown</option>
+            <option value="json">JSON</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <div class="settings-section-title">Runtime</div>
+      <div class="runtime-card">
+        <label class="toggle-row">
+          <span class="toggle-copy">
+            <span class="setting-label">Mostrar badge no cabeçalho</span>
+            <span class="setting-help">Exibe resumo de provider/model/device no topo do chat.</span>
+          </span>
+          <span class="toggle-switch">
+            <input type="checkbox" id="settings-show-runtime-badge">
+            <span class="toggle-slider"></span>
+          </span>
+        </label>
+        <div class="runtime-inline" id="runtime-inline">
+          <span class="runtime-pill">Sem status carregado</span>
+        </div>
+        <div class="runtime-details" id="runtime-details">O runtime será consultado em `/api/runtime/status` para preencher provider, modelo, device e features ativas.</div>
+        <div class="settings-actions">
+          <button class="btn-settings-action primary" id="btn-runtime-refresh">Atualizar runtime</button>
+          <button class="btn-settings-action" id="btn-settings-reset">Restaurar padrões</button>
+        </div>
+      </div>
+    </section>
+  </div>
+</aside>
+
 <script>
 // ================================================================
 // ESTADO GLOBAL
@@ -827,7 +1297,24 @@ const state = {
   sessionTitle: 'Nova sessão',
   sessions: [],      // histórico carregado
   busy: false,
+  runtimeStatus: null,
 };
+const analysisCardState = {};
+const DEFAULT_CHAT_SETTINGS = {
+  theme: 'dark',
+  compactCards: false,
+  showContexts: true,
+  showTrace: true,
+  showOfficial: true,
+  preferStreaming: true,
+  autoOpenDraft: false,
+  defaultClassification: 'auto',
+  defaultClient: '',
+  defaultExportFormat: 'markdown',
+  sessionSort: 'recent',
+  showRuntimeBadge: true,
+};
+state.settings = loadChatSettings();
 
 // ================================================================
 // ELEMENTOS
@@ -844,20 +1331,110 @@ const msgInput      = $('msg-input');
 const btnSend       = $('btn-send');
 const btnNew        = $('btn-new');
 const btnTheme      = $('btn-theme');
+const btnSidebarSettings = $('btn-sidebar-settings');
+const btnSettings   = $('btn-settings');
+const btnSettingsClose = $('btn-settings-close');
 const btnHamburger  = $('btn-hamburger');
 const btnFile       = $('btn-file');
+const btnRuntimeRefresh = $('btn-runtime-refresh');
+const btnSettingsReset = $('btn-settings-reset');
 const fileInput     = $('file-input');
 const selectCls     = $('select-cls');
 const inputCliente  = $('input-cliente');
 const charCount     = $('char-count');
+const runtimeBadge  = $('runtime-badge');
+const settingsOverlay = $('settings-overlay');
+const settingsPanel = $('settings-panel');
+const runtimeInline = $('runtime-inline');
+const runtimeDetails = $('runtime-details');
+
+const settingsTheme = $('settings-theme');
+const settingsCompactCards = $('settings-compact-cards');
+const settingsShowContexts = $('settings-show-contexts');
+const settingsShowTrace = $('settings-show-trace');
+const settingsShowOfficial = $('settings-show-official');
+const settingsPreferStreaming = $('settings-prefer-streaming');
+const settingsAutoOpenDraft = $('settings-auto-open-draft');
+const settingsDefaultClassification = $('settings-default-classification');
+const settingsDefaultClient = $('settings-default-client');
+const settingsDefaultExport = $('settings-default-export');
+const settingsSessionSort = $('settings-session-sort');
+const settingsShowRuntimeBadge = $('settings-show-runtime-badge');
+
+function loadChatSettings() {
+  try {
+    const raw = localStorage.getItem('soc_chat_settings');
+    const parsed = raw ? JSON.parse(raw) : {};
+    return {
+      ...DEFAULT_CHAT_SETTINGS,
+      ...parsed,
+      theme: String(parsed?.theme || localStorage.getItem('soc_theme') || DEFAULT_CHAT_SETTINGS.theme),
+    };
+  } catch (_) {
+    return { ...DEFAULT_CHAT_SETTINGS };
+  }
+}
+
+function persistChatSettings() {
+  localStorage.setItem('soc_chat_settings', JSON.stringify(state.settings));
+  localStorage.setItem('soc_theme', state.settings.theme);
+}
+
+function applySettings() {
+  const settings = state.settings;
+  document.documentElement.setAttribute('data-theme', settings.theme);
+  document.documentElement.setAttribute('data-compact-cards', settings.compactCards ? 'true' : 'false');
+  document.documentElement.setAttribute('data-show-contexts', settings.showContexts ? 'true' : 'false');
+  document.documentElement.setAttribute('data-show-trace', settings.showTrace ? 'true' : 'false');
+  document.documentElement.setAttribute('data-show-official', settings.showOfficial ? 'true' : 'false');
+  updateThemeBtn(settings.theme);
+
+  if (runtimeBadge) {
+    runtimeBadge.classList.toggle('hidden', !settings.showRuntimeBadge);
+  }
+
+  if (!selectCls.dataset.userTouched) {
+    selectCls.value = settings.defaultClassification || 'auto';
+  }
+  if (!inputCliente.dataset.userTouched) {
+    inputCliente.value = settings.defaultClient || '';
+  }
+}
+
+function syncSettingsForm() {
+  settingsTheme.value = state.settings.theme;
+  settingsCompactCards.checked = !!state.settings.compactCards;
+  settingsShowContexts.checked = !!state.settings.showContexts;
+  settingsShowTrace.checked = !!state.settings.showTrace;
+  settingsShowOfficial.checked = !!state.settings.showOfficial;
+  settingsPreferStreaming.checked = !!state.settings.preferStreaming;
+  settingsAutoOpenDraft.checked = !!state.settings.autoOpenDraft;
+  settingsDefaultClassification.value = state.settings.defaultClassification || 'auto';
+  settingsDefaultClient.value = state.settings.defaultClient || '';
+  settingsDefaultExport.value = state.settings.defaultExportFormat || 'markdown';
+  settingsSessionSort.value = state.settings.sessionSort || 'recent';
+  settingsShowRuntimeBadge.checked = !!state.settings.showRuntimeBadge;
+}
+
+function updateSetting(key, value) {
+  state.settings[key] = value;
+  persistChatSettings();
+  applySettings();
+  syncSettingsForm();
+  if (key === 'sessionSort') {
+    updateSessionList();
+  }
+  if (key === 'showRuntimeBadge') {
+    renderRuntimeStatus(state.runtimeStatus);
+  }
+}
 
 // ================================================================
 // TEMA
 // ================================================================
 function initTheme() {
-  const saved = localStorage.getItem('soc_theme') || 'dark';
-  document.documentElement.setAttribute('data-theme', saved);
-  updateThemeBtn(saved);
+  applySettings();
+  syncSettingsForm();
 }
 
 function updateThemeBtn(theme) {
@@ -865,11 +1442,132 @@ function updateThemeBtn(theme) {
 }
 
 btnTheme.addEventListener('click', () => {
-  const curr = document.documentElement.getAttribute('data-theme');
+  const curr = state.settings.theme;
   const next = curr === 'dark' ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', next);
-  localStorage.setItem('soc_theme', next);
-  updateThemeBtn(next);
+  updateSetting('theme', next);
+});
+
+function openSettingsPanel() {
+  settingsOverlay.classList.add('visible');
+  settingsPanel.classList.add('open');
+  settingsPanel.setAttribute('aria-hidden', 'false');
+}
+
+function closeSettingsPanel() {
+  settingsOverlay.classList.remove('visible');
+  settingsPanel.classList.remove('open');
+  settingsPanel.setAttribute('aria-hidden', 'true');
+}
+
+function renderRuntimeStatus(payload) {
+  state.runtimeStatus = payload || null;
+  const runtime = payload?.runtime || {};
+  const features = payload?.features || {};
+  const probe = payload?.probe || {};
+  const provider = runtime.provider || 'offline';
+  const backend = runtime.backend || provider;
+  const backendLabel = runtime.backend_label || backend;
+  const model = runtime.model || 'sem modelo';
+  const device = runtime.device || 'n/d';
+  const gpuAvailable = runtime.gpu_available ? 'GPU disponível' : 'GPU ausente';
+  const streamingEnabled = features.chat_streaming ? 'streaming on' : 'streaming off';
+  const tiEnabled = features.threat_intel ? 'TI on' : 'TI off';
+  const badgeVisible = !!state.settings.showRuntimeBadge;
+
+  runtimeBadge.className = 'badge-online';
+  if (!badgeVisible) {
+    runtimeBadge.classList.add('hidden');
+  }
+  if (!payload) {
+    runtimeBadge.classList.add('offline');
+    runtimeBadge.textContent = '● Runtime indisponível';
+    runtimeInline.innerHTML = '<span class="runtime-pill">Sem status carregado</span>';
+    runtimeDetails.textContent = 'Não foi possível consultar o runtime local agora.';
+    return;
+  }
+
+  runtimeInline.innerHTML = [
+    backendLabel,
+    provider,
+    model,
+    device,
+    gpuAvailable,
+    streamingEnabled,
+    tiEnabled,
+  ].map(item => `<span class="runtime-pill">${esc(item)}</span>`).join('');
+
+  runtimeDetails.innerHTML = [
+    `Backend: <strong>${esc(backendLabel)}</strong>`,
+    `Provider: <strong>${esc(provider)}</strong>`,
+    `Modelo: <strong>${esc(model)}</strong>`,
+    `Device preferido: <strong>${esc(device)}</strong>`,
+    runtime?.backend_gpu_supported === false ? `GPU no backend: <strong>não</strong>` : `GPU no backend: <strong>${esc(runtime.gpu_available ? 'sim' : 'indireto')}</strong>`,
+    payload?.metrics?.analysis_pipeline ? `Schema válido: <strong>${esc(String(Math.round((payload.metrics.analysis_pipeline.schema_valid_rate || 0) * 100)))}%</strong>` : '',
+    probe?.reachable === false ? `Probe: <strong>${esc(probe.error || 'indisponível')}</strong>` : '',
+  ].filter(Boolean).join('<br>');
+
+  runtimeBadge.textContent = `● ${backend} · ${device}`;
+  if (!runtime.enabled) {
+    runtimeBadge.classList.add('warn');
+    runtimeBadge.textContent = '● Runtime fallback';
+  } else if (!features.chat_api) {
+    runtimeBadge.classList.add('offline');
+    runtimeBadge.textContent = '● Chat desabilitado';
+  } else if (!features.chat_streaming && state.settings.preferStreaming) {
+    runtimeBadge.classList.add('warn');
+    runtimeBadge.textContent = `● ${provider} · sem SSE`;
+  }
+}
+
+async function loadRuntimeStatus() {
+  try {
+    const resp = await fetch('/api/runtime/status');
+    const data = await resp.json();
+    if (!resp.ok) {
+      renderRuntimeStatus({
+        runtime: { enabled: false, provider: 'runtime', model: data.feature || 'indisponível', device: 'n/d' },
+        features: data.feature ? { [data.feature]: false } : {},
+      });
+      return;
+    }
+    renderRuntimeStatus(data);
+  } catch (_) {
+    renderRuntimeStatus(null);
+  }
+}
+
+btnSettings.addEventListener('click', openSettingsPanel);
+btnSidebarSettings.addEventListener('click', openSettingsPanel);
+btnSettingsClose.addEventListener('click', closeSettingsPanel);
+settingsOverlay.addEventListener('click', closeSettingsPanel);
+btnRuntimeRefresh.addEventListener('click', loadRuntimeStatus);
+btnSettingsReset.addEventListener('click', () => {
+  state.settings = { ...DEFAULT_CHAT_SETTINGS };
+  persistChatSettings();
+  applySettings();
+  syncSettingsForm();
+  updateSessionList();
+});
+
+settingsTheme.addEventListener('change', e => updateSetting('theme', e.target.value || 'dark'));
+settingsCompactCards.addEventListener('change', e => updateSetting('compactCards', !!e.target.checked));
+settingsShowContexts.addEventListener('change', e => updateSetting('showContexts', !!e.target.checked));
+settingsShowTrace.addEventListener('change', e => updateSetting('showTrace', !!e.target.checked));
+settingsShowOfficial.addEventListener('change', e => updateSetting('showOfficial', !!e.target.checked));
+settingsPreferStreaming.addEventListener('change', e => updateSetting('preferStreaming', !!e.target.checked));
+settingsAutoOpenDraft.addEventListener('change', e => updateSetting('autoOpenDraft', !!e.target.checked));
+settingsDefaultClassification.addEventListener('change', e => updateSetting('defaultClassification', e.target.value || 'auto'));
+settingsDefaultClient.addEventListener('input', e => updateSetting('defaultClient', e.target.value || ''));
+settingsDefaultExport.addEventListener('change', e => updateSetting('defaultExportFormat', e.target.value || 'markdown'));
+settingsSessionSort.addEventListener('change', e => updateSetting('sessionSort', e.target.value || 'recent'));
+settingsShowRuntimeBadge.addEventListener('change', e => updateSetting('showRuntimeBadge', !!e.target.checked));
+
+selectCls.addEventListener('change', () => {
+  selectCls.dataset.userTouched = 'true';
+});
+
+inputCliente.addEventListener('input', () => {
+  inputCliente.dataset.userTouched = 'true';
 });
 
 // ================================================================
@@ -947,8 +1645,14 @@ function renderAnalysisCard(data, cardId) {
   const mitre = data.mitre || {};
   const skill = data.skill || '';
   const analise = data.analise_tecnica || '';
+  const structured = data.analysis_structured || {};
+  const priority = data.analysis_priority || {};
+  const trace = data.analysis_trace || {};
+  const legacy = data.analysis_legacy || {};
   const draft = data.draft || '';
   const formato = data.formato_detectado || '';
+  const payloadHash = data.payload_hash || '';
+  const sessionId = data.session_id || '';
 
   // Badge MITRE
   const mitreId = mitre.id || mitre.tecnica || '';
@@ -957,6 +1661,9 @@ function renderAnalysisCard(data, cardId) {
     ? `<span class="badge-mitre" title="${esc(mitreNome)}">${esc(mitreId)}</span>`
     : (mitreNome ? `<span class="badge-mitre">${esc(mitreNome.slice(0, 20))}</span>` : '');
   const skillBadge = skill ? `<span class="badge-mitre" title="Skill">${esc(skill)}</span>` : '';
+  const priorityBadge = priority.level
+    ? `<span class="badge-mitre" title="Prioridade">${esc(String(priority.level).toUpperCase())}${typeof priority.score === 'number' ? ` · ${Math.round(priority.score)}` : ''}</span>`
+    : '';
 
   // Campos relevantes para exibir
   const camposMostrar = [
@@ -964,9 +1671,35 @@ function renderAnalysisCard(data, cardId) {
     ['IP Origem',   campos.IP_Origem || campos.srcip || campos.src_ip || ''],
     ['IP Destino',  campos.IP_Destino || campos.dstip || campos.dst_ip || ''],
     ['Horário',     campos.Horario || campos.timestamp || campos.date || ''],
+    ['Hostname',    campos.Hostname || campos.hostname || campos['host.name'] || ''],
+    ['Servidor',    campos.Servidor || campos.server || campos.serverName || ''],
     ['Log Source',  campos.Log_Source || campos.devname || campos.hostname || formato || ''],
+    ['Arquivo',     campos.Arquivo || campos.filename || campos.fileName || campos['file.name'] || ''],
+    ['Hash',        campos.Hash_Observado || campos.hash || campos.fileHash || campos.sha256 || ''],
+    ['E-mail From', campos.Email_Remetente || campos['sender.address'] || campos.from || ''],
+    ['E-mail To',   campos.Email_Destinatario || campos['recipient.address'] || campos.to || ''],
+    ['Auth',        campos.Resultado_Autenticacao || campos.auth_result || campos.status || ''],
+    ['MFA',         campos.MFA_Status || campos.mfa || ''],
+    ['Sessão',      campos.Sessao_ID || campos.sessionId || campos.session_id || ''],
+    ['Tipo Logon',  campos.Tipo_Logon || campos.logonType || campos.logon_type || ''],
+    ['DNS',         campos.DNS_Consulta || campos.query || campos['dns.question.name'] || ''],
+    ['HTTP Host',   campos.HTTP_Host || campos['http.host'] || ''],
+    ['URL',         campos.URL_Completa || campos['url.full'] || campos.url || ''],
+    ['User-Agent',  campos.User_Agent || campos.user_agent || campos['http.user_agent'] || ''],
+    ['TLS SNI',     campos.TLS_SNI || campos['tls.sni'] || ''],
+    ['JA3',         campos.TLS_JA3 || campos.ja3 || ''],
+    ['Processo',    campos.Processo || campos.processName || campos['process.name'] || ''],
+    ['Cmdline',     campos.Linha_De_Comando || campos.command_line || campos.CommandLine || ''],
+    ['Registro',    campos.Registro || campos['registry.path'] || ''],
+    ['Cloud Conta', campos.Cloud_Conta_ID || campos.accountId || ''],
+    ['Cloud Recurso', campos.Cloud_Recurso || campos.resourceId || ''],
+    ['Cloud Região', campos.Cloud_Regiao || campos.region || campos['cloud.region'] || ''],
+    ['K8s Pod',     campos.Kubernetes_Pod || campos.pod || campos['kubernetes.pod.name'] || ''],
+    ['K8s Namespace', campos.Kubernetes_Namespace || campos.namespace || campos['kubernetes.namespace'] || ''],
+    ['Container',   campos.Container_ID || campos.containerId || campos['container.id'] || ''],
     ['Ação',        campos.Acao || campos.action || ''],
     ['Protocolo',   campos.Protocolo || campos.proto || campos.protocol || ''],
+    ['Porta Src',   campos.Porta_Origem || campos.srcport || ''],
     ['Porta Dst',   campos.Porta_Destino || campos.dstport || ''],
   ].filter(([, v]) => v);
 
@@ -998,32 +1731,118 @@ function renderAnalysisCard(data, cardId) {
     </div>
   ` : '';
 
+  const ttps = Array.isArray(structured.ttps) ? structured.ttps : [];
+  const riskReasons = Array.isArray(structured.risk_reasons) ? structured.risk_reasons : [];
+  const sources = Array.isArray(structured.sources) ? structured.sources : [];
+  const officialSection = structured.summary || structured.verdict ? `
+    <div class="card-section section-official">
+      <div class="card-section-title">Contrato Oficial</div>
+      <div class="analise-texto">${esc(structured.summary || analise || 'Sem resumo oficial.')}</div>
+      <div style="margin-top:8px;font-size:12px;color:var(--muted);">
+        Verdict: <strong>${esc(structured.verdict || 'inconclusivo')}</strong>
+        ${typeof structured.confidence === 'number' ? ` · Confiança: <strong>${Math.round(structured.confidence * 100)}%</strong>` : ''}
+      </div>
+      ${ttps.length ? `<div style="margin-top:8px;font-size:12px;">${ttps.map(item => `<span class="badge-mitre" title="${esc(item.reason || '')}">${esc(item.id || item.name || 'TTP')}</span>`).join('')}</div>` : ''}
+      ${riskReasons.length ? `<div style="margin-top:10px;font-size:12px;color:var(--muted);">${riskReasons.map(item => `<div style="margin-top:4px;">• ${esc(item)}</div>`).join('')}</div>` : ''}
+      ${sources.length ? `<div style="margin-top:10px;font-size:11px;color:var(--muted);">Fontes: ${esc(sources.join(', '))}</div>` : ''}
+    </div>
+  ` : '';
+
+  const contexts = Array.isArray(legacy.contextos_investigativos) ? legacy.contextos_investigativos.slice(0, 4) : [];
+  const contextSection = contexts.length ? `
+    <div class="card-section section-contexts">
+      <div class="card-section-title">Contextos Investigativos</div>
+      <div style="font-size:12px;color:var(--muted);">
+        ${contexts.map(item => `<div style="margin-top:6px;">• <strong>${esc(item.title || 'Contexto')}</strong>${typeof item.confidence === 'number' ? ` (${Math.round(item.confidence * 100)}%)` : ''}: ${esc(item.summary || item.rationale || '')}</div>`).join('')}
+      </div>
+    </div>
+  ` : '';
+  const prioritySection = priority.level || priority.rationale ? `
+    <div class="card-section">
+      <div class="card-section-title">Priorização</div>
+      <div style="font-size:12px;color:var(--muted);">
+        <div><strong>Nível:</strong> ${esc(priority.level || '-')}</div>
+        <div><strong>Score:</strong> ${esc(typeof priority.score === 'number' ? String(priority.score) : '-')}</div>
+        <div><strong>Rank:</strong> ${esc(typeof priority.rank === 'number' ? String(priority.rank) : '-')}</div>
+        <div><strong>Família:</strong> ${esc(priority.primary_label || priority.primary_family || '-')}</div>
+        ${priority.rationale ? `<div style="margin-top:6px;">${esc(priority.rationale)}</div>` : ''}
+      </div>
+    </div>
+  ` : '';
+
+  const feedbackSection = `
+    <div class="card-section">
+      <div class="card-section-title">Feedback</div>
+      <select id="fb-verdict-${cardId}" style="width:100%;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);padding:8px 10px;font:inherit;">
+        <option value="">Sem correção de verdict</option>
+        <option value="benigno">Benigno</option>
+        <option value="suspeito">Suspeito</option>
+        <option value="malicioso">Malicioso</option>
+        <option value="inconclusivo">Inconclusivo</option>
+      </select>
+      <textarea id="fb-comments-${cardId}" style="width:100%;min-height:70px;margin-top:8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);padding:8px 10px;font:inherit;resize:vertical;" placeholder="Observações do analista"></textarea>
+      <div class="card-actions">
+        <button class="btn-toggle-draft" onclick="submitCardFeedback('${cardId}', 'approve')">Aprovar</button>
+        <button class="btn-copy-draft" onclick="submitCardFeedback('${cardId}', 'correct')">Corrigir</button>
+        <button class="btn-toggle-draft" onclick="submitCardFeedback('${cardId}', 'reject')">Rejeitar</button>
+      </div>
+      <div id="fb-status-${cardId}" style="font-size:12px;color:var(--muted);"></div>
+    </div>
+  `;
+
+  const observedFacts = Array.isArray(trace.observed_facts) ? trace.observed_facts.slice(0, 12) : [];
+  const inferences = Array.isArray(trace.inferences) ? trace.inferences.slice(0, 3) : [];
+  const traceSection = observedFacts.length || inferences.length ? `
+    <div class="card-section section-trace">
+      <div class="card-section-title">Trilha Analítica</div>
+      ${observedFacts.length ? `<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">${observedFacts.map(item => `<div>• <strong>${esc(item.label || item.category || 'Fato')}</strong>: ${esc(item.value || '')}</div>`).join('')}</div>` : ''}
+      ${inferences.length ? `<div style="font-size:12px;color:var(--muted);">${inferences.map(item => `<div>• ${esc(item.statement || 'Inferência')} ${typeof item.confidence === 'number' ? `(${Math.round(item.confidence * 100)}%)` : ''}</div>`).join('')}</div>` : ''}
+    </div>
+  ` : '';
+
+  const exportSection = `
+    <div class="card-actions">
+      <button class="btn-copy-draft" onclick="copyAnalysisCardJson('${cardId}')">Copiar JSON</button>
+      <button class="btn-copy-draft" onclick="exportAnalysisCard('${cardId}')">Exportar padrão</button>
+      <button class="btn-toggle-draft" onclick="exportAnalysisCard('${cardId}', 'json')">Exportar JSON</button>
+      <button class="btn-toggle-draft" onclick="exportAnalysisCard('${cardId}', 'markdown')">Exportar MD</button>
+    </div>
+  `;
+
+  const draftOpen = !!state.settings.autoOpenDraft;
   const draftSection = draft ? `
     <div class="card-actions">
       <button class="btn-toggle-draft" onclick="toggleDraft('${cardId}')">
-        &#9660; Ver draft completo
+        ${draftOpen ? '&#9650; Ocultar draft' : '&#9660; Ver draft completo'}
       </button>
       <button class="btn-copy-draft" onclick="copyDraft('${cardId}')">
         &#128203; Copiar draft
       </button>
     </div>
-    <div class="draft-content" id="draft-${cardId}">
+    <div class="draft-content ${draftOpen ? 'open' : ''}" id="draft-${cardId}">
       <div class="draft-text" id="draft-text-${cardId}">${esc(draft)}</div>
     </div>
   ` : '';
 
   return `
-    <div class="analysis-card" id="card-${cardId}">
+    <div class="analysis-card" id="card-${cardId}" data-session-id="${esc(sessionId)}" data-payload-hash="${esc(payloadHash)}">
       <div class="card-header">
         <span class="badge-cls ${esc(cls)}">${esc(cls)}</span>
         <span class="badge-conf">Confiança: <strong>${Math.round(conf * 100)}%</strong></span>
         ${mitreBadge}
         ${skillBadge}
+        ${priorityBadge}
       </div>
 
       ${ camposHtml ? `<div class="card-section"><div class="card-fields">${camposHtml}</div></div>` : '' }
       ${iocSection}
       ${analiseSection}
+      ${officialSection}
+      ${prioritySection}
+      ${contextSection}
+      ${traceSection}
+      ${feedbackSection}
+      ${exportSection}
       ${draftSection}
     </div>
   `;
@@ -1066,6 +1885,100 @@ function copyDraft(cardId) {
   });
 }
 
+async function submitCardFeedback(cardId, feedbackType) {
+  const card = $(`card-${cardId}`);
+  const status = $(`fb-status-${cardId}`);
+  const verdict = $(`fb-verdict-${cardId}`)?.value || '';
+  const comments = $(`fb-comments-${cardId}`)?.value.trim() || '';
+  if (!card || !status) return;
+
+  status.textContent = 'Salvando feedback...';
+  try {
+    const resp = await fetch('/api/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session_id: card.dataset.sessionId || '',
+        payload_hash: card.dataset.payloadHash || '',
+        feedback_type: feedbackType,
+        verdict,
+        comments,
+        source: 'chat-ui',
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      status.textContent = data.error || 'Falha ao salvar feedback.';
+      return;
+    }
+    status.textContent = `Feedback salvo (#${data.feedback_id}).`;
+  } catch (err) {
+    status.textContent = 'Falha ao enviar feedback: ' + err.message;
+  }
+}
+
+async function copyAnalysisCardJson(cardId) {
+  const data = analysisCardState[cardId];
+  if (!data) return;
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+    const status = $(`fb-status-${cardId}`);
+    if (status) status.textContent = 'JSON copiado para a área de transferência.';
+  } catch (err) {
+    const status = $(`fb-status-${cardId}`);
+    if (status) status.textContent = 'Falha ao copiar JSON: ' + err.message;
+  }
+}
+
+async function exportAnalysisCard(cardId, format) {
+  const data = analysisCardState[cardId];
+  if (!data) return;
+  const effectiveFormat = format || state.settings.defaultExportFormat || 'markdown';
+  const status = $(`fb-status-${cardId}`);
+  if (status) status.textContent = 'Exportando análise...';
+  try {
+    const resp = await fetch('/api/export-analysis', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        format: effectiveFormat,
+        session_id: data.session_id || state.sessionId,
+        payload_hash: data.payload_hash || '',
+        cliente: inputCliente.value.trim(),
+        classificacao: data.classificacao || '',
+        fields: data.campos || {},
+        ti_results: data.ti_results || {},
+        analysis: data.analysis_legacy || {},
+        analysis_structured: data.analysis_structured || {},
+        analysis_priority: data.analysis_priority || {},
+        analysis_trace: data.analysis_trace || {},
+        draft: data.draft || '',
+      }),
+    });
+    const exportData = await resp.json();
+    if (!resp.ok) {
+      if (status) status.textContent = exportData.error || 'Falha ao exportar análise.';
+      return;
+    }
+    downloadAnalysisContent(exportData.content || '', exportData.filename || 'analysis.txt', exportData.mime_type || 'text/plain');
+    if (status) status.textContent = `Análise exportada (${effectiveFormat}): ${exportData.filename}`;
+  } catch (err) {
+    if (status) status.textContent = 'Falha ao exportar análise: ' + err.message;
+  }
+}
+
+function downloadAnalysisContent(content, filename, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 // ================================================================
 // HELPERS
 // ================================================================
@@ -1087,6 +2000,9 @@ function scrollBottom() {
 }
 
 function resetMessages() {
+  removeTyping();
+  removeProgress();
+  removeStreamingAssistant();
   messagesEl.innerHTML = '';
   const es = document.createElement('div');
   es.id = 'empty-state';
@@ -1130,6 +2046,8 @@ function addUserMessage(text) {
 // TYPING INDICATOR
 // ================================================================
 let typingEl = null;
+let streamingEl = null;
+let streamingContent = '';
 
 function showTyping() {
   removeTyping();
@@ -1151,6 +2069,45 @@ function showTyping() {
 function removeTyping() {
   if (typingEl) { typingEl.remove(); typingEl = null; }
   const old = $('typing-row');
+  if (old) old.remove();
+}
+
+function ensureStreamingAssistant(skill = '') {
+  removeTyping();
+  removeProgress();
+  hideEmptyState();
+
+  if (!streamingEl) {
+    streamingEl = document.createElement('div');
+    streamingEl.className = 'msg-row assistant';
+    streamingEl.id = 'streaming-row';
+    streamingEl.innerHTML = `
+      <div class="avatar bot-av">&#129302;</div>
+      <div class="bubble"></div>
+    `;
+    messagesEl.appendChild(streamingEl);
+  }
+
+  const bubble = streamingEl.querySelector('.bubble');
+  const skillInfo = skill
+    ? `<div style="font-size:11px;color:var(--muted);margin-bottom:6px;">Skill: ${esc(skill)}</div>`
+    : '';
+  bubble.innerHTML = `${skillInfo}${renderMarkdown(streamingContent)}<span style="opacity:.7">▍</span>`;
+  scrollBottom();
+}
+
+function appendStreamingDelta(delta, skill = '') {
+  streamingContent += delta || '';
+  ensureStreamingAssistant(skill);
+}
+
+function removeStreamingAssistant() {
+  streamingContent = '';
+  if (streamingEl) {
+    streamingEl.remove();
+    streamingEl = null;
+  }
+  const old = $('streaming-row');
   if (old) old.remove();
 }
 
@@ -1235,6 +2192,7 @@ function removeProgress() {
 function addAssistantMessage(data) {
   removeTyping();
   removeProgress();
+  removeStreamingAssistant();
 
   const div = document.createElement('div');
   div.className = 'msg-row assistant';
@@ -1242,6 +2200,7 @@ function addAssistantMessage(data) {
   let content = '';
   if (data.type === 'analysis') {
     const cardId = makeId();
+    analysisCardState[cardId] = data;
     content = renderAnalysisCard(data, cardId);
     div.innerHTML = `
       <div class="avatar bot-av">&#129302;</div>
@@ -1271,9 +2230,152 @@ function addAssistantMessage(data) {
   }
 }
 
+function handleStreamEvent(eventName, payload) {
+  if (eventName === 'meta') {
+    if (payload.session_id) state.sessionId = payload.session_id;
+    return;
+  }
+
+  if (eventName === 'phase') {
+    if (!progressEl) showProgress();
+    clearInterval(progressInterval);
+    if (typeof payload.step === 'number') markStep(payload.step);
+    return;
+  }
+
+  if (eventName === 'delta') {
+    appendStreamingDelta(payload.delta || '', payload.skill || '');
+    return;
+  }
+
+  if (eventName === 'final') {
+    addAssistantMessage(payload);
+    return;
+  }
+
+  if (eventName === 'error') {
+    removeTyping();
+    removeProgress();
+    removeStreamingAssistant();
+    addAssistantMessage({ type: 'error', message: payload.message || 'Erro inesperado no streaming.' });
+  }
+}
+
+function processSSEBlock(block) {
+  if (!block.trim()) return;
+
+  let eventName = 'message';
+  const dataLines = [];
+
+  block.split(/\r?\n/).forEach(line => {
+    if (line.startsWith('event:')) {
+      eventName = line.slice(6).trim();
+      return;
+    }
+    if (line.startsWith('data:')) {
+      dataLines.push(line.slice(5).trimStart());
+    }
+  });
+
+  if (dataLines.length === 0) return;
+
+  try {
+    handleStreamEvent(eventName, JSON.parse(dataLines.join('\n')));
+  } catch (_) {
+    handleStreamEvent('error', { message: 'Falha ao interpretar evento do servidor.' });
+  }
+}
+
+function consumeSSEBuffer(buffer, flush = false) {
+  let cursor = buffer.indexOf('\n\n');
+  while (cursor >= 0) {
+    const block = buffer.slice(0, cursor);
+    processSSEBlock(block);
+    buffer = buffer.slice(cursor + 2);
+    cursor = buffer.indexOf('\n\n');
+  }
+
+  if (flush && buffer.trim()) {
+    processSSEBlock(buffer);
+    return '';
+  }
+
+  return buffer;
+}
+
 // ================================================================
 // ENVIAR MENSAGEM
 // ================================================================
+async function sendMessageSync(text, classificacao, cliente) {
+  const resp = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: text,
+      session_id: state.sessionId,
+      classificacao,
+      cliente,
+    }),
+  });
+  const data = await resp.json();
+  if (!resp.ok) {
+    throw new Error(data.error || data.message || `Falha HTTP ${resp.status}`);
+  }
+  addAssistantMessage(data);
+  await loadSessions();
+}
+
+async function sendMessageStreaming(text, classificacao, cliente) {
+  const resp = await fetch('/api/chat/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: text,
+      session_id: state.sessionId,
+      classificacao,
+      cliente,
+    }),
+  });
+
+  if (!resp.ok) {
+    let errorText = `Falha HTTP ${resp.status}`;
+    let featureName = '';
+    try {
+      const errorData = await resp.json();
+      errorText = errorData.error || errorData.message || errorText;
+      featureName = errorData.feature || '';
+    } catch (_) {
+      const fallbackText = await resp.text();
+      if (fallbackText) errorText = fallbackText;
+    }
+
+    if (resp.status === 503 && featureName === 'chat_streaming') {
+      await sendMessageSync(text, classificacao, cliente);
+      return;
+    }
+    throw new Error(errorText);
+  }
+
+  if (!resp.body) {
+    throw new Error('Streaming indisponível no navegador atual.');
+  }
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    buffer = consumeSSEBuffer(buffer);
+  }
+
+  buffer += decoder.decode();
+  consumeSSEBuffer(buffer, true);
+  await loadSessions();
+}
+
 async function sendMessage() {
   if (state.busy) return;
   const text = msgInput.value.trim();
@@ -1298,30 +2400,22 @@ async function sendMessage() {
   state.busy = true;
   btnSend.disabled = true;
 
-  if (isPayload) {
+  if (state.settings.preferStreaming && isPayload) {
     showProgress();
   } else {
     showTyping();
   }
 
   try {
-    const resp = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: text,
-        session_id: state.sessionId,
-        classificacao,
-        cliente,
-      }),
-    });
-
-    const data = await resp.json();
-    addAssistantMessage(data);
-    await loadSessions();
+    if (state.settings.preferStreaming) {
+      await sendMessageStreaming(text, classificacao, cliente);
+    } else {
+      await sendMessageSync(text, classificacao, cliente);
+    }
   } catch (err) {
     removeTyping();
     removeProgress();
+    removeStreamingAssistant();
     addAssistantMessage({ type: 'error', message: 'Falha ao conectar ao servidor: ' + err.message });
   } finally {
     state.busy = false;
@@ -1337,6 +2431,10 @@ function newSession() {
   state.sessionId = String(Date.now());
   state.sessionTitle = 'Nova sessão';
   sessionTitle.textContent = state.sessionTitle;
+  selectCls.dataset.userTouched = '';
+  inputCliente.dataset.userTouched = '';
+  selectCls.value = state.settings.defaultClassification || 'auto';
+  inputCliente.value = state.settings.defaultClient || '';
   resetMessages();
 
   // Atualiza sidebar
@@ -1366,6 +2464,9 @@ async function loadSessions() {
 
 async function openSession(sessionId) {
   try {
+    removeTyping();
+    removeProgress();
+    removeStreamingAssistant();
     const resp = await fetch(`/api/chat/sessions/${encodeURIComponent(sessionId)}?limit=100`);
     const data = await resp.json();
     const messages = data.messages || [];
@@ -1405,13 +2506,24 @@ async function openSession(sessionId) {
 
 function updateSessionList() {
   sessionList.innerHTML = '';
+  const sessions = [...state.sessions];
 
-  if (state.sessions.length === 0) {
+  if (state.settings.sessionSort === 'title') {
+    sessions.sort((a, b) => String(a.titulo || a.preview || '').localeCompare(String(b.titulo || b.preview || ''), 'pt-BR'));
+  } else {
+    sessions.sort((a, b) => {
+      const ta = new Date(a.updated_at || a.created_at || 0).getTime();
+      const tb = new Date(b.updated_at || b.created_at || 0).getTime();
+      return tb - ta;
+    });
+  }
+
+  if (sessions.length === 0) {
     sessionList.innerHTML = `<div style="padding:16px;color:var(--muted);font-size:12px;text-align:center;">Sem sessões anteriores</div>`;
     return;
   }
 
-  state.sessions.forEach(session => {
+  sessions.forEach(session => {
     const item = document.createElement('div');
     item.className = 'session-item' + (session.session_id === state.sessionId ? ' active' : '');
 
@@ -1482,6 +2594,12 @@ msgInput.addEventListener('keydown', e => {
   }
 });
 
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && settingsPanel.classList.contains('open')) {
+    closeSettingsPanel();
+  }
+});
+
 btnSend.addEventListener('click', sendMessage);
 
 // ================================================================
@@ -1489,6 +2607,7 @@ btnSend.addEventListener('click', sendMessage);
 // ================================================================
 initTheme();
 loadSessions();
+loadRuntimeStatus();
 msgInput.focus();
 </script>
 </body>

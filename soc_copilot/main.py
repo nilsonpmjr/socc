@@ -9,83 +9,53 @@ Rotas:
 """
 from __future__ import annotations
 import asyncio
-import json as _json
 from contextlib import asynccontextmanager
 from pathlib import Path
 from datetime import datetime
 
 from fastapi import FastAPI, Request, Form, UploadFile, File
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from soc_copilot.config import OUTPUT_DIR
-from soc_copilot.modules import (
-    persistence, input_adapter, parser_engine,
-    rule_loader, ti_adapter, draft_engine, semi_llm_adapter,
+from socc.core.engine import (
+    analyze_submission,
+    chat_submission,
+    export_analysis_submission,
+    generate_draft_submission,
+    list_chat_session_messages_payload,
+    list_chat_sessions_payload,
+    list_history_payload,
+    prepare_analyze_raw_input,
+    prepare_chat_submission_inputs,
+    prepare_draft_submission_inputs,
+    prepare_export_submission_inputs,
+    prepare_feedback_submission_inputs,
+    runtime_benchmark_payload,
+    runtime_status_payload,
+    save_feedback_submission,
+    save_note_submission,
+    stream_chat_submission_events,
 )
-from soc_copilot.modules import chat_service
-
-
-def _infer_regra_context(regra: str, fields: dict, raw_text: str) -> str:
-    explicit = (regra or "").strip()
-    if explicit:
-        return explicit
-
-    assunto = str(fields.get("Assunto", "") or "").strip()
-    if assunto and assunto != "N/A":
-        return assunto
-
-    lowered = raw_text.lower()
-    if any(token in lowered for token in ("tcp_port_scan", "port scan", "portscan", "varredura de portas")):
-        return "TCP Port Scan"
-    if any(token in lowered for token in ("ping sweep", "host discovery")):
-        return "Ping Sweep"
-    if any(token in lowered for token in ("dns ptr scan", "reverse dns scan", "ptr scan")):
-        return "DNS PTR Scan"
-
-    return ""
-
-
-def _infer_ioc_type(ioc: str) -> str:
-    if "." in ioc and "[" not in ioc and all(part.isdigit() for part in ioc.split(".") if part):
-        return "ip"
-    if len(ioc) in (32, 40, 64) and all(ch in "0123456789abcdefABCDEF" for ch in ioc):
-        return "hash"
-    return "domain"
-
-
-def _infer_ti_tool(ioc: str, resultado: str) -> str:
-    ioc_type = _infer_ioc_type(ioc)
-    if ioc_type != "ip":
-        return "batch_api"
-
-    if any(
-        marcador in resultado
-        for marcador in (
-            "Veredito:",
-            "backend TI",
-            "submeter lote",
-            "aguardando resposta do lote TI",
-        )
-    ):
-        return "batch_api"
-
-    return "threat_check"
+from socc.core import storage as storage_runtime
+from socc.gateway.llm_gateway import record_analysis_event
+from socc.utils.feature_flags import resolve_feature_flags
+from socc.utils.http_api import feature_disabled_payload, sse_event
 
 # ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    persistence.init_db()
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    storage_runtime.init_db()
     yield
 
 app = FastAPI(title="SOC Copilot", version="1.0.0-mvp", lifespan=lifespan)
 
 _BASE = Path(__file__).parent
-app.mount("/static", StaticFiles(directory=str(_BASE / "static")), name="static")
+_STATIC_DIR = _BASE / "static"
+if _STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 templates = Jinja2Templates(directory=str(_BASE / "templates"))
 
 
@@ -94,7 +64,12 @@ templates = Jinja2Templates(directory=str(_BASE / "templates"))
 # ---------------------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return RedirectResponse(url="/chat", status_code=307)
+
+
+@app.get("/legacy", response_class=HTMLResponse)
+async def legacy_index(request: Request):
+    return templates.TemplateResponse(request, "index.html", {"request": request})
 
 
 # ---------------------------------------------------------------------------
@@ -109,97 +84,46 @@ async def analyze(
     payload_raw: str = Form(""),
     arquivo: UploadFile | None = File(default=None),
 ):
-    # Consolida entrada: arquivo tem prioridade sobre texto colado
-    raw = payload_raw
+    flags = resolve_feature_flags()
+    if not flags.analyze_api:
+        return JSONResponse(feature_disabled_payload("analyze_api"), status_code=503)
+
+    uploaded_bytes: bytes | None = None
     if arquivo and arquivo.filename:
-        conteudo_bytes = await arquivo.read()
-        raw = conteudo_bytes.decode("utf-8", errors="replace")
-
-    if not raw.strip():
-        return JSONResponse({"erro": "Nenhum payload fornecido."}, status_code=400)
-
-    _MAX_PAYLOAD_BYTES = 512 * 1024  # 512 KB
-    if len(raw.encode("utf-8", errors="replace")) > _MAX_PAYLOAD_BYTES:
-        return JSONResponse({"erro": "Payload excede o limite de 512 KB."}, status_code=413)
-
-    # 1. Input Adapter
-    fmt, campos_brutos, raw_original = input_adapter.adapt(raw)
-
-    # 2. Parser Engine
-    fields = parser_engine.parse(campos_brutos, raw_original)
-
-    # 3. Rule Loader
-    regra_context = _infer_regra_context(regra, fields, raw_original)
-    pack = rule_loader.load(regra=regra_context, cliente=cliente)
-
-    # 4. Threat Intel — dispara se houver qualquer IOC externo consultável
-    _iocs = fields["IOCs"]
-    ti_results: dict[str, str] = {}
-    if _iocs.get("ips_externos") or _iocs.get("dominios") or _iocs.get("hashes"):
-        ti_results = await asyncio.to_thread(ti_adapter.enrich, _iocs)
-
-    # 5. Classification Helper / Semi-LLM (análise estruturada pré-draft)
-    analysis = semi_llm_adapter.run(
-        fields=fields,
-        ti_results=ti_results,
-        raw_text=raw_original,
-        regra=regra_context,
-        cliente=cliente,
-        pack=pack,
-    )
-    # 6. Draft Engine
-    draft_text, template_usado = draft_engine.generate(
-        classificacao=classificacao,
-        fields=fields,
-        ti_results=ti_results,
-        pack=pack,
-        analysis=analysis,
-    )
-
-    # 7. Persistência
-    run_id = persistence.save_run(
-        ofensa_id=ofensa_id,
-        cliente=cliente,
-        regra=regra_context,
-        raw_input=raw_original,
-        classificacao=classificacao,
-        template_usado=template_usado,
-    )
-    for ioc, resultado in ti_results.items():
-        persistence.save_intel(
-            run_id=run_id,
-            ioc=ioc,
-            tipo=_infer_ioc_type(ioc),
-            ferramenta=_infer_ti_tool(ioc, resultado),
-            resultado=resultado,
+        uploaded_bytes = await arquivo.read()
+    try:
+        raw = prepare_analyze_raw_input(
+            payload_raw=payload_raw,
+            uploaded_bytes=uploaded_bytes,
         )
-    persistence.save_analysis(run_id=run_id, analysis=analysis)
-    persistence.save_output(run_id=run_id, tipo_saida=classificacao, conteudo=draft_text)
+    except ValueError as exc:
+        status_code = 413 if "excede o limite" in str(exc) else 400
+        return JSONResponse({"erro": str(exc)}, status_code=status_code)
 
-    # Monta resumo para o frontend
-    iocs_display = {
-        "externos": fields["IOCs"]["ips_externos"],
-        "internos": fields["IOCs"]["ips_internos"],
-        "urls": fields["IOCs"]["urls"][:5],
-        "dominios": fields["IOCs"].get("dominios", [])[:5],
-        "hashes": fields["IOCs"].get("hashes", [])[:5],
-    }
-
-    return JSONResponse({
-        "run_id": run_id,
-        "formato_detectado": fmt,
-        "campos_extraidos": {
-            k: v for k, v in fields.items() if k != "IOCs"
-        },
-        "iocs": iocs_display,
-        "ti_results": ti_results,
-        "analysis": analysis,
-        "modelo_aderente": pack.modelo_nome or None,
-        "regra_contexto": regra_context or None,
-        "draft": draft_text,
-        "classificacao": classificacao,
-        "template_usado": template_usado,
-    })
+    try:
+        response_payload = await asyncio.to_thread(
+            analyze_submission,
+            raw_input=raw,
+            ofensa_id=ofensa_id,
+            cliente=cliente,
+            regra=regra,
+            classificacao=classificacao,
+            threat_intel_enabled=flags.threat_intel,
+            persist_run=True,
+            source="api_analyze",
+        )
+        return JSONResponse(response_payload)
+    except Exception as exc:
+        record_analysis_event(
+            source="api_analyze",
+            latency_ms=0,
+            success=False,
+            schema_valid=False,
+            threat_intel_used=False,
+            payload_hash=storage_runtime.hash_input(raw),
+            error=str(exc),
+        )
+        return JSONResponse({"erro": f"Falha na analise: {exc}"}, status_code=500)
 
 
 # ---------------------------------------------------------------------------
@@ -215,50 +139,31 @@ async def gerar_draft(
     regra: str = Form(""),
     cliente: str = Form(""),
 ):
+    flags = resolve_feature_flags()
+    if not flags.draft_api:
+        return JSONResponse(feature_disabled_payload("draft_api"), status_code=503)
+
     try:
-        fields = _json.loads(campos_json)
-        ti_results = _json.loads(ti_json)
-        iocs = _json.loads(iocs_json)
-    except Exception:
-        return JSONResponse({"erro": "JSON inválido nos campos recebidos."}, status_code=400)
-
-    # Reconstrói IOCs dentro de fields com os dados recebidos
-    if iocs:
-        fields["IOCs"] = iocs
-    elif "IOCs" not in fields:
-        fields["IOCs"] = {"ips_externos": [], "ips_internos": [], "urls": [], "dominios": [], "hashes": []}
-
-    # Garante boolean
-    if "IP_Origem_Privado" not in fields:
-        ip = fields.get("IP_Origem", "")
-        try:
-            import ipaddress as _ip
-            fields["IP_Origem_Privado"] = _ip.ip_address(ip).is_private
-        except Exception:
-            fields["IP_Origem_Privado"] = True
-
-    regra_context = _infer_regra_context(regra, fields, "")
-    pack = rule_loader.load(regra=regra_context, cliente=cliente)
-    analysis = semi_llm_adapter.run(
-        fields=fields, ti_results=ti_results,
-        raw_text="", regra=regra_context, cliente=cliente, pack=pack,
-    )
-    draft_text, template_usado = draft_engine.generate(
-        classificacao=classificacao, fields=fields,
-        ti_results=ti_results, pack=pack, analysis=analysis,
-    )
-    if run_id:
-        persistence.save_output(
-            run_id=run_id,
-            tipo_saida=f"{classificacao}_final",
-            conteudo=draft_text,
+        prepared = prepare_draft_submission_inputs(
+            campos_json=campos_json,
+            iocs_json=iocs_json,
+            ti_json=ti_json,
         )
+    except ValueError as exc:
+        return JSONResponse({"erro": str(exc)}, status_code=400)
 
-    return JSONResponse({
-        "draft": draft_text,
-        "template_usado": template_usado,
-        "classificacao": classificacao,
-    })
+    response_payload = await asyncio.to_thread(
+        generate_draft_submission,
+        fields=prepared["fields"],
+        ti_results=prepared["ti_results"],
+        classificacao=classificacao,
+        regra=regra,
+        cliente=cliente,
+        run_id=run_id,
+        persist_output=True,
+        source="api_draft",
+    )
+    return JSONResponse(response_payload)
 
 
 # ---------------------------------------------------------------------------
@@ -271,31 +176,17 @@ async def save_note(
     classificacao: str = Form(""),
     conteudo: str = Form(""),
 ):
-    if not conteudo.strip():
-        return JSONResponse({"erro": "Conteúdo vazio."}, status_code=400)
-
-    import re as _re
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    # Sanitiza entradas para evitar path traversal — mantém apenas alfanum, hífen e underscore
-    ofensa_safe = _re.sub(r"[^\w\-]", "_", ofensa_id or "SEM_ID")[:40]
-    cls_safe = _re.sub(r"[^\w]", "_", classificacao)[:10]
-    nome = f"Ofensa_{ofensa_safe}_{cls_safe}_{ts}.txt"
-    caminho = OUTPUT_DIR / nome
-    # Garante que o arquivo final está dentro de OUTPUT_DIR (defesa em profundidade)
-    if not str(caminho.resolve()).startswith(str(OUTPUT_DIR.resolve())):
-        return JSONResponse({"erro": "Caminho de destino inválido."}, status_code=400)
-
-    caminho.write_text(conteudo, encoding="utf-8")
-
-    if run_id:
-        persistence.save_output(
-            run_id=run_id,
-            tipo_saida=f"{classificacao}_salvo",
+    try:
+        payload = await asyncio.to_thread(
+            save_note_submission,
             conteudo=conteudo,
-            salvo_em=str(caminho),
+            ofensa_id=ofensa_id,
+            classificacao=classificacao,
+            run_id=run_id,
         )
-
-    return JSONResponse({"salvo_em": str(caminho), "nome": nome})
+    except ValueError as exc:
+        return JSONResponse({"erro": str(exc)}, status_code=400)
+    return JSONResponse(payload)
 
 
 # ---------------------------------------------------------------------------
@@ -303,21 +194,79 @@ async def save_note(
 # ---------------------------------------------------------------------------
 @app.get("/api/history")
 async def history(limit: int = 50):
-    limit = max(1, min(limit, 200))  # cap: 1..200
-    runs = persistence.list_runs(limit=limit)
-    return JSONResponse({"runs": runs})
+    return JSONResponse(list_history_payload(limit=limit))
+
+
+@app.get("/api/runtime/status")
+async def api_runtime_status():
+    flags = resolve_feature_flags()
+    if not flags.runtime_api:
+        return JSONResponse(feature_disabled_payload("runtime_api"), status_code=503)
+    return JSONResponse(runtime_status_payload())
+
+
+@app.get("/api/runtime/benchmark")
+async def api_runtime_benchmark(
+    concurrency: int = 4,
+    hold_ms: int = 150,
+    probe: bool = True,
+):
+    flags = resolve_feature_flags()
+    if not flags.runtime_api:
+        return JSONResponse(feature_disabled_payload("runtime_api"), status_code=503)
+    return JSONResponse(
+        runtime_benchmark_payload(
+            concurrency=concurrency,
+            hold_ms=hold_ms,
+            probe=probe,
+        )
+    )
+
+
+@app.post("/api/feedback")
+async def save_feedback(request: Request):
+    flags = resolve_feature_flags()
+    if not flags.feedback_api:
+        return JSONResponse(feature_disabled_payload("feedback_api"), status_code=503)
+
+    try:
+        prepared = prepare_feedback_submission_inputs(await request.json())
+        payload = await asyncio.to_thread(
+            save_feedback_submission,
+            **prepared,
+        )
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    except LookupError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=404)
+    return JSONResponse(payload)
+
+
+@app.post("/api/export-analysis")
+async def export_analysis(request: Request):
+    flags = resolve_feature_flags()
+    if not flags.export_api:
+        return JSONResponse(feature_disabled_payload("export_api"), status_code=503)
+
+    try:
+        prepared = prepare_export_submission_inputs(await request.json())
+        payload = await asyncio.to_thread(
+            export_analysis_submission,
+            **prepared,
+        )
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    return JSONResponse(payload)
 
 
 @app.get("/api/chat/sessions")
 async def chat_sessions(limit: int = 50):
-    sessions = persistence.list_chat_sessions(limit=limit)
-    return JSONResponse({"sessions": sessions})
+    return JSONResponse(list_chat_sessions_payload(limit=limit))
 
 
 @app.get("/api/chat/sessions/{session_id}")
 async def chat_session_messages(session_id: str, limit: int = 100):
-    messages = persistence.list_chat_messages(session_id=session_id, limit=max(1, min(limit, 200)))
-    return JSONResponse({"session_id": session_id, "messages": messages})
+    return JSONResponse(list_chat_session_messages_payload(session_id=session_id, limit=limit))
 
 
 # ---------------------------------------------------------------------------
@@ -330,115 +279,79 @@ async def chat_ui(request: Request):
 
 
 # ---------------------------------------------------------------------------
-# Helper de detecção de payload (usado pelo endpoint /api/chat)
-# ---------------------------------------------------------------------------
-def _looks_like_payload(text: str) -> bool:
-    import re
-    t = text[:1000]
-    return bool(
-        re.search(r'(\w+=(?:"[^"]*"|[^\s]+)\s+){3,}', t) or
-        re.search(r'<\d{3}>', t) or
-        re.search(r'srcip=|dstip=|action=|devname=|logid=', t) or
-        re.search(r'SubjectUserName|EventRecordID|TargetUserName', t) or
-        re.search(r'"type"\s*:\s*"(?:alert|event|log|security)"', t) or
-        (len(t) > 300 and t.count('=') > 5)
-    )
-
-
-# ---------------------------------------------------------------------------
 # Endpoint de chat — recebe mensagens da nova UI
 # ---------------------------------------------------------------------------
 @app.post("/api/chat")
 async def chat_endpoint(request: Request):
-    body = await request.json()
-    message = body.get("message", "").strip()
-    session_id = body.get("session_id", "")
-    effective_session = session_id or str(int(datetime.now().timestamp() * 1000))
-    classificacao = body.get("classificacao", "auto").upper()
-    cliente = body.get("cliente", "")
+    flags = resolve_feature_flags()
+    if not flags.chat_api:
+        return JSONResponse(feature_disabled_payload("chat_api"), status_code=503)
 
-    if not message:
-        return JSONResponse({"error": "Mensagem vazia"}, status_code=400)
-
-    # Detecta se é payload de log
-    is_payload = _looks_like_payload(message)
-
-    if is_payload:
-        # Roda pipeline SOCC
-        try:
-            selected_skill = chat_service.select_skill(message)
-            persistence.ensure_chat_session(
-                session_id=effective_session,
-                cliente=cliente,
-                titulo=message[:80],
-            )
-            fmt, campos, raw = input_adapter.adapt(message)
-            fields = parser_engine.parse(campos, raw)
-            ti_results = await asyncio.to_thread(ti_adapter.enrich, fields.get("IOCs", {}))
-
-            regra_context = _infer_regra_context("", fields, raw)
-            pack = rule_loader.load(regra=regra_context, cliente=cliente)
-            analysis = semi_llm_adapter.run(fields, ti_results, raw, regra_context, cliente, pack)
-
-            cls = classificacao if classificacao != "AUTO" else (
-                analysis.get("classificacao_sugerida", {}).get("tipo", "TP")
-                .replace("True Positive", "TP")
-                .replace("Benign True Positive", "BTP")
-                .replace("False Positive", "FP")
-                .replace("True Negative", "TN")
-                .replace("Log Transmission Failure", "LTF")
-            )
-            if cls not in {"TP", "BTP", "FP", "TN", "LTF"}:
-                cls = "TP"
-
-            draft, template = draft_engine.generate(cls, fields, ti_results, pack, analysis)
-
-            iocs = fields.get("IOCs", {})
-            response_payload = {
-                "type": "analysis",
-                "session_id": effective_session,
-                "skill": selected_skill,
-                "classificacao": cls,
-                "confianca": analysis.get("classificacao_sugerida", {}).get("confianca", 0),
-                "campos": {k: v for k, v in fields.items() if k != "IOCs"},
-                "iocs": {
-                    "externos": iocs.get("ips_externos", []),
-                    "internos": iocs.get("ips_internos", []),
-                    "dominios": iocs.get("dominios", []),
-                    "hashes": iocs.get("hashes", []),
-                },
-                "mitre": analysis.get("mitre_candidato", {}),
-                "analise_tecnica": analysis.get("resumo_factual", {}).get("o_que", ""),
-                "hipoteses": analysis.get("hipoteses", []),
-                "lacunas": analysis.get("lacunas", []),
-                "draft": draft,
-                "template": template,
-                "modelo_aderente": pack.modelo_nome or "",
-                "regra_contexto": regra_context,
-                "formato_detectado": fmt,
-            }
-            persistence.save_chat_message(
-                session_id=effective_session,
-                role="user",
-                content=message,
-                skill=selected_skill,
-                metadata={"type": "message"},
-            )
-            persistence.save_chat_message(
-                session_id=effective_session,
-                role="assistant",
-                content=draft,
-                skill=selected_skill,
-                metadata=response_payload,
-            )
-            return JSONResponse(response_payload)
-        except Exception as e:
-            return JSONResponse({"type": "error", "message": str(e)}, status_code=500)
-    else:
+    try:
+        prepared = prepare_chat_submission_inputs(await request.json())
         response = await asyncio.to_thread(
-            chat_service.generate_chat_reply,
-            message,
-            effective_session,
-            cliente,
+            chat_submission,
+            **prepared,
+            threat_intel_enabled=flags.threat_intel,
+            source="chat_payload",
         )
         return JSONResponse(response)
+    except Exception as exc:
+        message = ""
+        if "prepared" in locals():
+            message = str(prepared.get("message", "") or "")
+        if isinstance(exc, ValueError):
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        record_analysis_event(
+            source="chat_payload",
+            latency_ms=0,
+            success=False,
+            schema_valid=False,
+            threat_intel_used=False,
+            payload_hash=storage_runtime.hash_input(message),
+            error=str(exc),
+        )
+        return JSONResponse({"type": "error", "message": str(exc)}, status_code=500)
+
+
+@app.post("/api/chat/stream")
+async def chat_stream_endpoint(request: Request):
+    flags = resolve_feature_flags()
+    if not flags.chat_api:
+        return JSONResponse(feature_disabled_payload("chat_api"), status_code=503)
+    if not flags.chat_streaming:
+        return JSONResponse(feature_disabled_payload("chat_streaming"), status_code=503)
+
+    try:
+        prepared = prepare_chat_submission_inputs(await request.json())
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    message = str(prepared["message"])
+    session_id = str(prepared["session_id"])
+
+    async def event_stream():
+        try:
+            async for event in stream_chat_submission_events(
+                **prepared,
+                threat_intel_enabled=flags.threat_intel,
+                source="chat_payload",
+            ):
+                yield sse_event(event["event"], event["payload"])
+        except Exception as exc:
+            effective_session = session_id or str(int(datetime.now().timestamp() * 1000))
+            record_analysis_event(
+                source="chat_payload_stream",
+                latency_ms=0,
+                success=False,
+                schema_valid=False,
+                threat_intel_used=False,
+                payload_hash=storage_runtime.hash_input(message),
+                error=str(exc),
+            )
+            yield sse_event("error", {"message": str(exc), "session_id": effective_session})
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
