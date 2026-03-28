@@ -24,6 +24,32 @@ from socc.gateway.llm_gateway import (
 _logger = logging.getLogger(__name__)
 _STREAM_CHUNK_SIZE = 120
 _DEFAULT_RESPONSE_MODE = "balanced"
+_REFERENTIAL_MARKERS = (
+    "esse payload",
+    "este payload",
+    "esse evento",
+    "este evento",
+    "esse alerta",
+    "este alerta",
+    "isso",
+    "isso é",
+    "isso e",
+    "esse json",
+    "este json",
+)
+_REPEATED_GREETING_PATTERNS = (
+    "olá!",
+    "olá.",
+    "olá,",
+    "ola!",
+    "ola.",
+    "ola,",
+    "oi!",
+    "oi.",
+    "oi,",
+    "e aí,",
+    "e ai,",
+)
 _RESPONSE_MODE_PROFILES = {
     "fast": {
         "label": "Fast",
@@ -104,6 +130,123 @@ def _detect_artifact_type(message: str) -> str | None:
     return None
 
 
+def _looks_like_structured_artifact(text: str) -> bool:
+    content = str(text or "").strip()
+    if not content:
+        return False
+    if content.startswith("{") and content.endswith("}"):
+        return True
+    structured_hits = 0
+    for marker in (
+        "creationtime",
+        "operation",
+        "recordtype",
+        "resultstatus",
+        "srcip=",
+        "dstip=",
+        "action=",
+        "logid=",
+        "devname=",
+        "\"reason\"",
+    ):
+        if marker in content.lower():
+            structured_hits += 1
+    return structured_hits >= 2
+
+
+def _mentions_recent_artifact(message: str) -> bool:
+    lowered = str(message or "").strip().lower()
+    return any(marker in lowered for marker in _REFERENTIAL_MARKERS)
+
+
+def _artifact_excerpt(text: str, limit: int = 1200) -> str:
+    cleaned = " ".join(str(text or "").split())
+    return cleaned[:limit].strip()
+
+
+def _find_recent_artifact_context(session_id: str, message: str, *, scan_limit: int = 12) -> str:
+    if not session_id or not _mentions_recent_artifact(message):
+        return ""
+    history = persistence.list_chat_messages(session_id, limit=max(4, scan_limit))
+    for item in reversed(history):
+        if item.get("role") != "user":
+            continue
+        content = str(item.get("content") or "").strip()
+        if content and _looks_like_structured_artifact(content):
+            return _artifact_excerpt(content)
+    return ""
+
+
+def _parse_semicolon_map(text: str) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for part in str(text or "").split(";"):
+        chunk = part.strip()
+        if "=" not in chunk:
+            continue
+        key, value = chunk.split("=", 1)
+        key_norm = key.strip()
+        value_norm = value.strip()
+        if key_norm and value_norm:
+            result[key_norm] = value_norm
+    return result
+
+
+def _m365_hygiene_hint(text: str) -> str:
+    lowered = str(text or "").lower()
+    if "hygienetenantevents" not in lowered:
+        return ""
+    try:
+        payload = json.loads(text)
+        if not isinstance(payload, dict):
+            payload = {}
+    except Exception:
+        payload = {}
+
+    reason_map = _parse_semicolon_map(str(payload.get("Reason") or ""))
+    event_value = str(payload.get("EventValue") or payload.get("UserId") or "").strip()
+    result_status = str(payload.get("ResultStatus") or "").strip()
+    event_name = str(payload.get("Event") or "").strip()
+    audit = str(payload.get("Audit") or "").strip()
+    workload = str(payload.get("Workload") or "").strip()
+    recipient_count = reason_map.get("RecipientCountLast24Hours", "")
+    recipient_limit = reason_map.get("RcptRateLimit", "")
+
+    if "RecipientRateLimitExceeded" not in str(payload.get("Reason") or ""):
+        return ""
+
+    lines = [
+        "Leitura determinística do evento:",
+        (
+            "Este evento não indica, por si só, limpeza de tenant nem malware. "
+            "Ele sugere atuação do mecanismo de higiene/proteção do Microsoft 365 sobre envio de e-mail."
+        ),
+        (
+            f"A combinação `Operation=HygieneTenantEvents`, `Event={event_name or '-'}`, "
+            f"`ResultStatus={result_status or '-'}` e `Workload={workload or '-'}` aponta para evento administrativo/automatizado de proteção."
+        ),
+    ]
+    if event_value:
+        lines.append(f"O principal identificador observado é `{event_value}`.")
+    if recipient_count and recipient_limit:
+        lines.append(
+            f"O motivo registrado é excesso de destinatários: `{recipient_count}` no período, acima do limite `{recipient_limit}`."
+        )
+    if audit:
+        lines.append(
+            "O campo `Audit` indica geração por serviço interno de reputação/proteção (`OBP2SenderRepService`), "
+            "o que reforça leitura de controle anti-abuso/outbound spam."
+        )
+    lines.append(
+        "Conclusão inicial: isso é mais compatível com limitação/listagem automática por volume de envio ou reputação do remetente "
+        "do que com um incidente confirmado."
+    )
+    lines.append(
+        "O que validar a seguir: se a conta/remetente realmente enviou alto volume, se houve comprometimento de caixa postal, "
+        "se existe campanha legítima disparando o limite e se o MessageTrace confirma o comportamento do período."
+    )
+    return "\n".join(lines)
+
+
 def select_skill(message: str, artifact_type: str | None = None) -> str:
     return choose_skill(message, artifact_type=artifact_type or _detect_artifact_type(message))
 
@@ -155,6 +298,11 @@ def _build_system_prompt(context: dict[str, str], *, response_mode: str = _DEFAU
             "So entre em modo de triagem estruturada quando houver payload, alerta, log ou artefato suficiente "
             "para sustentar evidencias observaveis."
         ),
+        (
+            "Se a sessao ja estiver em andamento, continue a conversa diretamente. "
+            "Evite reabrir a resposta com saudacoes como 'Olá', 'Oi' ou equivalentes, "
+            "a menos que o usuario esteja claramente iniciando uma nova conversa."
+        ),
     ]
     return "\n\n".join(section for section in sections if section)
 
@@ -183,6 +331,12 @@ def _build_user_prompt(
     if context.get("vantage_context"):
         parts.append("Contexto operacional recuperado do Vantage:")
         parts.append(context["vantage_context"])
+    if context.get("artifact_context"):
+        parts.append("Artefato recente citado nesta sessão:")
+        parts.append(context["artifact_context"])
+    if context.get("artifact_hint"):
+        parts.append("Leitura inicial determinística do artefato recente:")
+        parts.append(context["artifact_hint"])
     parts.append("Pedido atual do usuario:")
     parts.append(message.strip())
     if selected_skill == "soc-generalist":
@@ -214,6 +368,57 @@ def _fallback_response(message: str, skill_name: str) -> str:
     )
 
 
+def _strip_repeated_greeting(text: str, *, has_session_history: bool) -> str:
+    content = str(text or "").strip()
+    if not content or not has_session_history:
+        return content
+
+    lowered = content.lower()
+    for greeting in _REPEATED_GREETING_PATTERNS:
+        if lowered.startswith(greeting):
+            stripped = content[len(greeting):].lstrip(" \n-–—")
+            return stripped or content
+
+    first_paragraph, separator, remainder = content.partition("\n\n")
+    if first_paragraph.strip().lower() in {"olá", "ola", "oi"} and remainder.strip():
+        return remainder.strip()
+
+    return content
+
+
+def _deterministic_consultive_reply(
+    *,
+    message: str,
+    skill_name: str,
+    artifact_context: str,
+) -> str:
+    if skill_name != "soc-generalist":
+        return ""
+    hint = _m365_hygiene_hint(artifact_context)
+    if not hint:
+        return ""
+    if "hygienetenantevents" not in str(message or "").lower() and "recipientratelimitexceeded" not in artifact_context.lower():
+        return ""
+    return "\n\n".join(
+        [
+            "Leitura inicial",
+            hint,
+            "Como eu trataria",
+            (
+                "Eu não trataria isso de saída como incidente confirmado. "
+                "Parece muito mais um evento de proteção ou enforcement por volume/reputação de envio."
+            ),
+            "O que validar agora",
+            (
+                "1. Confirmar se a conta/remetente enviou volume elevado de mensagens.\n"
+                "2. Verificar MessageTrace e histórico do remetente no período.\n"
+                "3. Validar se a conta foi comprometida ou se houve campanha legítima.\n"
+                "4. Correlacionar com outros eventos do mesmo usuário/remetente no tenant."
+            ),
+        ]
+    )
+
+
 def _prepare_chat_context(
     message: str,
     session_id: str = "",
@@ -232,6 +437,7 @@ def _prepare_chat_context(
         titulo=message.strip()[:80],
     )
     session_context = _format_history(effective_session, limit=history_limit)
+    artifact_context = _find_recent_artifact_context(effective_session, message)
     retrieval = knowledge_base_runtime.search_knowledge_base(query_text=message, limit=kb_limit)
     knowledge_context = knowledge_base_runtime.format_retrieval_context(retrieval, max_chars=kb_chars)
     vantage = vantage_gateway.retrieve_context(message)
@@ -256,6 +462,8 @@ def _prepare_chat_context(
         knowledge_context=combined_knowledge_context,
         knowledge_sources=source_labels,
     )
+    context["artifact_context"] = artifact_context
+    context["artifact_hint"] = _m365_hygiene_hint(artifact_context)
     context["vantage_context"] = str(vantage.get("context") or "").strip()
     context["vantage_sources"] = ", ".join(
         str(item.get("source_name") or item.get("source_id") or "")
@@ -268,6 +476,8 @@ def _prepare_chat_context(
             effective_session, limit=history_limit
         )
     ]
+    if artifact_context and not any(item.get("content") == artifact_context for item in history_messages):
+        history_messages.insert(0, {"role": "user", "content": artifact_context})
     retrieval["vantage"] = vantage
     retrieval["sources"] = list(retrieval.get("sources") or []) + list(vantage.get("sources") or [])
     retrieval["matches"] = list(retrieval.get("matches") or []) + list(vantage.get("matches") or [])
@@ -447,6 +657,7 @@ def stream_chat_reply_events(
         response_mode=mode,
     )
     runtime = runtime_brief()
+    has_session_history = bool(history_messages)
     yield {
         "event": "meta",
         "session_id": effective_session,
@@ -463,11 +674,24 @@ def stream_chat_reply_events(
         "continuation_used": False,
         "continuation_done_reason": "",
     }
-    if not getattr(cfg, "LLM_ENABLED", False):
-        content = _fallback_response(message, skill_name)
+    deterministic_reply = _deterministic_consultive_reply(
+        message=message,
+        skill_name=skill_name,
+        artifact_context=str(context.get("artifact_context") or ""),
+    )
+    if deterministic_reply:
+        content = _strip_repeated_greeting(deterministic_reply, has_session_history=has_session_history)
+        completion_meta["done_reason"] = "deterministic"
         for delta in _chunk_text(content, chunk_size=int(profile.get("chunk_size") or _STREAM_CHUNK_SIZE)):
             yield {"event": "delta", "delta": delta, "skill": skill_name}
-    else:
+    elif not getattr(cfg, "LLM_ENABLED", False):
+        content = _strip_repeated_greeting(
+            _fallback_response(message, skill_name),
+            has_session_history=has_session_history,
+        )
+        for delta in _chunk_text(content, chunk_size=int(profile.get("chunk_size") or _STREAM_CHUNK_SIZE)):
+            yield {"event": "delta", "delta": delta, "skill": skill_name}
+    elif not content:
         messages = [{"role": "system", "content": _build_system_prompt(context, response_mode=mode)}]
         messages.extend(history_messages)
         messages.append(
@@ -509,7 +733,10 @@ def stream_chat_reply_events(
                                 yield {"event": "delta", "delta": delta, "skill": skill_name}
                             else:
                                 completion_meta.update(dict(item))
-                        content = "".join(parts).strip()
+                        content = _strip_repeated_greeting(
+                            "".join(parts).strip(),
+                            has_session_history=has_session_history,
+                        )
                         if bool(completion_meta.get("truncated")):
                             completion_meta["continuation_used"] = True
                             continuation_messages = list(messages)
@@ -539,12 +766,18 @@ def stream_chat_reply_events(
                                 continuation_meta.get("done_reason") or ""
                             )
                             completion_meta["truncated"] = bool(continuation_meta.get("truncated"))
-                            content = f"{content}{''.join(continuation_parts)}".strip()
+                            content = _strip_repeated_greeting(
+                                f"{content}{''.join(continuation_parts)}".strip(),
+                                has_session_history=has_session_history,
+                            )
         except Exception as exc:
             _logger.exception("Falha ao consultar a LLM local no chat do SOC Copilot.")
-            content = (
-                f"Falha ao consultar a LLM local: {exc}. "
-                f"Skill selecionada: `{skill_name}`."
+            content = _strip_repeated_greeting(
+                (
+                    f"Falha ao consultar a LLM local: {exc}. "
+                    f"Skill selecionada: `{skill_name}`."
+                ),
+                has_session_history=has_session_history,
             )
             for delta in _chunk_text(content, chunk_size=int(profile.get("chunk_size") or _STREAM_CHUNK_SIZE)):
                 yield {"event": "delta", "delta": delta, "skill": skill_name}

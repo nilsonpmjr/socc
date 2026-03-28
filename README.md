@@ -181,6 +181,8 @@ O fluxo local agora também pode começar por:
 - a exportação operacional agora suporta `JSON`, `Markdown` e `Ticket`, tanto no chat quanto na interface legada
 - o chat e a interface legada agora também mostram esse `operational_payload`, incluindo ação de cópia direta do bloco estruturado
 - os drafts e o `operational_payload` agora diferenciam a rota operacional por classificação, destacando abertura de alerta, encerramento administrativo, correção de detecção, encerramento benigno e tratativa de telemetria
+- o chat agora preserva melhor o último artefato estruturado da sessão em mensagens referenciais e evita cair em triagem binária só por menção solta a `payload`
+- eventos M365 `HygieneTenantEvents` agora recebem leitura determinística inicial, reduzindo explicações inventadas quando faltam fontes de grounding
 
 ## Contrato interno do runtime
 
