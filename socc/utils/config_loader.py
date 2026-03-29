@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import shutil
 from datetime import datetime, timezone
@@ -13,10 +14,16 @@ except ModuleNotFoundError:  # pragma: no cover - ambiente mínimo sem dependên
 
 
 def repo_env_path() -> Path:
+    project_root = str(os.getenv("SOCC_PROJECT_ROOT", "")).strip()
+    if project_root:
+        return Path(project_root).expanduser().resolve() / ".env"
     return Path(__file__).resolve().parents[2] / ".env"
 
 
 def runtime_env_path() -> Path:
+    runtime_home = str(os.getenv("SOCC_HOME", "")).strip()
+    if runtime_home:
+        return Path(runtime_home).expanduser().resolve() / ".env"
     return Path.home().expanduser() / ".socc" / ".env"
 
 
@@ -25,7 +32,7 @@ def load_environment() -> dict[str, str]:
     repo_env = repo_env_path()
 
     if runtime_env.exists():
-        load_dotenv(runtime_env, override=False)
+        load_dotenv(runtime_env, override=True)
     if repo_env.exists():
         load_dotenv(repo_env, override=False)
 
@@ -61,7 +68,7 @@ def update_env_assignment(path: Path, key: str, value: str, *, backup: bool = Tr
     pattern = re.compile(rf"^(#\s*)?{re.escape(key)}=.*$", re.MULTILINE)
     line = f"{key}={value}"
     if pattern.search(existing):
-        updated = pattern.sub(line, existing, count=1)
+        updated = pattern.sub(lambda _match: line, existing, count=1)
     else:
         updated = existing.rstrip() + ("\n" if existing.strip() else "") + line + "\n"
     path.write_text(updated, encoding="utf-8")
@@ -83,7 +90,7 @@ def batch_update_env(path: Path, assignments: dict[str, str]) -> Path:
         pattern = re.compile(rf"^(#\s*)?{re.escape(key)}=.*$", re.MULTILINE)
         line = f"{key}={value}"
         if pattern.search(existing):
-            existing = pattern.sub(line, existing, count=1)
+            existing = pattern.sub(lambda _match, replacement=line: replacement, existing, count=1)
         else:
             existing = existing.rstrip() + ("\n" if existing.strip() else "") + line + "\n"
     path.write_text(existing, encoding="utf-8")

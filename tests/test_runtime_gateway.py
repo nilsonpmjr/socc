@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
@@ -105,20 +106,49 @@ try:
 
     original_backend = os.environ.get("SOCC_INFERENCE_BACKEND")
     original_compat = os.environ.get("SOCC_OPENAI_COMPAT_URL")
+    original_compat_key = os.environ.get("SOCC_OPENAI_COMPAT_API_KEY")
+    original_auth_openai = os.environ.get("SOCC_AUTH_METHOD_OPENAI")
     original_lmstudio = os.environ.get("SOCC_LMSTUDIO_URL")
+    original_home = os.environ.get("SOCC_HOME")
     try:
-        os.environ["SOCC_INFERENCE_BACKEND"] = "lmstudio"
-        os.environ["SOCC_LMSTUDIO_URL"] = "http://127.0.0.1:1234/v1"
+        temp_runtime = tempfile.TemporaryDirectory()
+        os.environ["SOCC_HOME"] = temp_runtime.name
+        Path(temp_runtime.name, ".env").write_text(
+            "\n".join(
+                [
+                    "LLM_ENABLED=true",
+                    "SOCC_INFERENCE_BACKEND=lmstudio",
+                    "SOCC_LMSTUDIO_URL=http://127.0.0.1:1234/v1",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
         lmstudio_cfg = resolve_runtime()
         check("runtime_explicit_lmstudio_backend", lmstudio_cfg.backend == "lmstudio")
         check("runtime_explicit_lmstudio_provider", lmstudio_cfg.provider == "openai-compatible")
         check("runtime_explicit_lmstudio_device_local", lmstudio_cfg.device in {"gpu", "cpu"})
 
-        os.environ["SOCC_INFERENCE_BACKEND"] = "openai-compatible"
-        os.environ["SOCC_OPENAI_COMPAT_URL"] = ""
+        Path(temp_runtime.name, ".env").write_text(
+            "\n".join(
+                [
+                    "LLM_ENABLED=true",
+                    "SOCC_INFERENCE_BACKEND=openai-compatible",
+                    "SOCC_AUTH_METHOD_OPENAI=api_key",
+                    "SOCC_OPENAI_COMPAT_URL=",
+                    "SOCC_OPENAI_COMPAT_API_KEY=",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
         compat_probe = probe_inference_backend()
         check("runtime_openai_compat_probe_missing_endpoint", compat_probe.get("error") == "backend_endpoint_missing")
     finally:
+        try:
+            temp_runtime.cleanup()
+        except Exception:
+            pass
         if original_backend is None:
             os.environ.pop("SOCC_INFERENCE_BACKEND", None)
         else:
@@ -127,10 +157,22 @@ try:
             os.environ.pop("SOCC_OPENAI_COMPAT_URL", None)
         else:
             os.environ["SOCC_OPENAI_COMPAT_URL"] = original_compat
+        if original_compat_key is None:
+            os.environ.pop("SOCC_OPENAI_COMPAT_API_KEY", None)
+        else:
+            os.environ["SOCC_OPENAI_COMPAT_API_KEY"] = original_compat_key
+        if original_auth_openai is None:
+            os.environ.pop("SOCC_AUTH_METHOD_OPENAI", None)
+        else:
+            os.environ["SOCC_AUTH_METHOD_OPENAI"] = original_auth_openai
         if original_lmstudio is None:
             os.environ.pop("SOCC_LMSTUDIO_URL", None)
         else:
             os.environ["SOCC_LMSTUDIO_URL"] = original_lmstudio
+        if original_home is None:
+            os.environ.pop("SOCC_HOME", None)
+        else:
+            os.environ["SOCC_HOME"] = original_home
 except Exception as exc:
     check("runtime_gateway_flow", False, str(exc))
 

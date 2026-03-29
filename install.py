@@ -174,8 +174,25 @@ def _create_unix_path_shim(socc_home: Path) -> None:
         print(f"  Aviso: não foi possível criar shim em {local_bin}: {exc}", file=sys.stderr)
 
 
+def _cleanup_windows_legacy_shims(socc_home: Path) -> None:
+    legacy_paths = [
+        Path.home() / ".local" / "bin" / "socc",
+        socc_home / "bin" / "socc",
+    ]
+    for legacy in legacy_paths:
+        try:
+            if not legacy.exists():
+                continue
+            backup = legacy.with_name(f"{legacy.name}.legacy.bak")
+            legacy.replace(backup)
+            print(f"  Shim legado movido: {legacy} -> {backup}")
+        except OSError as exc:
+            print(f"  Aviso: não foi possível mover shim legado {legacy}: {exc}", file=sys.stderr)
+
+
 def _create_windows_path_shim(socc_home: Path) -> None:
     """Create a shim in a location likely on PATH (or suggest adding to PATH)."""
+    _cleanup_windows_legacy_shims(socc_home)
     # Try user's Scripts dir from the system Python
     scripts_dir = Path(sys.executable).parent / "Scripts"
     if not scripts_dir.exists():

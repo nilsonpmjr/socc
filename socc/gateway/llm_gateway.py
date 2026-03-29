@@ -18,16 +18,8 @@ try:
 except ImportError:  # pragma: no cover - Windows fallback
     resource = None
 
-from soc_copilot.config import (
-    ANTHROPIC_API_KEY,
-    LLM_ENABLED,
-    LLM_MODEL,
-    LLM_PROVIDER,
-    LLM_TIMEOUT,
-    OLLAMA_MODEL,
-    OLLAMA_URL,
-)
 from socc.core.memory import write_runtime_log
+from socc.utils.config_loader import load_environment
 from socc.utils.safety import (
     log_redaction_enabled,
     prompt_audit_enabled,
@@ -59,6 +51,8 @@ class LLMRuntimeConfig:
     max_concurrency: int
     cpu_guard_enabled: bool
     cpu_guard_load: float
+    auth_method: str
+    auth_source: str
 
 
 _EVENTS: deque[dict[str, Any]] = deque(maxlen=100)
@@ -83,7 +77,30 @@ class InferenceBackendSpec:
     notes: str
 
 
+def _refresh_runtime_env() -> None:
+    try:
+        load_environment()
+    except Exception:
+        pass
+
+
+def _env_str(name: str, default: str = "") -> str:
+    return str(os.getenv(name, default)).strip()
+
+
+def _env_bool(name: str, default: str = "false") -> bool:
+    return _env_str(name, default).lower() in {"1", "true", "yes"}
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(_env_str(name, str(default)) or default)
+    except ValueError:
+        return float(default)
+
+
 def supported_backend_specs() -> dict[str, InferenceBackendSpec]:
+    _refresh_runtime_env()
     return {
         "ollama": InferenceBackendSpec(
             key="ollama",
@@ -96,8 +113,8 @@ def supported_backend_specs() -> dict[str, InferenceBackendSpec]:
             embeddings_supported=True,
             endpoint_env="OLLAMA_URL",
             model_env="OLLAMA_MODEL",
-            endpoint_default=OLLAMA_URL,
-            model_default=OLLAMA_MODEL,
+            endpoint_default=_env_str("OLLAMA_URL", "http://localhost:11434"),
+            model_default=_env_str("OLLAMA_MODEL", "qwen3.5:9b"),
             probe_strategy="ollama-tags",
             notes="Bom padrão local para workstation; suporta streaming incremental e costuma aproveitar GPU quando disponível.",
         ),
@@ -161,7 +178,7 @@ def supported_backend_specs() -> dict[str, InferenceBackendSpec]:
             endpoint_env="ANTHROPIC_API_KEY",
             model_env="LLM_MODEL",
             endpoint_default="anthropic",
-            model_default=LLM_MODEL,
+            model_default=_env_str("LLM_MODEL", "claude-haiku-4-5-20251001"),
             probe_strategy="anthropic-key",
             notes="Fallback remoto útil quando não há backend local operacional ou quando a qualidade supera a latência.",
         ),
@@ -169,10 +186,192 @@ def supported_backend_specs() -> dict[str, InferenceBackendSpec]:
 
 
 def gpu_available() -> bool:
+    return bool(detect_gpu_hardware().get("available"))
+
+
+def _nvidia_smi_path() -> str:
+    path = shutil.which("nvidia-smi")
+    if path:
+        return path
+    if os.name == "nt":
+        for candidate in (
+            r"C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe",
+            r"C:\Windows\System32\nvidia-smi.exe",
+        ):
+            if os.path.exists(candidate):
+                return candidate
+    return ""
+
+
+def _query_nvidia_devices() -> list[dict[str, Any]]:
+    nvidia_smi = _nvidia_smi_path()
+    if not nvidia_smi:
+        return []
+
+    try:
+        result = subprocess.run(
+            [
+                nvidia_smi,
+                "--query-gpu=name,memory.total,memory.used,utilization.gpu",
+                "--format=csv,noheader,nounits",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except Exception:
+        return []
+
+    devices: list[dict[str, Any]] = []
+    for line in result.stdout.splitlines():
+        parts = [part.strip() for part in line.split(",")]
+        if len(parts) != 4:
+            continue
+        name, memory_total, memory_used, utilization = parts
+        devices.append(
+            {
+                "name": name,
+                "vendor": "nvidia",
+                "supported_by_ollama": True,
+                "memory_total_mb": int(memory_total) if memory_total.isdigit() else memory_total,
+                "memory_used_mb": int(memory_used) if memory_used.isdigit() else memory_used,
+                "utilization_gpu_pct": int(utilization) if utilization.isdigit() else utilization,
+            }
+        )
+    return devices
+
+
+def _powershell_path() -> str:
+    for candidate in ("pwsh", "powershell"):
+        path = shutil.which(candidate)
+        if path:
+            return path
+    if os.name == "nt":
+        for candidate in (
+            r"C:\Program Files\PowerShell\7\pwsh.exe",
+            r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+        ):
+            if os.path.exists(candidate):
+                return candidate
+    return ""
+
+
+def _normalize_vendor(name: str) -> str:
+    lowered = str(name or "").strip().lower()
+    if "nvidia" in lowered:
+        return "nvidia"
+    if "radeon" in lowered or "amd" in lowered:
+        return "amd"
+    if "intel" in lowered:
+        return "intel"
+    return "unknown"
+
+
+def _query_windows_display_adapters() -> list[dict[str, Any]]:
+    if os.name != "nt":
+        return []
+
+    powershell = _powershell_path()
+    if not powershell:
+        return []
+
+    try:
+        result = subprocess.run(
+            [
+                powershell,
+                "-NoProfile",
+                "-Command",
+                "Get-CimInstance Win32_VideoController | "
+                "Select-Object Name,AdapterRAM,DriverVersion | ConvertTo-Json -Compress",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+    except Exception:
+        return []
+
+    raw = result.stdout.strip()
+    if not raw:
+        return []
+
+    try:
+        import json
+
+        parsed = json.loads(raw)
+    except Exception:
+        return []
+
+    rows = parsed if isinstance(parsed, list) else [parsed]
+    devices: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("Name") or "").strip()
+        if not name:
+            continue
+        vendor = _normalize_vendor(name)
+        adapter_ram = row.get("AdapterRAM")
+        memory_total_mb = None
+        if isinstance(adapter_ram, (int, float)) and adapter_ram > 0:
+            memory_total_mb = int(adapter_ram / (1024 * 1024))
+        devices.append(
+            {
+                "name": name,
+                "vendor": vendor,
+                "driver_version": str(row.get("DriverVersion") or "").strip(),
+                "memory_total_mb": memory_total_mb,
+                "supported_by_ollama": vendor in {"nvidia", "amd"},
+            }
+        )
+    return devices
+
+
+def detect_gpu_hardware() -> dict[str, Any]:
     visible_devices = os.getenv("CUDA_VISIBLE_DEVICES", "").strip()
     if visible_devices and visible_devices != "-1":
-        return True
-    return shutil.which("nvidia-smi") is not None
+        return {
+            "available": True,
+            "label": f"CUDA_VISIBLE_DEVICES={visible_devices}",
+            "reason": "cuda_visible_devices",
+            "devices": [
+                {
+                    "name": f"CUDA_VISIBLE_DEVICES={visible_devices}",
+                    "vendor": "cuda",
+                    "supported_by_ollama": True,
+                }
+            ],
+        }
+
+    nvidia_devices = _query_nvidia_devices()
+    if nvidia_devices:
+        return {
+            "available": True,
+            "label": str(nvidia_devices[0].get("name") or "NVIDIA GPU"),
+            "reason": "nvidia_smi",
+            "devices": nvidia_devices,
+        }
+
+    windows_devices = _query_windows_display_adapters()
+    supported_devices = [device for device in windows_devices if device.get("supported_by_ollama")]
+    if supported_devices:
+        return {
+            "available": True,
+            "label": str(supported_devices[0].get("name") or "GPU"),
+            "reason": "windows_video_controller",
+            "devices": windows_devices,
+        }
+    if windows_devices:
+        return {
+            "available": False,
+            "label": str(windows_devices[0].get("name") or "GPU"),
+            "reason": "unsupported_windows_gpu",
+            "devices": windows_devices,
+        }
+
+    return {"available": False, "label": "", "reason": "not_detected", "devices": []}
 
 
 def _normalize_backend_key(value: str) -> str:
@@ -192,6 +391,7 @@ def _normalize_backend_key(value: str) -> str:
 
 
 def configured_backend() -> str:
+    _refresh_runtime_env()
     configured = _normalize_backend_key(os.getenv("SOCC_INFERENCE_BACKEND", ""))
     if configured in {"auto", *supported_backend_specs().keys()}:
         return configured or "auto"
@@ -199,6 +399,7 @@ def configured_backend() -> str:
 
 
 def backend_priority() -> list[str]:
+    _refresh_runtime_env()
     raw = os.getenv("SOCC_BACKEND_PRIORITY", "").strip()
     if not raw:
         return ["ollama", "lmstudio", "vllm", "openai-compatible", "anthropic"]
@@ -211,6 +412,7 @@ def backend_priority() -> list[str]:
 
 
 def fallback_provider() -> str:
+    _refresh_runtime_env()
     configured = os.getenv("SOCC_LLM_FALLBACK_PROVIDER", "").strip().lower()
     if configured in {"anthropic", "ollama", "lmstudio", "vllm", "openai-compatible", "cpu", "deterministic"}:
         return configured
@@ -218,6 +420,7 @@ def fallback_provider() -> str:
 
 
 def preferred_device() -> str:
+    _refresh_runtime_env()
     configured = os.getenv("SOCC_INFERENCE_DEVICE", "").strip().lower()
     if configured:
         return configured
@@ -225,10 +428,12 @@ def preferred_device() -> str:
 
 
 def cpu_guard_enabled() -> bool:
+    _refresh_runtime_env()
     return os.getenv("SOCC_CPU_GUARD_ENABLED", "true").strip().lower() in {"1", "true", "yes"}
 
 
 def cpu_guard_load() -> float:
+    _refresh_runtime_env()
     try:
         return float(os.getenv("SOCC_CPU_GUARD_LOAD", "4.0"))
     except ValueError:
@@ -236,6 +441,7 @@ def cpu_guard_load() -> float:
 
 
 def max_concurrency() -> int:
+    _refresh_runtime_env()
     try:
         return max(1, int(os.getenv("SOCC_MAX_CONCURRENT_LLM", "2")))
     except ValueError:
@@ -246,18 +452,37 @@ _INFERENCE_SEMAPHORE = threading.BoundedSemaphore(value=max_concurrency())
 
 
 def _backend_endpoint(spec: InferenceBackendSpec) -> str:
+    _refresh_runtime_env()
+    if spec.key == "anthropic":
+        return spec.endpoint_default
+    if spec.key == "openai-compatible":
+        configured = os.getenv(spec.endpoint_env, spec.endpoint_default).strip()
+        if configured:
+            return configured
+        auth = resolve_auth_context("openai-compatible")
+        if auth["credential"]:
+            return "https://api.openai.com/v1"
+        return spec.endpoint_default
     return os.getenv(spec.endpoint_env, spec.endpoint_default).strip() or spec.endpoint_default
 
 
 def _backend_model(spec: InferenceBackendSpec) -> str:
+    _refresh_runtime_env()
     value = os.getenv(spec.model_env, spec.model_default).strip()
     if value:
         return value
     if spec.key == "anthropic":
-        return LLM_MODEL
+        return _env_str("LLM_MODEL", "claude-haiku-4-5-20251001")
     if spec.key == "ollama":
-        return OLLAMA_MODEL
-    return os.getenv("SOCC_LOCAL_MODEL_DEFAULT", "").strip() or OLLAMA_MODEL
+        return _env_str("OLLAMA_MODEL", "qwen3.5:9b")
+    if spec.key == "openai-compatible":
+        configured = os.getenv(spec.model_env, spec.model_default).strip()
+        if configured:
+            return configured
+        auth = resolve_auth_context("openai-compatible")
+        if auth["credential"]:
+            return "gpt-5-codex"
+    return os.getenv("SOCC_LOCAL_MODEL_DEFAULT", "").strip() or _env_str("OLLAMA_MODEL", "qwen3.5:9b")
 
 
 def _endpoint_looks_local(endpoint: str) -> bool:
@@ -277,30 +502,104 @@ def _resolve_oauth_token(provider_name: str) -> str:
         return ""
 
 
+def _normalized_auth_method(value: str) -> str:
+    method = str(value or "").strip().lower()
+    if method in {"oauth", "api_key"}:
+        return method
+    return ""
+
+
+def resolve_auth_context(provider_name: str) -> dict[str, str]:
+    _refresh_runtime_env()
+    normalized = str(provider_name or "").strip().lower()
+    if normalized == "anthropic":
+        configured_method = _normalized_auth_method(_env_str("SOCC_AUTH_METHOD_ANTHROPIC", ""))
+        env_credential = _env_str("ANTHROPIC_API_KEY", "")
+        oauth_credential = _resolve_oauth_token("anthropic")
+    elif normalized in {"openai", "openai-compatible"}:
+        configured_method = _normalized_auth_method(_env_str("SOCC_AUTH_METHOD_OPENAI", ""))
+        env_credential = _env_str("SOCC_OPENAI_COMPAT_API_KEY", "")
+        oauth_credential = _resolve_oauth_token("openai")
+    else:
+        return {
+            "provider": normalized,
+            "method": "none",
+            "credential": "",
+            "source": "missing",
+        }
+
+    if configured_method == "oauth" and oauth_credential:
+        return {
+            "provider": normalized,
+            "method": "oauth",
+            "credential": oauth_credential,
+            "source": "oauth_store",
+        }
+    if configured_method == "oauth":
+        if env_credential:
+            return {
+                "provider": normalized,
+                "method": "oauth",
+                "credential": env_credential,
+                "source": "env",
+            }
+        return {
+            "provider": normalized,
+            "method": "oauth",
+            "credential": "",
+            "source": "missing",
+        }
+    if configured_method == "api_key" and env_credential:
+        return {
+            "provider": normalized,
+            "method": "api_key",
+            "credential": env_credential,
+            "source": "env",
+        }
+    if configured_method == "api_key":
+        return {
+            "provider": normalized,
+            "method": "api_key",
+            "credential": "",
+            "source": "missing",
+        }
+    if env_credential:
+        return {
+            "provider": normalized,
+            "method": configured_method or "api_key",
+            "credential": env_credential,
+            "source": "env",
+        }
+    if oauth_credential:
+        return {
+            "provider": normalized,
+            "method": configured_method or "oauth",
+            "credential": oauth_credential,
+            "source": "oauth_store",
+        }
+    return {
+        "provider": normalized,
+        "method": configured_method or "none",
+        "credential": "",
+        "source": "missing",
+    }
+
+
 def resolve_api_key(provider_name: str) -> str:
     """Return the best available API key/token for a provider.
 
     Checks env vars first, then falls back to stored OAuth credentials.
     """
-    if provider_name == "anthropic":
-        key = ANTHROPIC_API_KEY
-        if key:
-            return key
-        return _resolve_oauth_token("anthropic")
-    if provider_name in ("openai", "openai-compatible"):
-        key = os.getenv("SOCC_OPENAI_COMPAT_API_KEY", "").strip()
-        if key:
-            return key
-        return _resolve_oauth_token("openai")
-    return ""
+    return str(resolve_auth_context(provider_name).get("credential") or "")
 
 
 def describe_backend_choice() -> dict[str, Any]:
+    _refresh_runtime_env()
     specs = supported_backend_specs()
     configured = configured_backend()
     source = "SOCC_INFERENCE_BACKEND" if configured != "auto" else "legacy-provider"
     if configured == "auto":
-        inferred = "anthropic" if (LLM_PROVIDER or "ollama").lower() == "anthropic" else "ollama"
+        inferred = "anthropic" if _env_str("LLM_PROVIDER", "ollama").lower() == "anthropic" else "ollama"
         selected = inferred if inferred in specs else backend_priority()[0]
     else:
         selected = configured
@@ -328,6 +627,7 @@ def supported_backends_payload() -> list[dict[str, Any]]:
         endpoint = _backend_endpoint(spec)
         model = _backend_model(spec)
         local_endpoint = _endpoint_looks_local(endpoint)
+        auth = resolve_auth_context(spec.provider)
         payload.append(
             {
                 "key": spec.key,
@@ -345,28 +645,33 @@ def supported_backends_payload() -> list[dict[str, Any]]:
                 "model_env": spec.model_env,
                 "probe_strategy": spec.probe_strategy,
                 "notes": spec.notes,
+                "auth_method": auth.get("method", "none"),
+                "auth_source": auth.get("source", "missing"),
             }
         )
     return payload
 
 
 def resolve_runtime() -> LLMRuntimeConfig:
+    _refresh_runtime_env()
     backend_choice = describe_backend_choice()
     spec = backend_choice["spec"]
     provider = spec.provider
+    auth = resolve_auth_context(provider)
     gpu = gpu_available()
     endpoint = str(backend_choice["endpoint"])
     model = str(backend_choice["model"])
     backend_local = bool(backend_choice["backend_local"])
     preferred = preferred_device()
     effective_device = preferred if backend_local else "remote"
+    llm_enabled = _env_bool("LLM_ENABLED", "false")
     runtime_enabled = False
     if provider == "anthropic":
-        runtime_enabled = LLM_ENABLED and bool(resolve_api_key("anthropic"))
+        runtime_enabled = llm_enabled and bool(resolve_api_key("anthropic"))
     elif provider == "openai-compatible":
-        runtime_enabled = LLM_ENABLED and (bool(endpoint) or bool(resolve_api_key("openai")))
+        runtime_enabled = llm_enabled and (bool(endpoint) or bool(resolve_api_key("openai")))
     else:
-        runtime_enabled = LLM_ENABLED and bool(endpoint)
+        runtime_enabled = llm_enabled and bool(endpoint)
 
     return LLMRuntimeConfig(
         enabled=runtime_enabled,
@@ -380,7 +685,7 @@ def resolve_runtime() -> LLMRuntimeConfig:
         backend_embeddings_supported=spec.embeddings_supported,
         provider=provider,
         model=model,
-        timeout=LLM_TIMEOUT,
+        timeout=_env_float("LLM_TIMEOUT", 60.0),
         device=effective_device,
         endpoint=endpoint,
         gpu_available=gpu,
@@ -389,6 +694,8 @@ def resolve_runtime() -> LLMRuntimeConfig:
         max_concurrency=max_concurrency(),
         cpu_guard_enabled=cpu_guard_enabled(),
         cpu_guard_load=cpu_guard_load(),
+        auth_method=str(auth.get("method") or "none"),
+        auth_source=str(auth.get("source") or "missing"),
     )
 
 
@@ -411,9 +718,34 @@ def _cpu_snapshot() -> dict[str, Any]:
         except Exception:
             usage = None
 
+    cpu_percent = None
+    if os.name == "nt":
+        powershell = _powershell_path()
+        if powershell:
+            try:
+                result = subprocess.run(
+                    [
+                        powershell,
+                        "-NoProfile",
+                        "-Command",
+                        "Get-CimInstance Win32_Processor | "
+                        "Select-Object -ExpandProperty LoadPercentage | Select-Object -First 1",
+                    ],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
+                )
+                raw = str(result.stdout or "").strip()
+                if raw.isdigit():
+                    cpu_percent = int(raw)
+            except Exception:
+                cpu_percent = None
+
     return {
         "load_avg": [round(value, 3) for value in load_avg] if load_avg else [],
         "process": usage or {},
+        "cpu_percent": cpu_percent,
     }
 
 
@@ -425,47 +757,20 @@ def cpu_guard_reason(runtime: LLMRuntimeConfig | None = None) -> str:
     loads = cpu.get("load_avg") or []
     if loads and isinstance(loads[0], (int, float)) and float(loads[0]) > current.cpu_guard_load:
         return f"cpu_guard_load_exceeded:{loads[0]}"
+    cpu_percent = cpu.get("cpu_percent")
+    if isinstance(cpu_percent, int) and cpu_percent >= 85:
+        return f"cpu_guard_pct_exceeded:{cpu_percent}"
     return ""
 
 
 def _gpu_snapshot() -> dict[str, Any]:
-    if not gpu_available():
-        return {"available": False, "devices": []}
-
-    nvidia_smi = shutil.which("nvidia-smi")
-    if not nvidia_smi:
-        return {"available": True, "devices": []}
-
-    try:
-        result = subprocess.run(
-            [
-                nvidia_smi,
-                "--query-gpu=name,memory.total,memory.used,utilization.gpu",
-                "--format=csv,noheader,nounits",
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=2,
-        )
-    except Exception:
-        return {"available": True, "devices": []}
-
-    devices = []
-    for line in result.stdout.splitlines():
-        parts = [part.strip() for part in line.split(",")]
-        if len(parts) != 4:
-            continue
-        name, memory_total, memory_used, utilization = parts
-        devices.append(
-            {
-                "name": name,
-                "memory_total_mb": int(memory_total) if memory_total.isdigit() else memory_total,
-                "memory_used_mb": int(memory_used) if memory_used.isdigit() else memory_used,
-                "utilization_gpu_pct": int(utilization) if utilization.isdigit() else utilization,
-            }
-        )
-    return {"available": True, "devices": devices}
+    snapshot = detect_gpu_hardware()
+    return {
+        "available": bool(snapshot.get("available")),
+        "label": str(snapshot.get("label") or ""),
+        "reason": str(snapshot.get("reason") or ""),
+        "devices": snapshot.get("devices") or [],
+    }
 
 
 def record_inference_event(
@@ -651,6 +956,8 @@ def runtime_brief() -> dict[str, Any]:
         "device": config.device,
         "gpu_available": config.gpu_available,
         "fallback_provider": config.fallback_provider,
+        "auth_method": config.auth_method,
+        "auth_source": config.auth_source,
     }
 
 
@@ -691,14 +998,23 @@ def probe_inference_backend(timeout: float = 2.0) -> dict[str, Any]:
     }
 
     if runtime.backend == "anthropic":
-        has_key = bool(resolve_api_key("anthropic"))
+        auth = resolve_auth_context("anthropic")
+        has_key = bool(auth.get("credential"))
         result["reachable"] = has_key
-        result["details"] = {"api_key_configured": has_key}
+        result["details"] = {
+            "api_key_configured": has_key,
+            "auth_method": auth.get("method", "none"),
+            "auth_source": auth.get("source", "missing"),
+        }
         if not result["reachable"]:
             result["error"] = "anthropic_api_key_missing"
         return result
 
-    import requests
+    try:
+        import requests
+    except ModuleNotFoundError:
+        result["error"] = "requests_package_missing"
+        return result
 
     endpoint = str(runtime.endpoint).rstrip("/")
     if not endpoint:
@@ -707,9 +1023,15 @@ def probe_inference_backend(timeout: float = 2.0) -> dict[str, Any]:
     models_url = f"{endpoint}/models"
     if runtime.backend == "ollama":
         models_url = f"{endpoint}/api/tags"
+    headers = {}
+    if runtime.backend == "openai-compatible":
+        auth = resolve_auth_context("openai-compatible")
+        credential = str(auth.get("credential") or "")
+        if credential:
+            headers["Authorization"] = f"Bearer {credential}"
     started = time.perf_counter()
     try:
-        response = requests.get(models_url, timeout=timeout)
+        response = requests.get(models_url, headers=headers, timeout=timeout)
         response.raise_for_status()
         payload = response.json()
         models = payload.get("models", []) if isinstance(payload, dict) else []
@@ -750,7 +1072,11 @@ def list_backend_models(timeout: float = 2.0) -> dict[str, Any]:
         payload["error"] = "model_listing_not_supported"
         return payload
 
-    import requests
+    try:
+        import requests
+    except ModuleNotFoundError:
+        payload["error"] = "requests_package_missing"
+        return payload
 
     endpoint = str(runtime.endpoint).rstrip("/")
     if not endpoint:
@@ -762,9 +1088,15 @@ def list_backend_models(timeout: float = 2.0) -> dict[str, Any]:
     if runtime.backend == "ollama":
         models_url = f"{endpoint}/api/tags"
         parser = "ollama"
+    headers = {}
+    if runtime.backend == "openai-compatible":
+        auth = resolve_auth_context("openai-compatible")
+        credential = str(auth.get("credential") or "")
+        if credential:
+            headers["Authorization"] = f"Bearer {credential}"
 
     try:
-        response = requests.get(models_url, timeout=timeout)
+        response = requests.get(models_url, headers=headers, timeout=timeout)
         response.raise_for_status()
         data = response.json()
         raw_models = data.get("models", []) if isinstance(data, dict) else []

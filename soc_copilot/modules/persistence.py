@@ -1,17 +1,113 @@
 import sqlite3
 import hashlib
 import json
+import shutil
+import gc
+import time
 from datetime import datetime
 from pathlib import Path
 from soc_copilot.config import DB_PATH
 
+_SQLITE_CORRUPTION_MARKERS = (
+    "database disk image is malformed",
+    "malformed",
+    "file is not a database",
+    "not a database",
+    "database corrupt",
+)
 
-def get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, timeout=10)
+
+class ManagedSQLiteConnection(sqlite3.Connection):
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            return super().__exit__(exc_type, exc_val, exc_tb)
+        finally:
+            self.close()
+
+
+def _db_path() -> Path:
+    return Path(DB_PATH)
+
+
+def _db_related_paths(db_path: Path) -> list[Path]:
+    return [
+        db_path,
+        Path(str(db_path) + "-wal"),
+        Path(str(db_path) + "-shm"),
+    ]
+
+
+def _is_recoverable_sqlite_error(exc: Exception) -> bool:
+    message = str(exc or "").strip().lower()
+    return any(marker in message for marker in _SQLITE_CORRUPTION_MARKERS)
+
+
+def _archive_corrupted_db_files(db_path: Path) -> list[Path]:
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    archived: list[Path] = []
+    for candidate in _db_related_paths(db_path):
+        if not candidate.exists():
+            continue
+        destination = candidate.with_name(f"{candidate.name}.corrupted.{timestamp}")
+        suffix = 1
+        while destination.exists():
+            destination = candidate.with_name(f"{candidate.name}.corrupted.{timestamp}.{suffix}")
+            suffix += 1
+        moved = False
+        for attempt in range(5):
+            try:
+                shutil.move(str(candidate), str(destination))
+                moved = True
+                break
+            except PermissionError:
+                gc.collect()
+                time.sleep(0.15 * (attempt + 1))
+        if not moved:
+            shutil.move(str(candidate), str(destination))
+        archived.append(destination)
+    return archived
+
+
+def _validate_conn(conn: sqlite3.Connection) -> None:
+    row = conn.execute("PRAGMA quick_check").fetchone()
+    if not row:
+        return
+    result = str(row[0] or "").strip()
+    if result and result.lower() != "ok":
+        raise sqlite3.DatabaseError(f"sqlite quick_check failed: {result}")
+
+
+def _open_conn(db_path: Path) -> sqlite3.Connection:
+    conn = sqlite3.connect(db_path, timeout=10, factory=ManagedSQLiteConnection)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     return conn
+
+
+def get_conn() -> sqlite3.Connection:
+    db_path = _db_path()
+    conn: sqlite3.Connection | None = None
+    try:
+        conn = _open_conn(db_path)
+        _validate_conn(conn)
+        return conn
+    except sqlite3.Error as exc:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            finally:
+                conn = None
+        gc.collect()
+        time.sleep(0.1)
+        if not _is_recoverable_sqlite_error(exc):
+            raise
+        _archive_corrupted_db_files(db_path)
+        conn = _open_conn(db_path)
+        _validate_conn(conn)
+        return conn
 
 
 def init_db():
@@ -100,6 +196,18 @@ def init_db():
         """)
         _ensure_column(conn, "chat_messages", "metadata_json", "TEXT")
         _ensure_column(conn, "analysis_helper", "structured_json", "TEXT")
+
+
+def checkpoint_db(truncate: bool = True) -> dict[str, object]:
+    mode = "TRUNCATE" if truncate else "PASSIVE"
+    with get_conn() as conn:
+        row = conn.execute(f"PRAGMA wal_checkpoint({mode})").fetchone()
+    values = tuple(row) if row is not None else tuple()
+    return {
+        "mode": mode.lower(),
+        "result": list(values),
+        "db_path": str(_db_path()),
+    }
 
 
 def _ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, definition: str) -> None:

@@ -104,6 +104,7 @@ fi
 VENV_PY="$SOCC_HOME/venv/bin/python"
 VENV_PIP="$SOCC_HOME/venv/bin/pip"
 PIP_COMMON_ARGS=(--disable-pip-version-check --retries 0 --timeout 3)
+PYTHON_HEALTHCHECK='import socc.cli.main; import requests'
 
 if ! "$VENV_PY" -m pip install "${PIP_COMMON_ARGS[@]}" --upgrade pip setuptools wheel; then
   echo "Aviso: falha ao atualizar pip/setuptools/wheel. Seguindo com o que já estiver disponível." >&2
@@ -144,7 +145,7 @@ VENV_PY_DEFAULT="$VENV_PY"
 FALLBACK_PY_DEFAULT="$PYTHON_BIN"
 if [[ -n "\${SOCC_PYTHON:-}" ]]; then
   PYTHON_TO_USE="\$SOCC_PYTHON"
-elif "\$VENV_PY_DEFAULT" -c "import socc.cli.main" >/dev/null 2>&1; then
+elif "\$VENV_PY_DEFAULT" -c "$PYTHON_HEALTHCHECK" >/dev/null 2>&1; then
   PYTHON_TO_USE="\$VENV_PY_DEFAULT"
 else
   PYTHON_TO_USE="\$FALLBACK_PY_DEFAULT"
@@ -179,8 +180,15 @@ fi
 if [[ "$RUN_PROBE" == "true" ]]; then
   ONBOARD_ARGS+=(--probe)
 fi
+if [[ -n "${SOCC_PYTHON:-}" ]]; then
+  ONBOARD_PY="$SOCC_PYTHON"
+elif "$VENV_PY" -c "$PYTHON_HEALTHCHECK" >/dev/null 2>&1; then
+  ONBOARD_PY="$VENV_PY"
+else
+  ONBOARD_PY="$PYTHON_BIN"
+fi
 ONBOARD_OK="true"
-if ! "$SOCC_HOME/bin/socc" "${ONBOARD_ARGS[@]}"; then
+if ! SOCC_HOME="$SOCC_HOME" SOCC_PROJECT_ROOT="$ROOT_DIR" PYTHONPATH="$ROOT_DIR${PYTHONPATH:+:$PYTHONPATH}" "$ONBOARD_PY" -m socc.cli.main "${ONBOARD_ARGS[@]}"; then
   ONBOARD_OK="false"
   echo "Aviso: onboarding automático falhou. O runtime e o launcher foram criados, mas pode haver dependências faltando." >&2
 fi

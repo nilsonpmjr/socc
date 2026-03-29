@@ -5,7 +5,10 @@ import os
 import re
 from typing import Any
 
-import requests
+try:
+    import requests
+except ModuleNotFoundError:  # pragma: no cover - install minimo sem dependencias opcionais
+    requests = None
 
 
 DEFAULT_TIMEOUT_SECONDS = 12.0
@@ -310,6 +313,7 @@ def status_payload() -> dict[str, Any]:
     catalog = module_catalog()
     return {
         "enabled": vantage_enabled(),
+        "dependency_available": requests is not None,
         "base_url": base_url,
         "configured": bool(base_url),
         "auth_mode": auth_mode(),
@@ -319,6 +323,7 @@ def status_payload() -> dict[str, Any]:
         "selected_modules": [item.get("id") for item in catalog if item.get("selected")],
         "modules": catalog,
         "future_rss_via_api": True,
+        "error": "" if requests is not None else "requests_package_missing",
     }
 
 
@@ -328,6 +333,8 @@ def query_module(
     params: dict[str, Any] | None = None,
     method: str = "GET",
 ) -> dict[str, Any]:
+    if requests is None:
+        raise RuntimeError("Pacote 'requests' nao instalado no runtime atual.")
     status = status_payload()
     if not status.get("enabled"):
         raise RuntimeError("Integração com Vantage está desabilitada.")

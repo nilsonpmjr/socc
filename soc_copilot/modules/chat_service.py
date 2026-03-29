@@ -17,8 +17,11 @@ from socc.gateway.llm_gateway import (
     inference_guard,
     record_prompt_audit,
     record_inference_event,
+    resolve_api_key,
+    resolve_auth_context,
     resolve_runtime,
     runtime_brief,
+    supported_backend_specs,
 )
 
 _logger = logging.getLogger(__name__)
@@ -93,6 +96,106 @@ def resolve_ollama_model_for_mode(response_mode: str = _DEFAULT_RESPONSE_MODE) -
     return mapping.get(mode, primary) or primary
 
 
+def _normalize_backend_selection(value: str = "") -> str:
+    raw = str(value or "").strip().lower()
+    aliases = {
+        "anthropic": "anthropic",
+        "claude": "anthropic",
+        "ollama": "ollama",
+        "openai": "openai-compatible",
+        "openai-compatible": "openai-compatible",
+        "codex": "openai-compatible",
+        "lmstudio": "openai-compatible",
+        "vllm": "openai-compatible",
+    }
+    return aliases.get(raw, raw)
+
+
+def _chat_max_tokens(response_mode: str = _DEFAULT_RESPONSE_MODE) -> int:
+    mode = normalize_response_mode(response_mode)
+    return {
+        "fast": 220,
+        "balanced": 520,
+        "deep": 900,
+    }.get(mode, 520)
+
+
+def _serialize_messages(messages: list[dict[str, str]]) -> str:
+    return "\n\n".join(
+        f"{item.get('role', 'user')}: {item.get('content', '')}"
+        for item in messages
+    )
+
+
+def _resolve_chat_target(
+    *,
+    response_mode: str = _DEFAULT_RESPONSE_MODE,
+    selected_backend: str = "",
+    selected_model: str = "",
+) -> dict[str, str]:
+    runtime_cfg = resolve_runtime()
+    backend = _normalize_backend_selection(selected_backend) or runtime_cfg.backend or "ollama"
+    if backend not in {"ollama", "anthropic", "openai-compatible"}:
+        backend = "ollama"
+
+    model = str(selected_model or "").strip()
+    endpoint = ""
+    provider = backend
+    device = runtime_cfg.device if backend == "ollama" else "remote"
+
+    if backend == "ollama":
+        provider = "ollama"
+        endpoint = getattr(cfg, "OLLAMA_URL", "http://localhost:11434").rstrip("/")
+        model = model or resolve_ollama_model_for_mode(response_mode)
+    elif backend == "anthropic":
+        provider = "anthropic"
+        endpoint = "https://api.anthropic.com/v1/messages"
+        model = model or os.getenv("LLM_MODEL", getattr(cfg, "LLM_MODEL", "claude-haiku-4-5-20251001"))
+    else:
+        provider = "openai-compatible"
+        endpoint = os.getenv("SOCC_OPENAI_COMPAT_URL", "").strip().rstrip("/") or "https://api.openai.com/v1"
+        model = model or os.getenv("SOCC_OPENAI_COMPAT_MODEL", "").strip() or "gpt-5-codex"
+
+    return {
+        "backend": backend,
+        "provider": provider,
+        "endpoint": endpoint,
+        "model": model,
+        "device": device,
+    }
+
+
+def _build_selected_runtime(target: dict[str, str]) -> dict[str, object]:
+    spec = supported_backend_specs().get(str(target.get("backend") or "").strip().lower())
+    runtime = dict(runtime_brief())
+    if not spec:
+        runtime.update(
+            {
+                "backend": str(target.get("backend") or runtime.get("backend") or "ollama"),
+                "provider": str(target.get("provider") or runtime.get("provider") or "ollama"),
+                "model": str(target.get("model") or runtime.get("model") or ""),
+                "device": str(target.get("device") or runtime.get("device") or "cpu"),
+            }
+        )
+        return runtime
+
+    runtime.update(
+        {
+            "backend": spec.key,
+            "backend_label": spec.label,
+            "backend_family": spec.family,
+            "provider": str(target.get("provider") or spec.provider),
+            "model": str(target.get("model") or runtime.get("model") or ""),
+            "device": str(target.get("device") or runtime.get("device") or "cpu"),
+            "backend_local": bool(spec.local),
+            "backend_gpu_supported": bool(spec.gpu_supported),
+            "backend_streaming_supported": bool(spec.streaming_supported),
+            "backend_embeddings_supported": bool(spec.embeddings_supported),
+        }
+    )
+    return runtime
+
+
 def _detect_artifact_type(message: str) -> str | None:
     text = (message or "").lower()
     if any(token in text for token in ("subject:", "from:", "reply-to", "attachment", "email")):
@@ -102,6 +205,38 @@ def _detect_artifact_type(message: str) -> str | None:
     if any(token in text for token in ("powershell", "cmd.exe", "rundll32", "schtasks", "registry")):
         return "malware"
     return None
+
+
+def _is_lightweight_chat(message: str) -> bool:
+    text = str(message or "").strip().lower()
+    if not text:
+        return False
+    if _detect_artifact_type(text):
+        return False
+    if "http://" in text or "https://" in text or "\n" in text:
+        return False
+    tokens = [token for token in text.replace("?", " ").replace("!", " ").split() if token]
+    if len(tokens) > 8:
+        return False
+    lightweight_phrases = {
+        "oi",
+        "ola",
+        "olá",
+        "bom dia",
+        "boa tarde",
+        "boa noite",
+        "tudo bem",
+        "pode seguir",
+        "proximo passo",
+        "próximo passo",
+        "continue",
+        "seguir",
+        "hello",
+        "hi",
+    }
+    if text in lightweight_phrases:
+        return True
+    return len(tokens) <= 3
 
 
 def select_skill(message: str, artifact_type: str | None = None) -> str:
@@ -222,19 +357,32 @@ def _prepare_chat_context(
 ) -> tuple[str, str, dict[str, str], list[dict[str, str]], dict[str, object]]:
     effective_session = session_id or "default"
     profile = response_mode_profile(response_mode)
-    history_limit = int(profile.get("history_limit") or 5)
-    kb_limit = int(profile.get("kb_limit") or 3)
-    kb_chars = int(profile.get("kb_chars") or 1100)
+    lightweight = _is_lightweight_chat(message)
+    history_limit = 1 if lightweight else int(profile.get("history_limit") or 5)
+    kb_limit = 0 if lightweight else int(profile.get("kb_limit") or 3)
+    kb_chars = 0 if lightweight else int(profile.get("kb_chars") or 1100)
     skill_name = select_skill(message)
     persistence.ensure_chat_session(
         session_id=effective_session,
         cliente=cliente,
         titulo=message.strip()[:80],
     )
-    session_context = _format_history(effective_session, limit=history_limit)
-    retrieval = knowledge_base_runtime.search_knowledge_base(query_text=message, limit=kb_limit)
-    knowledge_context = knowledge_base_runtime.format_retrieval_context(retrieval, max_chars=kb_chars)
-    vantage = vantage_gateway.retrieve_context(message)
+    session_context = "" if lightweight else _format_history(effective_session, limit=history_limit)
+    retrieval = (
+        {"sources": [], "matches": [], "query_terms": []}
+        if lightweight
+        else knowledge_base_runtime.search_knowledge_base(query_text=message, limit=kb_limit)
+    )
+    knowledge_context = (
+        ""
+        if lightweight
+        else knowledge_base_runtime.format_retrieval_context(retrieval, max_chars=kb_chars)
+    )
+    vantage = (
+        {"context": "", "sources": [], "matches": [], "modules": []}
+        if lightweight
+        else vantage_gateway.retrieve_context(message)
+    )
     combined_knowledge_context = "\n\n".join(
         section
         for section in (
@@ -271,6 +419,7 @@ def _prepare_chat_context(
     retrieval["vantage"] = vantage
     retrieval["sources"] = list(retrieval.get("sources") or []) + list(vantage.get("sources") or [])
     retrieval["matches"] = list(retrieval.get("matches") or []) + list(vantage.get("matches") or [])
+    retrieval["lightweight"] = lightweight
     return effective_session, skill_name, context, history_messages, retrieval
 
 
@@ -320,11 +469,12 @@ def _stream_ollama_events(
     messages: list[dict[str, str]],
     *,
     response_mode: str = _DEFAULT_RESPONSE_MODE,
+    model_override: str = "",
     num_predict_override: int | None = None,
 ) -> Iterator[dict[str, object]]:
     runtime = resolve_runtime()
     base_url = getattr(cfg, "OLLAMA_URL", "http://localhost:11434").rstrip("/")
-    model = resolve_ollama_model_for_mode(response_mode)
+    model = str(model_override or "").strip() or resolve_ollama_model_for_mode(response_mode)
     timeout = float(getattr(cfg, "LLM_TIMEOUT", 60))
     profile = response_mode_profile(response_mode)
     body = {
@@ -402,11 +552,13 @@ def _stream_ollama(
     messages: list[dict[str, str]],
     *,
     response_mode: str = _DEFAULT_RESPONSE_MODE,
+    model_override: str = "",
     num_predict_override: int | None = None,
 ) -> Iterator[str]:
     for item in _stream_ollama_events(
         messages,
         response_mode=response_mode,
+        model_override=model_override,
         num_predict_override=num_predict_override,
     ):
         if item.get("kind") == "delta":
@@ -417,18 +569,194 @@ def _call_ollama(
     messages: list[dict[str, str]],
     *,
     response_mode: str = _DEFAULT_RESPONSE_MODE,
+    model_override: str = "",
 ) -> str:
-    prompt_blob = "\n\n".join(
-        f"{item.get('role', 'user')}: {item.get('content', '')}"
-        for item in messages
-    )
+    prompt_blob = _serialize_messages(messages)
     record_prompt_audit(
         source="chat_service",
         provider="ollama",
-        model=resolve_ollama_model_for_mode(response_mode),
+        model=str(model_override or "").strip() or resolve_ollama_model_for_mode(response_mode),
         prompt_text=prompt_blob,
     )
-    return "".join(_stream_ollama(messages, response_mode=response_mode)).strip()
+    return "".join(
+        _stream_ollama(messages, response_mode=response_mode, model_override=model_override)
+    ).strip()
+
+
+def _extract_openai_content(payload: dict[str, object]) -> str:
+    choices = list(payload.get("choices") or []) if isinstance(payload, dict) else []
+    if not choices:
+        return ""
+    message = dict((choices[0] or {}).get("message") or {})
+    content = message.get("content")
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            text = str(item.get("text") or "").strip()
+            if text:
+                parts.append(text)
+        return "".join(parts).strip()
+    return ""
+
+
+def _call_anthropic(
+    messages: list[dict[str, str]],
+    *,
+    response_mode: str = _DEFAULT_RESPONSE_MODE,
+    model: str,
+) -> str:
+    auth = resolve_auth_context("anthropic")
+    credential = str(auth.get("credential") or "")
+    auth_method = str(auth.get("method") or "none")
+    if not credential:
+        raise RuntimeError("Credencial Anthropic não configurada.")
+
+    system_prompt = ""
+    request_messages: list[dict[str, str]] = []
+    for item in messages:
+        role = str(item.get("role") or "user").strip().lower()
+        content = str(item.get("content") or "")
+        if role == "system":
+            system_prompt = f"{system_prompt}\n\n{content}".strip() if system_prompt else content
+            continue
+        request_messages.append({"role": "assistant" if role == "assistant" else "user", "content": content})
+
+    timeout = float(getattr(cfg, "LLM_TIMEOUT", 60))
+    profile = response_mode_profile(response_mode)
+    prompt_blob = _serialize_messages(messages)
+    record_prompt_audit(
+        source="chat_service",
+        provider="anthropic",
+        model=model,
+        prompt_text=prompt_blob,
+    )
+    started = perf_counter()
+    try:
+        response = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                **(
+                    {"Authorization": f"Bearer {credential}"}
+                    if auth_method == "oauth"
+                    else {"x-api-key": credential}
+                ),
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": model,
+                "system": system_prompt,
+                "messages": request_messages,
+                "max_tokens": _chat_max_tokens(response_mode),
+                "temperature": float(profile.get("temperature") or 0.15),
+            },
+            timeout=timeout,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        content = "".join(
+            str(item.get("text") or "")
+            for item in list(payload.get("content") or [])
+            if isinstance(item, dict) and str(item.get("type") or "") == "text"
+        ).strip()
+        record_inference_event(
+            source="chat_service",
+            provider="anthropic",
+            model=model,
+            requested_device="remote",
+            effective_device="remote",
+            latency_ms=(perf_counter() - started) * 1000,
+            success=True,
+            fallback_used=False,
+        )
+        return content
+    except Exception as exc:
+        record_inference_event(
+            source="chat_service",
+            provider="anthropic",
+            model=model,
+            requested_device="remote",
+            effective_device="remote",
+            latency_ms=(perf_counter() - started) * 1000,
+            success=False,
+            fallback_used=False,
+            error=str(exc),
+        )
+        raise
+
+
+def _call_openai_compatible(
+    messages: list[dict[str, str]],
+    *,
+    response_mode: str = _DEFAULT_RESPONSE_MODE,
+    model: str,
+    endpoint: str,
+) -> str:
+    if not endpoint:
+        raise RuntimeError("SOCC_OPENAI_COMPAT_URL não configurada.")
+    if not model:
+        raise RuntimeError("SOCC_OPENAI_COMPAT_MODEL não configurado.")
+
+    auth = resolve_auth_context("openai-compatible")
+    api_key = str(auth.get("credential") or "")
+    headers = {"content-type": "application/json"}
+    if api_key:
+        headers["authorization"] = f"Bearer {api_key}"
+
+    timeout = float(getattr(cfg, "LLM_TIMEOUT", 60))
+    profile = response_mode_profile(response_mode)
+    prompt_blob = _serialize_messages(messages)
+    record_prompt_audit(
+        source="chat_service",
+        provider="openai-compatible",
+        model=model,
+        prompt_text=prompt_blob,
+    )
+    started = perf_counter()
+    try:
+        response = requests.post(
+            f"{endpoint.rstrip('/')}/chat/completions",
+            headers=headers,
+            json={
+                "model": model,
+                "messages": messages,
+                "temperature": float(profile.get("temperature") or 0.15),
+                "max_tokens": _chat_max_tokens(response_mode),
+                "stream": False,
+            },
+            timeout=timeout,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        content = _extract_openai_content(payload)
+        record_inference_event(
+            source="chat_service",
+            provider="openai-compatible",
+            model=model,
+            requested_device="remote",
+            effective_device="remote",
+            latency_ms=(perf_counter() - started) * 1000,
+            success=True,
+            fallback_used=False,
+        )
+        return content
+    except Exception as exc:
+        record_inference_event(
+            source="chat_service",
+            provider="openai-compatible",
+            model=model,
+            requested_device="remote",
+            effective_device="remote",
+            latency_ms=(perf_counter() - started) * 1000,
+            success=False,
+            fallback_used=False,
+            error=str(exc),
+        )
+        raise
 
 
 def stream_chat_reply_events(
@@ -436,17 +764,29 @@ def stream_chat_reply_events(
     session_id: str = "",
     cliente: str = "",
     response_mode: str = _DEFAULT_RESPONSE_MODE,
+    selected_backend: str = "",
+    selected_model: str = "",
 ) -> Iterator[dict[str, object]]:
     mode = normalize_response_mode(response_mode)
     profile = response_mode_profile(mode)
-    effective_model = resolve_ollama_model_for_mode(mode)
+    selected_target = _resolve_chat_target(
+        response_mode=mode,
+        selected_backend=selected_backend,
+        selected_model=selected_model,
+    )
+    effective_model = str(selected_target.get("model") or "")
     effective_session, skill_name, context, history_messages, retrieval = _prepare_chat_context(
         message,
         session_id=session_id,
         cliente=cliente,
         response_mode=mode,
     )
-    runtime = runtime_brief()
+    runtime = _build_selected_runtime(
+        {
+            **selected_target,
+            "model": effective_model,
+        }
+    )
     yield {
         "event": "meta",
         "session_id": effective_session,
@@ -454,9 +794,11 @@ def stream_chat_reply_events(
         "runtime": runtime,
         "response_mode": mode,
         "model": effective_model,
+        "selected_backend": str(selected_target.get("backend") or ""),
     }
 
     content = ""
+    lightweight = bool(retrieval.get("lightweight"))
     completion_meta: dict[str, object] = {
         "done_reason": "",
         "truncated": False,
@@ -474,11 +816,7 @@ def stream_chat_reply_events(
             {"role": "user", "content": _build_user_prompt(message, cliente, context, response_mode=mode)}
         )
         try:
-            if getattr(cfg, "LLM_PROVIDER", "ollama").lower() != "ollama":
-                content = _fallback_response(message, skill_name)
-                for delta in _chunk_text(content, chunk_size=int(profile.get("chunk_size") or _STREAM_CHUNK_SIZE)):
-                    yield {"event": "delta", "delta": delta, "skill": skill_name}
-            else:
+            if selected_target["backend"] == "ollama":
                 runtime_cfg = resolve_runtime()
                 with inference_guard(runtime_cfg) as (allowed, reason):
                     if not allowed:
@@ -502,7 +840,13 @@ def stream_chat_reply_events(
                             yield {"event": "delta", "delta": delta, "skill": skill_name}
                     else:
                         parts: list[str] = []
-                        for item in _stream_ollama_events(messages, response_mode=mode):
+                        num_predict_override = 96 if lightweight else None
+                        for item in _stream_ollama_events(
+                            messages,
+                            response_mode=mode,
+                            model_override=effective_model,
+                            num_predict_override=num_predict_override,
+                        ):
                             if item.get("kind") == "delta":
                                 delta = str(item.get("delta") or "")
                                 parts.append(delta)
@@ -528,6 +872,7 @@ def stream_chat_reply_events(
                             for item in _stream_ollama_events(
                                 continuation_messages,
                                 response_mode=mode,
+                                model_override=effective_model,
                             ):
                                 if item.get("kind") == "delta":
                                     delta = str(item.get("delta") or "")
@@ -540,10 +885,27 @@ def stream_chat_reply_events(
                             )
                             completion_meta["truncated"] = bool(continuation_meta.get("truncated"))
                             content = f"{content}{''.join(continuation_parts)}".strip()
+            elif selected_target["backend"] == "anthropic":
+                content = _call_anthropic(messages, response_mode=mode, model=effective_model)
+                for delta in _chunk_text(content, chunk_size=int(profile.get("chunk_size") or _STREAM_CHUNK_SIZE)):
+                    yield {"event": "delta", "delta": delta, "skill": skill_name}
+            elif selected_target["backend"] == "openai-compatible":
+                content = _call_openai_compatible(
+                    messages,
+                    response_mode=mode,
+                    model=effective_model,
+                    endpoint=str(selected_target.get("endpoint") or ""),
+                )
+                for delta in _chunk_text(content, chunk_size=int(profile.get("chunk_size") or _STREAM_CHUNK_SIZE)):
+                    yield {"event": "delta", "delta": delta, "skill": skill_name}
+            else:
+                content = _fallback_response(message, skill_name)
+                for delta in _chunk_text(content, chunk_size=int(profile.get("chunk_size") or _STREAM_CHUNK_SIZE)):
+                    yield {"event": "delta", "delta": delta, "skill": skill_name}
         except Exception as exc:
-            _logger.exception("Falha ao consultar a LLM local no chat do SOC Copilot.")
+            _logger.exception("Falha ao consultar a LLM no chat do SOC Copilot.")
             content = (
-                f"Falha ao consultar a LLM local: {exc}. "
+                f"Falha ao consultar a LLM selecionada: {exc}. "
                 f"Skill selecionada: `{skill_name}`."
             )
             for delta in _chunk_text(content, chunk_size=int(profile.get("chunk_size") or _STREAM_CHUNK_SIZE)):
@@ -562,6 +924,7 @@ def stream_chat_reply_events(
             "runtime": runtime,
             "metadata": {
                 "response_mode": mode,
+                "selected_backend": str(selected_target.get("backend") or ""),
                 "model": effective_model,
                 "done_reason": str(completion_meta.get("done_reason") or ""),
                 "truncated": bool(completion_meta.get("truncated")),
@@ -586,6 +949,7 @@ def stream_chat_reply_events(
             "runtime": runtime,
             "metadata": {
                 "response_mode": mode,
+                "selected_backend": str(selected_target.get("backend") or ""),
                 "model": effective_model,
                 "done_reason": str(completion_meta.get("done_reason") or ""),
                 "truncated": bool(completion_meta.get("truncated")),
@@ -606,6 +970,8 @@ def generate_chat_reply(
     session_id: str = "",
     cliente: str = "",
     response_mode: str = _DEFAULT_RESPONSE_MODE,
+    selected_backend: str = "",
+    selected_model: str = "",
 ) -> dict[str, str]:
     final_response: dict[str, str] | None = None
     for event in stream_chat_reply_events(
@@ -613,6 +979,8 @@ def generate_chat_reply(
         session_id=session_id,
         cliente=cliente,
         response_mode=response_mode,
+        selected_backend=selected_backend,
+        selected_model=selected_model,
     ):
         if event.get("event") == "final":
             data = event.get("data")

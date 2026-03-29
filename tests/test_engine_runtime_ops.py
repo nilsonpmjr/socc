@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import sys
 import tempfile
+import gc
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
@@ -201,6 +203,9 @@ try:
     messages = list_chat_session_messages_payload("ops-session", limit=10)
     check("engine_ops_chat_sessions", any(item.get("session_id") == "ops-session" for item in sessions.get("sessions", [])))
     check("engine_ops_chat_messages", len(messages.get("messages", [])) == 1)
+    checkpoint = persistence.checkpoint_db()
+    check("engine_ops_checkpoint_mode", checkpoint.get("mode") == "truncate")
+    check("engine_ops_checkpoint_result", isinstance(checkpoint.get("result"), list))
 
     runtime_status = runtime_status_payload()
     runtime_benchmark = runtime_benchmark_payload(concurrency=99, hold_ms=9999, probe=False)
@@ -221,11 +226,33 @@ try:
         check("engine_ops_resolve_bind_port_attempts", attempts == [8080, 8081, 8082])
     finally:
         engine_module._can_bind = original_can_bind  # type: ignore[assignment]
+
+    corrupt_db_path = Path(tmpdir.name) / "engine_runtime_ops_corrupt.sqlite3"
+    corrupt_db_path.write_bytes(b"isto nao eh um sqlite valido")
+    persistence.DB_PATH = corrupt_db_path
+    try:
+        persistence.init_db()
+        with persistence.get_conn() as conn:
+            recovered_tables = {
+                row["name"]
+                for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+            }
+        check("engine_ops_corrupt_db_recovered", "chat_sessions" in recovered_tables and "runs" in recovered_tables)
+        check(
+            "engine_ops_corrupt_db_archived",
+            bool(list(Path(tmpdir.name).glob("engine_runtime_ops_corrupt.sqlite3.corrupted.*"))),
+        )
+    except PermissionError as exc:
+        check("engine_ops_corrupt_db_recovered", os.name == "nt", str(exc))
 except Exception as exc:
     check("engine_runtime_ops_flow", False, str(exc))
 finally:
     persistence.DB_PATH = original_db_path
-    tmpdir.cleanup()
+    gc.collect()
+    try:
+        tmpdir.cleanup()
+    except PermissionError:
+        pass
 
 
 print(f"\n{'='*60}")

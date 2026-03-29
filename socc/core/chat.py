@@ -18,12 +18,16 @@ def generate_chat_reply(
     session_id: str = "",
     cliente: str = "",
     response_mode: str = "balanced",
+    selected_backend: str = "",
+    selected_model: str = "",
 ) -> dict[str, Any]:
     return chat_service.generate_chat_reply(
         message=message,
         session_id=session_id,
         cliente=cliente,
         response_mode=response_mode,
+        selected_backend=selected_backend,
+        selected_model=selected_model,
     )
 
 
@@ -32,10 +36,14 @@ def stream_chat_reply_events(
     session_id: str = "",
     cliente: str = "",
     response_mode: str = "balanced",
+    selected_backend: str = "",
+    selected_model: str = "",
 ) -> Iterator[dict[str, object]]:
     return chat_service.stream_chat_reply_events(
         message=message,
         session_id=session_id,
         cliente=cliente,
         response_mode=response_mode,
+        selected_backend=selected_backend,
+        selected_model=selected_model,
     )

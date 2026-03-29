@@ -8,12 +8,17 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 
-soc_copilot/soc_copilot.db
-soc_copilot.db
-*.db
-# SOC_Copilot_*.md
-#tem  Revisao_Fase*.md
+# Build artifacts
+socc.egg-info/
 
+# Databases
+soc_copilot/soc_copilot.db*
+*.db
+*.db-wal
+*.db-shm
+soc_copilot.db.corrupted
+
+# Logs
 Notas_Geradas/
 Alertas_Gerados/
 

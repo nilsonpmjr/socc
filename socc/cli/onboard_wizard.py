@@ -25,6 +25,7 @@ from socc.cli.prompt_runtime import (
     summary,
     warning,
 )
+from socc.gateway.llm_gateway import detect_gpu_hardware
 
 TOTAL_STEPS = 12
 
@@ -77,19 +78,10 @@ def _test_anthropic_key(api_key: str) -> bool:
 
 
 def _detect_gpu() -> str | None:
-    """Return GPU description or None."""
-    if os.environ.get("CUDA_VISIBLE_DEVICES") is not None:
-        return "CUDA (via CUDA_VISIBLE_DEVICES)"
-    try:
-        import subprocess
-        result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
-            capture_output=True, text=True, timeout=5,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip().split("\n")[0]
-    except Exception:
-        pass
+    """Return GPU description when Ollama can use it, else None."""
+    snapshot = detect_gpu_hardware()
+    if snapshot.get("available"):
+        return str(snapshot.get("label") or "").strip() or "GPU"
     return None
 
 
@@ -230,9 +222,15 @@ def step_backend(env: dict[str, str]) -> None:
         if reachable:
             detected.append(name)
 
+    gpu_snapshot = detect_gpu_hardware()
     gpu = _detect_gpu()
     if gpu:
         success(f"GPU detectada: {gpu}")
+    elif gpu_snapshot.get("label"):
+        warning(
+            "GPU detectada mas sem suporte útil para o Ollama neste host: "
+            f"{gpu_snapshot.get('label')}. Device será configurado como 'cpu'."
+        )
     else:
         warning("Nenhuma GPU detectada. Device será configurado como 'cpu'.")
 

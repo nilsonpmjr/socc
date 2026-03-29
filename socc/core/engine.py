@@ -31,6 +31,8 @@ from socc.gateway.llm_gateway import (
     list_backend_models,
     benchmark_runtime,
     record_analysis_event,
+    resolve_api_key,
+    resolve_auth_context,
     runtime_brief,
     runtime_status,
     warmup_backend_model,
@@ -210,6 +212,8 @@ def prepare_chat_submission_inputs(body: dict[str, Any] | None) -> dict[str, Any
         "classificacao": str(payload.get("classificacao", "auto") or "auto").upper(),
         "cliente": str(payload.get("cliente", "") or ""),
         "response_mode": response_mode,
+        "selected_backend": str(payload.get("selected_backend", "") or "").strip(),
+        "selected_model": str(payload.get("selected_model", "") or "").strip(),
     }
 
 
@@ -379,8 +383,14 @@ def _analysis_gateway_contract(*, payload_text: str, cliente: str, regra: str) -
     ).to_dict()
 
 
-def _chat_gateway_contract(*, stream: bool, success: bool, error: str = "") -> dict[str, Any]:
-    runtime = runtime_brief()
+def _chat_gateway_contract(
+    *,
+    stream: bool,
+    success: bool,
+    error: str = "",
+    runtime_override: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    runtime = runtime_override if isinstance(runtime_override, dict) else runtime_brief()
     return GatewayResponseContract(
         provider=str(runtime.get("provider", "")),
         model=str(runtime.get("model", "")),
@@ -865,12 +875,18 @@ def _merge_chat_metadata(
     *,
     cliente: str = "",
     response_mode: str = "",
+    selected_backend: str = "",
+    selected_model: str = "",
 ) -> dict[str, Any]:
     metadata = dict(response_metadata or {})
     if cliente:
         metadata.setdefault("cliente", cliente)
     if response_mode:
         metadata.setdefault("response_mode", response_mode)
+    if selected_backend:
+        metadata.setdefault("selected_backend", selected_backend)
+    if selected_model:
+        metadata.setdefault("selected_model", selected_model)
     return metadata
 
 
@@ -881,6 +897,8 @@ def chat_submission(
     classificacao: str = "AUTO",
     cliente: str = "",
     response_mode: str = "balanced",
+    selected_backend: str = "",
+    selected_model: str = "",
     threat_intel_enabled: bool = True,
     source: str = "chat_payload",
 ) -> dict[str, Any]:
@@ -901,6 +919,8 @@ def chat_submission(
         session_id=effective_session,
         cliente=cliente,
         response_mode=response_mode,
+        selected_backend=selected_backend,
+        selected_model=selected_model,
     )
 
 
@@ -925,6 +945,8 @@ async def stream_chat_payload_events(
     classificacao: str,
     cliente: str,
     response_mode: str = "balanced",
+    selected_backend: str = "",
+    selected_model: str = "",
     threat_intel_enabled: bool = True,
     source: str = "chat_payload",
 ):
@@ -936,6 +958,8 @@ async def stream_chat_payload_events(
             "skill": selected_skill,
             "runtime": runtime_brief(),
             "response_mode": response_mode,
+            "selected_backend": selected_backend,
+            "selected_model": selected_model,
         },
     }
     for step, phase, label in (
@@ -970,6 +994,8 @@ async def stream_chat_submission_events(
     classificacao: str = "AUTO",
     cliente: str = "",
     response_mode: str = "balanced",
+    selected_backend: str = "",
+    selected_model: str = "",
     threat_intel_enabled: bool = True,
     source: str = "chat_payload",
 ):
@@ -981,6 +1007,8 @@ async def stream_chat_submission_events(
             classificacao=classificacao,
             cliente=cliente,
             response_mode=response_mode,
+            selected_backend=selected_backend,
+            selected_model=selected_model,
             threat_intel_enabled=threat_intel_enabled,
             source=source,
         ):
@@ -992,6 +1020,8 @@ async def stream_chat_submission_events(
         session_id=effective_session,
         cliente=cliente,
         response_mode=response_mode,
+        selected_backend=selected_backend,
+        selected_model=selected_model,
     ):
         event_name = str(event.get("event") or "message")
         if event_name == "final":
@@ -1205,15 +1235,139 @@ def export_analysis_submission(
 
 
 def list_chat_sessions_payload(limit: int = 50) -> dict[str, Any]:
-    return {"sessions": storage_runtime.list_chat_sessions(limit=limit)}
+    try:
+        sessions = storage_runtime.list_chat_sessions(limit=limit)
+        return {"sessions": sessions, "error": ""}
+    except Exception as exc:
+        return {"sessions": [], "error": str(exc)}
 
 
 def list_chat_session_messages_payload(session_id: str, limit: int = 100) -> dict[str, Any]:
     capped = max(1, min(limit, 200))
+    try:
+        messages = storage_runtime.list_chat_messages(session_id=session_id, limit=capped)
+        return {
+            "session_id": session_id,
+            "messages": messages,
+            "error": "",
+        }
+    except Exception as exc:
+        return {
+            "session_id": session_id,
+            "messages": [],
+            "error": str(exc),
+        }
+
+
+def _runtime_model_profiles() -> dict[str, str]:
+    default_model = os.getenv("OLLAMA_MODEL", "").strip()
     return {
-        "session_id": session_id,
-        "messages": storage_runtime.list_chat_messages(session_id=session_id, limit=capped),
+        "fast": os.getenv("SOCC_OLLAMA_FAST_MODEL", "llama3.2:3b").strip(),
+        "balanced": os.getenv("SOCC_OLLAMA_BALANCED_MODEL", default_model).strip() or default_model,
+        "deep": os.getenv("SOCC_OLLAMA_DEEP_MODEL", default_model).strip() or default_model,
+        "default": default_model,
     }
+
+
+def _runtime_model_options(
+    catalog: dict[str, Any] | None = None,
+    *,
+    runtime_payload: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    profiles = _runtime_model_profiles()
+    current_runtime = ((runtime_payload or {}).get("runtime") or {}) if isinstance(runtime_payload, dict) else {}
+    current_backend = str(current_runtime.get("backend") or current_runtime.get("provider") or "ollama").strip()
+    current_model = str(current_runtime.get("model") or "").strip()
+
+    model_modes: dict[str, list[str]] = {}
+    for mode in ("fast", "balanced", "deep"):
+        model_name = str(profiles.get(mode) or "").strip()
+        if not model_name:
+            continue
+        bucket = model_modes.setdefault(model_name, [])
+        if mode not in bucket:
+            bucket.append(mode)
+
+    available: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for item in list((catalog or {}).get("models") or []):
+        model_name = str((item or {}).get("name") or "").strip()
+        if not model_name:
+            continue
+        option_id = f"ollama::{model_name}"
+        if option_id in seen_ids:
+            continue
+        seen_ids.add(option_id)
+        mapped_modes = model_modes.get(model_name, [])
+        preferred_mode = mapped_modes[0] if mapped_modes else "balanced"
+        summary = "Local"
+        if mapped_modes:
+            summary = f"Local · {' / '.join(mode.title() for mode in mapped_modes)}"
+        available.append(
+            {
+                "id": option_id,
+                "label": model_name,
+                "model": model_name,
+                "backend": "ollama",
+                "provider": "ollama",
+                "response_mode": preferred_mode,
+                "cloud": False,
+                "configured": True,
+                "disabled_reason": "",
+                "summary": summary,
+                "selected": current_backend == "ollama" and current_model == model_name,
+            }
+        )
+
+    anthropic_auth = resolve_auth_context("anthropic")
+    anthropic_ready = bool(anthropic_auth.get("credential"))
+    anthropic_auth_label = "OAuth" if anthropic_auth.get("method") == "oauth" else "API key"
+    for label, model_name, mode in (
+        ("Claude Haiku 4.5", "claude-haiku-4-5-20251001", "fast"),
+        ("Claude Sonnet 4", "claude-sonnet-4-20250514", "balanced"),
+        ("Claude Opus 4", "claude-opus-4-20250514", "deep"),
+    ):
+        available.append(
+            {
+                "id": f"anthropic::{model_name}",
+                "label": label,
+                "model": model_name,
+                "backend": "anthropic",
+                "provider": "anthropic",
+                "response_mode": mode,
+                "cloud": True,
+                "configured": anthropic_ready,
+                "disabled_reason": "" if anthropic_ready else "Faça login Claude via OAuth no onboarding ou informe uma API key.",
+                "summary": f"Cloud · Claude · {mode.title()} · {anthropic_auth_label if anthropic_ready else 'login pendente'}",
+                "selected": current_backend == "anthropic" and current_model == model_name,
+            }
+        )
+
+    openai_auth = resolve_auth_context("openai-compatible")
+    openai_endpoint = os.getenv("SOCC_OPENAI_COMPAT_URL", "").strip() or ("https://api.openai.com/v1" if openai_auth.get("credential") else "")
+    openai_model = os.getenv("SOCC_OPENAI_COMPAT_MODEL", "").strip() or ("gpt-5-codex" if openai_auth.get("credential") else "")
+    openai_ready = bool(openai_model and openai_endpoint and openai_auth.get("credential"))
+    openai_auth_label = "OAuth" if openai_auth.get("method") == "oauth" else "API key"
+    available.append(
+        {
+            "id": f"openai-compatible::{openai_model or 'codex'}",
+            "label": "Codex",
+            "model": openai_model,
+            "backend": "openai-compatible",
+            "provider": "openai-compatible",
+            "response_mode": "deep",
+            "cloud": True,
+            "configured": openai_ready,
+            "disabled_reason": "" if openai_ready else "Faça login Codex/OpenAI via OAuth no onboarding ou configure gateway + modelo.",
+            "summary": (
+                f"Cloud · Codex · {openai_model} · {openai_auth_label}"
+                if openai_ready and openai_model
+                else "Cloud · Codex · login/configuração pendente"
+            ),
+            "selected": current_backend == "openai-compatible" and current_model == openai_model,
+        }
+    )
+    return available
 
 
 def _active_agent_payload() -> dict[str, Any]:
@@ -1254,7 +1408,12 @@ def control_center_summary_payload(limit_sessions: int = 12) -> dict[str, Any]:
     agent_payload = _active_agent_payload()
     service_payload = runtime_service_status(home)
     vantage_payload = vantage_status_payload()
-    recent_sessions = storage_runtime.list_chat_sessions(limit=max(1, min(limit_sessions, 30)))
+    sessions_error = ""
+    try:
+        recent_sessions = storage_runtime.list_chat_sessions(limit=max(1, min(limit_sessions, 30)))
+    except Exception as exc:
+        recent_sessions = []
+        sessions_error = str(exc)
     checks = {
         "runtime_home_exists": home.exists(),
         "env_file_exists": (home / ".env").exists(),
@@ -1267,12 +1426,8 @@ def control_center_summary_payload(limit_sessions: int = 12) -> dict[str, Any]:
         "runtime": runtime_payload,
         "runtime_models": {
             "catalog": available_models,
-            "profiles": {
-                "fast": os.getenv("SOCC_OLLAMA_FAST_MODEL", "llama3.2:3b"),
-                "balanced": os.getenv("SOCC_OLLAMA_BALANCED_MODEL", os.getenv("OLLAMA_MODEL", "")),
-                "deep": os.getenv("SOCC_OLLAMA_DEEP_MODEL", os.getenv("OLLAMA_MODEL", "")),
-                "default": os.getenv("OLLAMA_MODEL", ""),
-            },
+            "profiles": _runtime_model_profiles(),
+            "available": _runtime_model_options(available_models, runtime_payload=runtime_payload),
             "keep_alive": os.getenv("SOCC_OLLAMA_KEEP_ALIVE", "15m"),
         },
         "service": service_payload,
@@ -1286,6 +1441,7 @@ def control_center_summary_payload(limit_sessions: int = 12) -> dict[str, Any]:
         "sessions": {
             "count": len(recent_sessions),
             "items": recent_sessions,
+            "error": sessions_error,
         },
         "diagnostics": {
             "paths": {
@@ -1295,6 +1451,7 @@ def control_center_summary_payload(limit_sessions: int = 12) -> dict[str, Any]:
             },
             "checks": checks,
             "feature_flags": feature_flags_payload(),
+            "chat_storage_error": sessions_error,
         },
     }
 
@@ -1303,6 +1460,7 @@ def select_runtime_model_payload(
     *,
     response_mode: str,
     model: str,
+    backend: str = "ollama",
     home: Path | None = None,
 ) -> dict[str, Any]:
     mode = str(response_mode or "").strip().lower()
@@ -1310,24 +1468,45 @@ def select_runtime_model_payload(
         raise ValueError("response_mode inválido. Use fast, balanced ou deep.")
 
     normalized_model = str(model or "").strip()
-    if not normalized_model:
+    normalized_backend = str(backend or "ollama").strip().lower()
+    if normalized_backend not in {"ollama", "anthropic", "openai-compatible"}:
+        raise ValueError("backend inválido. Use ollama, anthropic ou openai-compatible.")
+    if normalized_backend == "openai-compatible" and not normalized_model:
+        normalized_model = "gpt-5-codex"
+    if normalized_backend != "openai-compatible" and not normalized_model:
         raise ValueError("model é obrigatório.")
 
     env_file = runtime_home(home) / ".env"
-    env_key = {
-        "fast": "SOCC_OLLAMA_FAST_MODEL",
-        "balanced": "SOCC_OLLAMA_BALANCED_MODEL",
-        "deep": "SOCC_OLLAMA_DEEP_MODEL",
-    }[mode]
-    update_env_assignment(env_file, env_key, normalized_model)
-    os.environ[env_key] = normalized_model
-
-    if mode == "balanced":
-        update_env_assignment(env_file, "OLLAMA_MODEL", normalized_model)
-        os.environ["OLLAMA_MODEL"] = normalized_model
+    if normalized_backend == "ollama":
+        env_key = {
+            "fast": "SOCC_OLLAMA_FAST_MODEL",
+            "balanced": "SOCC_OLLAMA_BALANCED_MODEL",
+            "deep": "SOCC_OLLAMA_DEEP_MODEL",
+        }[mode]
+        update_env_assignment(env_file, env_key, normalized_model)
+        os.environ[env_key] = normalized_model
+        if mode == "balanced":
+            update_env_assignment(env_file, "OLLAMA_MODEL", normalized_model)
+            os.environ["OLLAMA_MODEL"] = normalized_model
+    elif normalized_backend == "anthropic":
+        update_env_assignment(env_file, "LLM_PROVIDER", "anthropic")
+        update_env_assignment(env_file, "SOCC_INFERENCE_BACKEND", "anthropic")
+        update_env_assignment(env_file, "LLM_MODEL", normalized_model)
+        os.environ["LLM_PROVIDER"] = "anthropic"
+        os.environ["SOCC_INFERENCE_BACKEND"] = "anthropic"
+        os.environ["LLM_MODEL"] = normalized_model
+    else:
+        update_env_assignment(env_file, "LLM_PROVIDER", "openai-compatible")
+        update_env_assignment(env_file, "SOCC_INFERENCE_BACKEND", "openai-compatible")
+        if normalized_model:
+            update_env_assignment(env_file, "SOCC_OPENAI_COMPAT_MODEL", normalized_model)
+            os.environ["SOCC_OPENAI_COMPAT_MODEL"] = normalized_model
+        os.environ["LLM_PROVIDER"] = "openai-compatible"
+        os.environ["SOCC_INFERENCE_BACKEND"] = "openai-compatible"
 
     return {
         "response_mode": mode,
+        "backend": normalized_backend,
         "model": normalized_model,
         "persisted_env_file": str(env_file),
         "control_center": control_center_summary_payload(),
@@ -1429,6 +1608,13 @@ def select_vantage_modules_payload(
 def runtime_status_payload() -> dict[str, Any]:
     payload = runtime_status()
     payload["features"] = feature_flags_payload()
+    available_models = list_backend_models()
+    payload["runtime_models"] = {
+        "catalog": available_models,
+        "profiles": _runtime_model_profiles(),
+        "available": _runtime_model_options(available_models, runtime_payload=payload),
+        "keep_alive": os.getenv("SOCC_OLLAMA_KEEP_ALIVE", "15m"),
+    }
     return payload
 
 
@@ -1481,6 +1667,8 @@ def chat_reply(
     session_id: str = "",
     cliente: str = "",
     response_mode: str = "balanced",
+    selected_backend: str = "",
+    selected_model: str = "",
 ) -> dict[str, Any]:
     storage_runtime.init_db()
     response = chat_runtime.generate_chat_reply(
@@ -1488,6 +1676,8 @@ def chat_reply(
         session_id=session_id,
         cliente=cliente,
         response_mode=response_mode,
+        selected_backend=selected_backend,
+        selected_model=selected_model,
     )
     response_type = str(response.get("type") or "message")
     content = str(response.get("content") or "")
@@ -1506,6 +1696,7 @@ def chat_reply(
             stream=False,
             success=response_type != "error",
             error=error_message if response_type == "error" else "",
+            runtime_override=runtime,
         ),
         content=content,
         message=error_message if response_type == "error" else "",
@@ -1513,6 +1704,8 @@ def chat_reply(
             response.get("metadata") if isinstance(response.get("metadata"), dict) else None,
             cliente=cliente,
             response_mode=response_mode,
+            selected_backend=selected_backend,
+            selected_model=selected_model,
         ),
     ).to_dict()
 
@@ -1522,6 +1715,8 @@ def stream_chat_events(
     session_id: str = "",
     cliente: str = "",
     response_mode: str = "balanced",
+    selected_backend: str = "",
+    selected_model: str = "",
 ):
     storage_runtime.init_db()
     for event in chat_runtime.stream_chat_reply_events(
@@ -1529,6 +1724,8 @@ def stream_chat_events(
         session_id=session_id,
         cliente=cliente,
         response_mode=response_mode,
+        selected_backend=selected_backend,
+        selected_model=selected_model,
     ):
         if event.get("event") != "final":
             yield event
@@ -1556,6 +1753,7 @@ def stream_chat_events(
                     stream=True,
                     success=response_type != "error",
                     error=error_message if response_type == "error" else "",
+                    runtime_override=runtime,
                 ),
                 content=content,
                 message=error_message if response_type == "error" else "",
@@ -1563,6 +1761,8 @@ def stream_chat_events(
                     data.get("metadata") if isinstance(data.get("metadata"), dict) else None,
                     cliente=cliente,
                     response_mode=response_mode,
+                    selected_backend=selected_backend,
+                    selected_model=selected_model,
                 ),
             ).to_dict(),
         }

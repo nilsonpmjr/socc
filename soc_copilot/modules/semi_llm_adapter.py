@@ -29,6 +29,8 @@ import logging
 from copy import deepcopy
 from time import perf_counter
 
+import requests
+
 _logger = logging.getLogger(__name__)
 
 from soc_copilot.modules.classification_helper import analyze as deterministic_analyze
@@ -38,6 +40,7 @@ from socc.gateway.llm_gateway import (
     inference_guard,
     record_inference_event,
     record_prompt_audit,
+    resolve_auth_context,
     resolve_runtime,
 )
 
@@ -864,7 +867,9 @@ def _call_llm_anthropic(
     """
     Chama o Claude via API Anthropic (nuvem).
     """
-    api_key = getattr(cfg, "ANTHROPIC_API_KEY", "")
+    auth = resolve_auth_context("anthropic")
+    api_key = str(auth.get("credential") or getattr(cfg, "ANTHROPIC_API_KEY", ""))
+    auth_method = str(auth.get("method") or "api_key")
     if not api_key:
         try:
             from socc.gateway.llm_gateway import resolve_api_key
@@ -883,23 +888,6 @@ def _call_llm_anthropic(
             success=False,
             fallback_used=fallback_used,
             error="missing_api_key",
-        )
-        return fallback_analysis
-
-    try:
-        import anthropic as _anthropic
-    except ImportError:
-        _logger.error("Pacote 'anthropic' não instalado; usando análise determinística.")
-        record_inference_event(
-            source="semi_llm_adapter",
-            provider="anthropic",
-            model=getattr(cfg, "LLM_MODEL", "claude-haiku-4-5-20251001"),
-            requested_device="gpu" if resolve_runtime().gpu_available else "cpu",
-            effective_device="remote",
-            latency_ms=0,
-            success=False,
-            fallback_used=fallback_used,
-            error="anthropic_package_missing",
         )
         return fallback_analysis
 
@@ -949,15 +937,56 @@ def _call_llm_anthropic(
     )
 
     try:
-        client = _anthropic.Anthropic(api_key=api_key)
-        message = client.messages.create(
-            model=model,
-            max_tokens=2048,
-            system=_build_system_prompt(llm_input),
-            messages=[{"role": "user", "content": user_prompt}],
-            timeout=timeout,
-        )
-        response_text = message.content[0].text.strip()
+        if auth_method == "oauth":
+            response = requests.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "max_tokens": 2048,
+                    "system": _build_system_prompt(llm_input),
+                    "messages": [{"role": "user", "content": user_prompt}],
+                },
+                timeout=timeout,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            response_text = "".join(
+                str(item.get("text") or "")
+                for item in list(payload.get("content") or [])
+                if isinstance(item, dict) and str(item.get("type") or "") == "text"
+            ).strip()
+        else:
+            try:
+                import anthropic as _anthropic
+            except ImportError:
+                _logger.error("Pacote 'anthropic' não instalado; usando análise determinística.")
+                record_inference_event(
+                    source="semi_llm_adapter",
+                    provider="anthropic",
+                    model=getattr(cfg, "LLM_MODEL", "claude-haiku-4-5-20251001"),
+                    requested_device="gpu" if resolve_runtime().gpu_available else "cpu",
+                    effective_device="remote",
+                    latency_ms=0,
+                    success=False,
+                    fallback_used=fallback_used,
+                    error="anthropic_package_missing",
+                )
+                return fallback_analysis
+
+            client = _anthropic.Anthropic(api_key=api_key)
+            message = client.messages.create(
+                model=model,
+                max_tokens=2048,
+                system=_build_system_prompt(llm_input),
+                messages=[{"role": "user", "content": user_prompt}],
+                timeout=timeout,
+            )
+            response_text = message.content[0].text.strip()
         if response_text.startswith("```"):
             parts = response_text.split("```")
             response_text = parts[1] if len(parts) > 1 else response_text

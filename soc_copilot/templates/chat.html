@@ -84,10 +84,8 @@
             <option value="LTF">LTF</option>
           </select>
 
-          <select class="select-cls" id="select-response-mode" title="Modo de resposta">
-            <option value="fast">Fast</option>
-            <option value="balanced">Balanced</option>
-            <option value="deep">Deep</option>
+          <select class="select-cls" id="select-model" title="Modelo">
+            <option value="">Carregando modelos...</option>
           </select>
 
           <input type="text" id="input-cliente" placeholder="Cliente..." maxlength="40">
@@ -389,6 +387,7 @@ const DEFAULT_CHAT_SETTINGS = {
   preferStreaming: true,
   autoOpenDraft: false,
   defaultResponseMode: 'balanced',
+  defaultModelSelection: '',
   defaultClassification: 'auto',
   defaultClient: '',
   defaultExportFormat: 'markdown',
@@ -426,7 +425,7 @@ const btnControlAgentApply = $('btn-control-agent-apply');
 const btnSettingsReset = $('btn-settings-reset');
 const fileInput     = $('file-input');
 const selectCls     = $('select-cls');
-const selectResponseMode = $('select-response-mode');
+const selectModel   = $('select-model');
 const inputCliente  = $('input-cliente');
 const charCount     = $('char-count');
 const runtimeBadge  = $('runtime-badge');
@@ -510,7 +509,6 @@ function applySettings() {
   if (!selectCls.dataset.userTouched) {
     selectCls.value = settings.defaultClassification || 'auto';
   }
-  selectResponseMode.value = settings.defaultResponseMode || 'balanced';
   if (!inputCliente.dataset.userTouched) {
     inputCliente.value = settings.defaultClient || '';
   }
@@ -530,6 +528,91 @@ function syncSettingsForm() {
   settingsDefaultExport.value = state.settings.defaultExportFormat || 'markdown';
   settingsSessionSort.value = state.settings.sessionSort || 'recent';
   settingsShowRuntimeBadge.checked = !!state.settings.showRuntimeBadge;
+}
+
+function renderComposerModelSelect(runtimeModels) {
+  const options = Array.isArray(runtimeModels?.available) ? runtimeModels.available : [];
+  if (!options.length) {
+    selectModel.innerHTML = '<option value="">Sem modelos detectados</option>';
+    return;
+  }
+
+  let selectedId = '';
+  if (selectModel.dataset.userTouched && selectModel.value) {
+    selectedId = selectModel.value;
+  } else if (state.settings.defaultModelSelection) {
+    selectedId = state.settings.defaultModelSelection;
+  }
+
+  const selectedOption = options.find(item => item.id === selectedId && item.configured);
+  const runtimeDefault = options.find(item => item.selected && item.configured);
+  const firstEnabled = options.find(item => item.configured);
+  const fallbackOption = selectedOption || runtimeDefault || firstEnabled || options[0];
+
+  selectModel.innerHTML = options.map(item => {
+    const hint = item.summary ? ` · ${item.summary}` : '';
+    return `
+      <option
+        value="${esc(item.id || '')}"
+        data-backend="${esc(item.backend || '')}"
+        data-model="${esc(item.model || '')}"
+        data-response-mode="${esc(item.response_mode || 'balanced')}"
+        ${item.configured ? '' : 'disabled'}
+      >
+        ${esc((item.label || item.model || 'modelo') + hint)}
+      </option>
+    `;
+  }).join('');
+
+  if (fallbackOption?.id) {
+    selectModel.value = fallbackOption.id;
+    state.settings.defaultModelSelection = fallbackOption.id;
+    persistChatSettings();
+  }
+}
+
+function getComposerSelection() {
+  const currentOption = selectModel.selectedOptions?.[0];
+  const selectedBackend = currentOption?.dataset?.backend || 'ollama';
+  const selectedModel = currentOption?.dataset?.model || '';
+  const responseMode = currentOption?.dataset?.responseMode || state.settings.defaultResponseMode || 'balanced';
+  return { selectedBackend, selectedModel, responseMode };
+}
+
+function buildControlModelSelect(runtimeModels, preferredMode) {
+  const options = Array.isArray(runtimeModels?.available) ? runtimeModels.available : [];
+  const mode = preferredMode || controlModelMode.value || 'balanced';
+  const currentSelected = controlModelSelect.selectedOptions?.[0];
+  const currentId = currentSelected?.value || '';
+  const selectedById = options.find(item => item.id === currentId && item.configured);
+  const selectedByMode = options.find(item => item.response_mode === mode && item.selected && item.configured);
+  const firstForMode = options.find(item => item.response_mode === mode && item.configured);
+  const firstEnabled = options.find(item => item.configured);
+  const fallback = selectedById || selectedByMode || firstForMode || firstEnabled || options[0];
+
+  if (!options.length) {
+    controlModelSelect.innerHTML = '<option value="">Sem modelos detectados</option>';
+    return;
+  }
+
+  controlModelSelect.innerHTML = options.map(item => {
+    const hint = item.summary ? ` · ${item.summary}` : '';
+    return `
+      <option
+        value="${esc(item.id || '')}"
+        data-backend="${esc(item.backend || '')}"
+        data-model="${esc(item.model || '')}"
+        data-response-mode="${esc(item.response_mode || 'balanced')}"
+        ${item.configured ? '' : 'disabled'}
+      >
+        ${esc((item.label || item.model || 'modelo') + hint)}
+      </option>
+    `;
+  }).join('');
+
+  if (fallback?.id) {
+    controlModelSelect.value = fallback.id;
+  }
 }
 
 function updateSetting(key, value) {
@@ -683,15 +766,7 @@ function renderControlCenter(payload) {
   controlVantageEnabled.checked = !!vantage.enabled;
   controlVantageStatus.textContent = '';
 
-  const mode = controlModelMode.value || 'fast';
-  const selectedProfileModel = runtimeProfiles?.[mode] || '';
-  controlModelSelect.innerHTML = runtimeModelList.length
-    ? runtimeModelList.map(item => `
-      <option value="${esc(item.name || '')}" ${String(item.name || '') === String(selectedProfileModel || '') ? 'selected' : ''}>
-        ${esc(item.name || '')}
-      </option>
-    `).join('')
-    : `<option value="${esc(String(selectedProfileModel || ''))}">${esc(String(selectedProfileModel || 'sem modelo'))}</option>`;
+  buildControlModelSelect(runtimeModels, controlModelMode.value || 'fast');
 
   const selectedAgent = agents?.selected || {};
   controlAgentActive.innerHTML = selectedAgent.path
@@ -794,18 +869,7 @@ async function applySelectedVantageModules() {
 function syncControlModelSelect() {
   const payload = state.controlCenter || {};
   const runtimeModels = payload?.runtime_models || {};
-  const runtimeModelCatalog = runtimeModels?.catalog || {};
-  const runtimeModelList = Array.isArray(runtimeModelCatalog?.models) ? runtimeModelCatalog.models : [];
-  const runtimeProfiles = runtimeModels?.profiles || {};
-  const mode = controlModelMode.value || 'fast';
-  const selectedProfileModel = runtimeProfiles?.[mode] || '';
-  controlModelSelect.innerHTML = runtimeModelList.length
-    ? runtimeModelList.map(item => `
-      <option value="${esc(item.name || '')}" ${String(item.name || '') === String(selectedProfileModel || '') ? 'selected' : ''}>
-        ${esc(item.name || '')}
-      </option>
-    `).join('')
-    : `<option value="${esc(String(selectedProfileModel || ''))}">${esc(String(selectedProfileModel || 'sem modelo'))}</option>`;
+  buildControlModelSelect(runtimeModels, controlModelMode.value || 'fast');
 }
 
 async function loadControlCenter() {
@@ -848,9 +912,12 @@ async function applySelectedAgent() {
 }
 
 async function applySelectedRuntimeModel() {
-  const responseMode = controlModelMode.value || 'fast';
-  const model = controlModelSelect.value || '';
-  if (!model) {
+  const currentOption = controlModelSelect.selectedOptions?.[0];
+  const selectedId = controlModelSelect.value || '';
+  const responseMode = currentOption?.dataset?.responseMode || controlModelMode.value || 'fast';
+  const backend = currentOption?.dataset?.backend || 'ollama';
+  const model = currentOption?.dataset?.model || '';
+  if (!selectedId) {
     controlModelStatus.textContent = 'Selecione um modelo antes de salvar.';
     return;
   }
@@ -859,14 +926,14 @@ async function applySelectedRuntimeModel() {
     const resp = await fetch('/api/control-center/runtime/model/select', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ response_mode: responseMode, model }),
+      body: JSON.stringify({ response_mode: responseMode, backend, model }),
     });
     const data = await resp.json();
     if (!resp.ok) {
       controlModelStatus.textContent = data.error || 'Falha ao salvar modelo.';
       return;
     }
-    controlModelStatus.textContent = `Modelo salvo para ${responseMode}: ${model}`;
+    controlModelStatus.textContent = `Modelo salvo para ${responseMode}: ${backend} · ${model || selectedId}`;
     renderControlCenter(data.control_center || null);
     await loadRuntimeStatus();
   } catch (err) {
@@ -876,6 +943,12 @@ async function applySelectedRuntimeModel() {
 
 async function warmupSelectedRuntimeModel() {
   const responseMode = controlModelMode.value || 'balanced';
+  const currentOption = controlModelSelect.selectedOptions?.[0];
+  const backend = currentOption?.dataset?.backend || 'ollama';
+  if (backend !== 'ollama') {
+    controlModelStatus.textContent = 'Warm-up só está disponível para modelos locais do Ollama.';
+    return;
+  }
   controlModelStatus.textContent = 'Executando warm-up...';
   try {
     const resp = await fetch('/api/control-center/runtime/warmup', {
@@ -888,7 +961,7 @@ async function warmupSelectedRuntimeModel() {
       controlModelStatus.textContent = ((data.result || {}).error || data.error || 'Falha no warm-up.');
       return;
     }
-    const model = (data.result || {}).model || controlModelSelect.value || '';
+    const model = (data.result || {}).model || currentOption?.dataset?.model || controlModelSelect.value || '';
     controlModelStatus.textContent = `Warm-up concluído para ${responseMode}: ${model}`;
     renderControlCenter(data.control_center || null);
     await loadRuntimeStatus();
@@ -900,6 +973,8 @@ async function warmupSelectedRuntimeModel() {
 function renderRuntimeStatus(payload) {
   state.runtimeStatus = payload || null;
   const runtime = payload?.runtime || {};
+  const runtimeModels = payload?.runtime_models || {};
+  const gpu = payload?.resources?.gpu || {};
   const features = payload?.features || {};
   const probe = payload?.probe || {};
   const provider = runtime.provider || 'offline';
@@ -907,7 +982,12 @@ function renderRuntimeStatus(payload) {
   const backendLabel = runtime.backend_label || backend;
   const model = runtime.model || 'sem modelo';
   const device = runtime.device || 'n/d';
-  const gpuAvailable = runtime.gpu_available ? 'GPU disponível' : 'GPU ausente';
+  const authMethod = runtime.auth_method || 'none';
+  const authLabel = authMethod === 'oauth' ? 'oauth' : (authMethod === 'api_key' ? 'api key' : 'sem credencial');
+  const gpuLabel = gpu.label || '';
+  const gpuAvailable = runtime.gpu_available
+    ? 'GPU disponível'
+    : (gpuLabel ? `GPU não suportada (${gpuLabel})` : 'GPU ausente');
   const streamingEnabled = features.chat_streaming ? 'streaming on' : 'streaming off';
   const tiEnabled = features.threat_intel ? 'TI on' : 'TI off';
   const badgeVisible = !!state.settings.showRuntimeBadge;
@@ -921,13 +1001,17 @@ function renderRuntimeStatus(payload) {
     runtimeBadge.textContent = '● Runtime indisponível';
     runtimeInline.innerHTML = '<span class="runtime-pill">Sem status carregado</span>';
     runtimeDetails.textContent = 'Não foi possível consultar o runtime local agora.';
+    renderComposerModelSelect(null);
     return;
   }
+
+  renderComposerModelSelect(runtimeModels);
 
   runtimeInline.innerHTML = [
     backendLabel,
     provider,
     model,
+    authLabel,
     device,
     gpuAvailable,
     streamingEnabled,
@@ -938,8 +1022,11 @@ function renderRuntimeStatus(payload) {
     `Backend: <strong>${esc(backendLabel)}</strong>`,
     `Provider: <strong>${esc(provider)}</strong>`,
     `Modelo: <strong>${esc(model)}</strong>`,
+    `Auth: <strong>${esc(authLabel)}</strong>`,
     `Device preferido: <strong>${esc(device)}</strong>`,
     runtime?.backend_gpu_supported === false ? `GPU no backend: <strong>não</strong>` : `GPU no backend: <strong>${esc(runtime.gpu_available ? 'sim' : 'indireto')}</strong>`,
+    gpuLabel ? `GPU detectada: <strong>${esc(gpuLabel)}</strong>` : '',
+    gpu?.available === false && gpu?.reason === 'unsupported_windows_gpu' ? 'Motivo: <strong>GPU presente, mas fora do suporte útil do Ollama neste Windows</strong>' : '',
     payload?.metrics?.analysis_pipeline ? `Schema válido: <strong>${esc(String(Math.round((payload.metrics.analysis_pipeline.schema_valid_rate || 0) * 100)))}%</strong>` : '',
     probe?.reachable === false ? `Probe: <strong>${esc(probe.error || 'indisponível')}</strong>` : '',
   ].filter(Boolean).join('<br>');
@@ -1016,9 +1103,9 @@ selectCls.addEventListener('change', () => {
   selectCls.dataset.userTouched = 'true';
 });
 
-selectResponseMode.addEventListener('change', () => {
-  selectResponseMode.dataset.userTouched = 'true';
-  updateSetting('defaultResponseMode', selectResponseMode.value || 'balanced');
+selectModel.addEventListener('change', () => {
+  selectModel.dataset.userTouched = 'true';
+  updateSetting('defaultModelSelection', selectModel.value || '');
 });
 
 inputCliente.addEventListener('input', () => {
@@ -1869,7 +1956,7 @@ function consumeSSEBuffer(buffer, flush = false) {
 // ================================================================
 // ENVIAR MENSAGEM
 // ================================================================
-async function sendMessageSync(text, classificacao, cliente, responseMode) {
+async function sendMessageSync(text, classificacao, cliente, responseMode, selectedBackend, selectedModel) {
   const resp = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1879,6 +1966,8 @@ async function sendMessageSync(text, classificacao, cliente, responseMode) {
       classificacao,
       cliente,
       response_mode: responseMode,
+      selected_backend: selectedBackend,
+      selected_model: selectedModel,
     }),
   });
   const data = await resp.json();
@@ -1889,7 +1978,7 @@ async function sendMessageSync(text, classificacao, cliente, responseMode) {
   await loadSessions();
 }
 
-async function sendMessageStreaming(text, classificacao, cliente, responseMode) {
+async function sendMessageStreaming(text, classificacao, cliente, responseMode, selectedBackend, selectedModel) {
   const resp = await fetch('/api/chat/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1899,6 +1988,8 @@ async function sendMessageStreaming(text, classificacao, cliente, responseMode) 
       classificacao,
       cliente,
       response_mode: responseMode,
+      selected_backend: selectedBackend,
+      selected_model: selectedModel,
     }),
   });
 
@@ -1915,7 +2006,7 @@ async function sendMessageStreaming(text, classificacao, cliente, responseMode) 
     }
 
     if (resp.status === 503 && featureName === 'chat_streaming') {
-      await sendMessageSync(text, classificacao, cliente, responseMode);
+      await sendMessageSync(text, classificacao, cliente, responseMode, selectedBackend, selectedModel);
       return;
     }
     throw new Error(errorText);
@@ -1946,7 +2037,7 @@ async function sendMessageStreaming(text, classificacao, cliente, responseMode) 
       removeTyping();
       removeProgress();
       removeStreamingAssistant();
-      await sendMessageSync(text, classificacao, cliente, responseMode);
+      await sendMessageSync(text, classificacao, cliente, responseMode, selectedBackend, selectedModel);
       return;
     }
     throw err;
@@ -1959,7 +2050,7 @@ async function sendMessageStreaming(text, classificacao, cliente, responseMode) 
 
   if (!streamState.sawFinal && !streamState.sawError) {
     if (!streamState.sawDelta) {
-      await sendMessageSync(text, classificacao, cliente, responseMode);
+      await sendMessageSync(text, classificacao, cliente, responseMode, selectedBackend, selectedModel);
       return;
     }
     throw new Error('Fluxo de streaming encerrado antes da resposta final.');
@@ -1974,7 +2065,7 @@ async function sendMessage() {
   if (!text) return;
 
   const classificacao = selectCls.value;
-  const responseMode = selectResponseMode.value || state.settings.defaultResponseMode || 'balanced';
+  const { selectedBackend, selectedModel, responseMode } = getComposerSelection();
   const cliente = inputCliente.value.trim();
   const isPayload = looksLikePayload(text);
 
@@ -2001,9 +2092,9 @@ async function sendMessage() {
 
   try {
     if (state.settings.preferStreaming) {
-      await sendMessageStreaming(text, classificacao, cliente, responseMode);
+      await sendMessageStreaming(text, classificacao, cliente, responseMode, selectedBackend, selectedModel);
     } else {
-      await sendMessageSync(text, classificacao, cliente, responseMode);
+      await sendMessageSync(text, classificacao, cliente, responseMode, selectedBackend, selectedModel);
     }
   } catch (err) {
     removeTyping();
@@ -2025,10 +2116,12 @@ function newSession() {
   state.sessionTitle = 'Nova sessão';
   sessionTitle.textContent = state.sessionTitle;
   selectCls.dataset.userTouched = '';
-  selectResponseMode.dataset.userTouched = '';
+  selectModel.dataset.userTouched = '';
   inputCliente.dataset.userTouched = '';
   selectCls.value = state.settings.defaultClassification || 'auto';
-  selectResponseMode.value = state.settings.defaultResponseMode || 'balanced';
+  if (state.settings.defaultModelSelection) {
+    selectModel.value = state.settings.defaultModelSelection;
+  }
   inputCliente.value = state.settings.defaultClient || '';
   resetMessages();
 

@@ -7,6 +7,7 @@ details per category, and suggests actionable fixes.
 from __future__ import annotations
 
 import os
+import shlex
 import sys
 from pathlib import Path
 from typing import Any
@@ -202,27 +203,89 @@ def _print_category_detail(cat: str, ev: dict[str, Any]) -> None:
 # Fix applicator
 # ---------------------------------------------------------------------------
 
+_PLACEHOLDER_TOKENS = {
+    "/caminho",
+    "caminho",
+    "<caminho>",
+    "<path>",
+    "path/to/your/docs",
+}
+
+
+def _contains_placeholder_token(tokens: list[str]) -> bool:
+    for token in tokens:
+        normalized = str(token or "").strip().strip("\"'").lower()
+        if not normalized:
+            continue
+        if normalized in _PLACEHOLDER_TOKENS:
+            return True
+        if normalized.startswith("/caminho/") or normalized.startswith("c:\\caminho"):
+            return True
+    return False
+
+
+def _split_fix_segments(fix: str) -> list[list[str]]:
+    tokens = shlex.split(fix, posix=True)
+    segments: list[list[str]] = []
+    current: list[str] = []
+    for token in tokens:
+        if token == "&&":
+            if current:
+                segments.append(current)
+                current = []
+            continue
+        current.append(token)
+    if current:
+        segments.append(current)
+    return segments
+
+
+def _build_safe_command(tokens: list[str]) -> list[str]:
+    if not tokens:
+        return []
+    if tokens[0] == "socc":
+        return [sys.executable, "-m", "socc.cli.main", *tokens[1:]]
+    return tokens
+
+
 def _try_apply_fix(fix: str) -> bool:
     """Attempt to apply a simple fix command. Returns True if applied."""
     # Only auto-apply safe commands
-    safe_prefixes = ("socc init", "socc configure set", "socc intel add-source")
-    if not any(fix.startswith(prefix) for prefix in safe_prefixes):
+    safe_prefixes = (
+        "socc init",
+        "socc configure set",
+        "socc intel add-source",
+        "socc intel ingest",
+    )
+    segments = _split_fix_segments(fix)
+    if not segments or not all(
+        any(" ".join(segment).startswith(prefix) for prefix in safe_prefixes)
+        for segment in segments
+    ):
+        return False
+
+    flat_tokens = [token for segment in segments for token in segment]
+    if _contains_placeholder_token(flat_tokens):
+        warning("Correção requer ajuste manual de caminho antes de executar.")
+        warning(f"Sugestão: {fix}")
         return False
 
     try:
         import subprocess
-        result = subprocess.run(
-            fix.split(),
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if result.returncode == 0:
-            success(f"Correção aplicada: {fix}")
-            return True
-        else:
-            warning(f"Correção falhou: {result.stderr.strip()}")
-            return False
+        for segment in segments:
+            command = _build_safe_command(segment)
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode != 0:
+                stderr = (result.stderr or result.stdout or "").strip()
+                warning(f"Correção falhou: {stderr or 'comando retornou erro'}")
+                return False
+        success(f"Correção aplicada: {fix}")
+        return True
     except Exception as exc:
         warning(f"Erro ao aplicar: {exc}")
         return False

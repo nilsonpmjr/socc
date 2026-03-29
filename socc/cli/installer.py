@@ -12,6 +12,7 @@ IS_WINDOWS = os.name == "nt"
 RUNTIME_DIRS = ("sessions", "logs", "cache", "mcp", "prompts", "workspace", "intel")
 SEED_AGENT_DIRNAME = "soc-copilot"
 RUNTIME_LAYOUTS = {"checkout", "package"}
+LAUNCHER_HEALTHCHECK = "import socc.cli.main; import requests"
 
 
 def package_root() -> Path:
@@ -86,6 +87,20 @@ def runtime_service_stderr_path(home: Path | None = None) -> Path:
     return runtime_logs_dir(home) / "socc-serve.err.log"
 
 
+def _handle_remove_readonly(func, path: str, exc_info) -> None:
+    try:
+        os.chmod(path, stat.S_IWRITE | stat.S_IREAD | stat.S_IEXEC)
+        func(path)
+    except Exception:
+        raise exc_info[1]
+
+
+def _remove_tree(path: Path) -> None:
+    if not path.exists():
+        return
+    shutil.rmtree(path, onerror=_handle_remove_readonly)
+
+
 def write_cli_launcher(
     home: Path | None = None,
     *,
@@ -98,7 +113,7 @@ def write_cli_launcher(
     bin_dir = runtime_bin_dir(base_dir)
     bin_dir.mkdir(parents=True, exist_ok=True)
 
-    python_cmd = python_executable or sys.executable
+    python_cmd = python_executable or str(runtime_venv_python(base_dir))
     fallback_python_cmd = fallback_python_executable or sys.executable
     source_root = (project_root or Path(__file__).resolve().parents[2]).resolve()
 
@@ -138,7 +153,7 @@ def _write_unix_launcher(
             f'FALLBACK_PY_DEFAULT="{fallback_python_cmd}"',
             'if [[ -n "${SOCC_PYTHON:-}" ]]; then',
             '  PYTHON_BIN="$SOCC_PYTHON"',
-            'elif "$VENV_PY_DEFAULT" -c "import socc.cli.main" >/dev/null 2>&1; then',
+            f'elif "$VENV_PY_DEFAULT" -c "{LAUNCHER_HEALTHCHECK}" >/dev/null 2>&1; then',
             '  PYTHON_BIN="$VENV_PY_DEFAULT"',
             'else',
             '  PYTHON_BIN="$FALLBACK_PY_DEFAULT"',
@@ -181,7 +196,7 @@ def _write_windows_launchers(
             "  goto :run",
             ")",
             "",
-            f'"{python_cmd}" -c "import socc.cli.main" >nul 2>&1',
+            f'"{python_cmd}" -c "{LAUNCHER_HEALTHCHECK}" >nul 2>&1',
             "if %errorlevel%==0 (",
             f'  set "PYTHON_BIN={python_cmd}"',
             "  goto :run",
@@ -207,7 +222,7 @@ def _write_windows_launchers(
             "if ($env:SOCC_PYTHON) {",
             "    $pythonBin = $env:SOCC_PYTHON",
             "} else {",
-            f'    $testResult = & "{python_cmd}" -c "import socc.cli.main" 2>&1',
+            f'    $testResult = & "{python_cmd}" -c "{LAUNCHER_HEALTHCHECK}" 2>&1',
             "    if ($LASTEXITCODE -eq 0) {",
             f'        $pythonBin = "{python_cmd}"',
             "    } else {",
@@ -234,7 +249,7 @@ def _seed_agent_workspace(base_dir: Path, force: bool = False) -> tuple[Path, bo
         return target_agent, False
 
     if force and target_agent.exists():
-        shutil.rmtree(target_agent)
+        _remove_tree(target_agent)
 
     if not target_agent.exists():
         shutil.copytree(source_agent, target_agent)
@@ -264,7 +279,7 @@ def _seed_project_link(base_dir: Path, force: bool = False) -> tuple[Path, bool]
     for target in targets:
         if force and (target.is_symlink() or target.exists()):
             if target.is_dir() and not target.is_symlink():
-                shutil.rmtree(target)
+                _remove_tree(target)
             else:
                 target.unlink(missing_ok=True)
 
@@ -292,7 +307,7 @@ def _clear_project_links(base_dir: Path) -> None:
         if target.is_symlink() or target.is_file():
             target.unlink(missing_ok=True)
         elif target.is_dir():
-            shutil.rmtree(target)
+            _remove_tree(target)
 
 def _write_runtime_manifest(
     base_dir: Path,
@@ -391,15 +406,24 @@ def bootstrap_runtime(
             created_dirs.append(str(path))
 
     repo_root = Path(__file__).resolve().parents[2]
-    source_env = repo_root / ".env.example"
+    source_env = repo_root / ".env"
+    source_env_example = repo_root / ".env.example"
     target_env = base_dir / ".env"
     target_env_example = base_dir / ".env.example"
 
-    if source_env.exists():
+    if source_env_example.exists():
+        if force or not target_env_example.exists():
+            shutil.copyfile(source_env_example, target_env_example)
+    elif source_env.exists():
         if force or not target_env_example.exists():
             shutil.copyfile(source_env, target_env_example)
+
+    if source_env.exists():
         if force or not target_env.exists():
             shutil.copyfile(source_env, target_env)
+    elif source_env_example.exists():
+        if force or not target_env.exists():
+            shutil.copyfile(source_env_example, target_env)
 
     agent_home, workspace_seeded = _seed_agent_workspace(base_dir, force=force)
     if resolved_layout == "checkout":

@@ -261,10 +261,12 @@ async def api_control_center_select_runtime_model(request: Request):
         body = await request.json()
         mode = str((body or {}).get("response_mode") or "")
         model = str((body or {}).get("model") or "")
+        backend = str((body or {}).get("backend") or "ollama")
         payload = await asyncio.to_thread(
             select_runtime_model_payload,
             response_mode=mode,
             model=model,
+            backend=backend,
         )
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
