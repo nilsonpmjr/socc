@@ -58,42 +58,41 @@ _OPENAI_CODEX_BASE_URL = "https://chatgpt.com/backend-api"
 _RESPONSE_MODE_PROFILES = {
     "fast": {
         "label": "Fast",
-        "history_limit": 2,
+        "history_limit": 4,
         "kb_limit": 1,
-        "kb_chars": 520,
+        "kb_chars": 800,
         "chunk_size": 160,
         "temperature": 0.1,
-        "num_ctx": 3072,
+        "num_ctx": 8192,
         "instruction": (
-            "Modo FAST: responda com máxima objetividade, priorize conclusão, "
-            "evidências essenciais e próximos passos imediatos em formato curto. "
-            "Encerre a resposta completamente, sem começar listas longas, preferindo até 8 linhas curtas."
+            "Modo FAST: responda com objetividade, priorizando conclusão, "
+            "evidências essenciais e próximos passos. Respostas diretas e completas."
         ),
     },
     "balanced": {
         "label": "Balanced",
-        "history_limit": 5,
-        "kb_limit": 3,
-        "kb_chars": 1100,
+        "history_limit": 10,
+        "kb_limit": 4,
+        "kb_chars": 2000,
         "chunk_size": 120,
         "temperature": 0.15,
-        "num_ctx": 6144,
+        "num_ctx": 32768,
         "instruction": (
-            "Modo BALANCED: mantenha objetividade, mas preserve contexto "
-            "suficiente para análise SOC explicável e útil."
+            "Modo BALANCED: mantenha objetividade e preserve contexto suficiente "
+            "para análise SOC completa, explicável e útil. Responda sem truncar."
         ),
     },
     "deep": {
         "label": "Deep",
-        "history_limit": 8,
-        "kb_limit": 4,
-        "kb_chars": 2200,
+        "history_limit": 20,
+        "kb_limit": 6,
+        "kb_chars": 4000,
         "chunk_size": 100,
         "temperature": 0.2,
-        "num_ctx": 8192,
+        "num_ctx": 65536,
         "instruction": (
-            "Modo DEEP: aprofunde a análise, explicite hipóteses, limitações, "
-            "impacto e próximos passos com mais detalhe."
+            "Modo DEEP: análise aprofundada. Explicite hipóteses, evidências, "
+            "limitações, impacto e próximos passos com máximo detalhe. Não trunce."
         ),
     },
 }
@@ -142,10 +141,10 @@ def _normalize_backend_selection(value: str = "") -> str:
 def _chat_max_tokens(response_mode: str = _DEFAULT_RESPONSE_MODE) -> int:
     mode = normalize_response_mode(response_mode)
     return {
-        "fast": 220,
-        "balanced": 520,
-        "deep": 900,
-    }.get(mode, 520)
+        "fast":     2048,
+        "balanced": 8192,
+        "deep":     16384,
+    }.get(mode, 8192)
 
 
 def _is_openai_oauth_transport(endpoint: str, auth_method: str) -> bool:
@@ -734,7 +733,8 @@ def _stream_ollama_events(
         "keep_alive": os.getenv("SOCC_OLLAMA_KEEP_ALIVE", "15m"),
         "options": {
             "temperature": float(profile.get("temperature") or 0.15),
-            "num_ctx": int(profile.get("num_ctx") or 6144),
+            "num_ctx": int(profile.get("num_ctx") or 32768),
+            "num_predict": -1,  # sem limite de tokens gerados
         },
     }
     if num_predict_override is not None:
@@ -1266,7 +1266,7 @@ def stream_chat_reply_events(
                             yield {"event": "delta", "delta": delta, "skill": skill_name}
                     else:
                         parts: list[str] = []
-                        num_predict_override = 96 if lightweight else None
+                        num_predict_override = None  # sem limite artificial
                         for item in _stream_ollama_events(
                             messages,
                             response_mode=mode,

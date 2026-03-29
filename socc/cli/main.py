@@ -261,6 +261,17 @@ def _build_parser() -> argparse.ArgumentParser:
     analyze_parser.add_argument("--no-draft", action="store_true", help="Skip draft generation")
 
     chat_parser = subparsers.add_parser("chat", help="Send a message to the SOCC runtime chat")
+
+    tui_parser = subparsers.add_parser("tui", help="Start full-screen TUI chat")
+    tui_parser.add_argument("--session-id", default="", help="Reuse an existing session id")
+    tui_parser.add_argument("--cliente", default="", help="Client context")
+    tui_parser.add_argument("--backend", default="", help="Backend LLM: anthropic | ollama | openai")
+    tui_parser.add_argument("--model", default="", help="Model override")
+    tui_parser.add_argument(
+        "--mode", dest="response_mode", default="balanced",
+        choices=["fast", "balanced", "deep"],
+        help="Response mode (default: balanced)",
+    )
     chat_parser.add_argument("--message", help="Inline chat message")
     chat_parser.add_argument("--file", help="Read the chat message from a file")
     chat_parser.add_argument("--session-id", default="", help="Reuse an existing session id")
@@ -272,8 +283,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Response profile tuned for speed vs depth",
     )
     chat_parser.add_argument("--json", action="store_true", help="Emit JSON output")
-    chat_parser.add_argument("--stream", action="store_true", help="Stream reply chunks to stdout")
-    chat_parser.add_argument("--interactive", action="store_true", help="Start a simple REPL chat loop")
+    chat_parser.add_argument("--stream", action="store_true", default=True, help="Stream reply chunks to stdout")
+    chat_parser.add_argument("--interactive", action="store_true", help="Start full-screen TUI chat")
+    chat_parser.add_argument("--backend", default="", help="Backend LLM: anthropic | ollama | openai")
+    chat_parser.add_argument("--model", default="", help="Model override (e.g. claude-haiku-4-5-20251001)")
 
     intel_parser = subparsers.add_parser("intel", help="Manage local intelligence sources and RAG ingestion")
     intel_parser.add_argument("--home", help="Alternative runtime home directory")
@@ -367,8 +380,21 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _run_interactive_chat(args: argparse.Namespace) -> int:
-    from socc.core.engine import chat_reply, stream_chat_events
+    try:
+        from socc.cli.chat_interactive import run_chat_tui
+        return run_chat_tui(
+            session_id=args.session_id or "",
+            cliente=args.cliente or "",
+            response_mode=getattr(args, "response_mode", "balanced"),
+            selected_backend=getattr(args, "backend", "") or "",
+            selected_model=getattr(args, "model", "") or "",
+            stream=getattr(args, "stream", True),
+        )
+    except ImportError:
+        pass
 
+    # fallback plain REPL
+    from socc.core.engine import chat_reply, stream_chat_events
     session_id = args.session_id or str(int(time() * 1000))
     print("SOCC chat interativo. Digite /exit para sair.")
     print(f"Sessao: {session_id}")
@@ -381,12 +407,10 @@ def _run_interactive_chat(args: argparse.Namespace) -> int:
         except KeyboardInterrupt:
             print()
             return 0
-
         if not message:
             continue
         if message.lower() in {"/exit", "exit", "quit", "/quit"}:
             return 0
-
         if args.stream and not args.json:
             print("socc> ", end="", flush=True)
             final_payload: dict[str, object] | None = None
@@ -903,6 +927,17 @@ def main(argv: list[str] | None = None) -> int:
                 print("\nDraft:")
                 print(result["draft"])
         return 0
+
+    if args.command == "tui":
+        from socc.cli.chat_interactive import run_chat_tui
+        return run_chat_tui(
+            session_id=getattr(args, "session_id", "") or "",
+            cliente=getattr(args, "cliente", "") or "",
+            response_mode=getattr(args, "response_mode", "balanced"),
+            selected_backend=getattr(args, "backend", "") or "",
+            selected_model=getattr(args, "model", "") or "",
+            stream=True,
+        )
 
     if args.command == "chat":
         from socc.core.engine import chat_reply, stream_chat_events
