@@ -45,6 +45,23 @@ _HASH_PATTERN = re.compile(r"\\b(?:[a-f0-9]{32}|[a-f0-9]{40}|[a-f0-9]{64}|[a-f0-
 _STRUCTURED_PAYLOAD_PATTERN = re.compile(
     r"(?:\\b\\w+[.-]?\\w*\\s*=\\s*[^\\s]+)|(?:\\b\\w+[.-]?\\w*\\s*:\\s*[^\\s])"
 )
+_CONSULTIVE_MARKERS = (
+    "o que significa",
+    "o que significam",
+    "significa o que",
+    "significam o que",
+    "o que você conclui",
+    "o que voce conclui",
+    "o que consegue concluir",
+    "o que você consegue concluir",
+    "isso é o que eu estou te perguntando",
+    "isso e o que eu estou te perguntando",
+    "me explica",
+    "explique",
+    "me diga",
+    "isso é normal",
+    "isso e normal",
+)
 
 
 def _is_agent_root(path: Path) -> bool:
@@ -212,6 +229,26 @@ def choose_skill(
     def contains_any(keywords: tuple[str, ...]) -> bool:
         return any(keyword in text for keyword in keywords)
 
+    def looks_like_structured_json_payload() -> bool:
+        return (
+            "{" in text
+            and "}" in text
+            and sum(
+                1
+                for marker in (
+                    '"srcip"',
+                    '"dstip"',
+                    '"action"',
+                    '"operation"',
+                    '"creationtime"',
+                    '"resultstatus"',
+                    '"reason"',
+                    '"event"',
+                )
+                if marker in text
+            ) >= 2
+        )
+
     if artifact_type:
         normalized = artifact_type.strip().lower()
         mapping = {
@@ -272,18 +309,40 @@ def choose_skill(
         "devname=",
         "logid=",
         "eventid=",
-        "alert",
-        "payload",
         "raw log",
-        "json",
         "cef:",
         "leef:",
         "syslog",
     )
     payload_field_count = len(_STRUCTURED_PAYLOAD_PATTERN.findall(user_input or ""))
+    consultive_request = contains_any(_CONSULTIVE_MARKERS)
+    explicit_triage_request = contains_any(
+        (
+            "analise",
+            "análise",
+            "triagem",
+            "classifique",
+            "classificar",
+            "classificacao",
+            "classificação",
+            "fechar",
+            "encerrar",
+            "julgue",
+            "veredito",
+        )
+    )
     if (
-        contains_any(payload_keywords)
-        or payload_field_count >= 4
+        explicit_triage_request
+        and (contains_any(payload_keywords) or payload_field_count >= 2 or looks_like_structured_json_payload())
+    ) and is_allowed("payload-triage"):
+        return "payload-triage"
+
+    if (
+        not consultive_request
+        and (
+            contains_any(payload_keywords)
+            or payload_field_count >= 4
+        )
     ) and is_allowed("payload-triage"):
         return "payload-triage"
 

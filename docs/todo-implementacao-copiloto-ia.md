@@ -34,6 +34,8 @@ Como desdobramento de plataforma, preparar o produto para operar tambem como run
 - o `Control Center` agora também permite listar modelos instalados, salvar o modelo por perfil (`Fast/Balanced/Deep`) e aquecer manualmente o modelo ativo
 - o webchat agora também expõe um `Control Center` inspirado no OpenClaw com visão operacional de runtime, base local, sessões, diagnóstico e troca manual do agente ativo
 - o seletor de skill do chat passou a tratar perguntas abertas de SOC como primeira classe, com skill generalista para CVE, hash, IOC, hunting, comportamento e investigação em linguagem natural
+- o chat agora também preserva melhor o último artefato estruturado da sessão em perguntas referenciais e ficou menos propenso a cair em triagem binária só porque o usuário mencionou a palavra `payload`
+- o runtime agora também aplica leitura determinística inicial para eventos M365 `HygieneTenantEvents`, reduzindo respostas alucinadas quando o modelo local não tem grounding suficiente
 - o runtime agora possui fundação inicial de base local de conhecimento para RAG, com registry de fontes, política de limpeza/normalização, chunking textual e ingestão/indexação local via CLI
 - o runtime agora também executa retrieval lexical inicial sobre a base local de conhecimento e anexa trechos recuperados ao contexto da análise e do chat, com fontes retornadas no payload final
 - o runtime agora também possui uma camada inicial de integração com a API do Vantage, com catálogo configurável de módulos, contrato básico de autenticação e comandos `socc vantage`
