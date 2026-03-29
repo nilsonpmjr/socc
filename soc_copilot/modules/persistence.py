@@ -14,6 +14,9 @@ _SQLITE_CORRUPTION_MARKERS = (
     "file is not a database",
     "not a database",
     "database corrupt",
+    "quick_check failed",
+    "out of order",
+    "should be",
 )
 
 
