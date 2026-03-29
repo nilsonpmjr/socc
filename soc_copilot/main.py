@@ -32,6 +32,9 @@ from socc.core.engine import (
     prepare_draft_submission_inputs,
     prepare_export_submission_inputs,
     prepare_feedback_submission_inputs,
+    oauth_login_provider_payload,
+    oauth_logout_provider_payload,
+    oauth_provider_status_payload,
     runtime_benchmark_payload,
     runtime_status_payload,
     select_active_agent_payload,
@@ -289,6 +292,42 @@ async def api_control_center_runtime_warmup(request: Request):
         return JSONResponse({"error": str(exc)}, status_code=400)
     status_code = 200 if ((payload.get("result") or {}).get("warmed") is True) else 502
     return JSONResponse(payload, status_code=status_code)
+
+
+@app.get("/api/control-center/runtime/oauth/{provider_name}")
+async def api_control_center_runtime_oauth_status(provider_name: str):
+    flags = resolve_feature_flags()
+    if not flags.runtime_api:
+        return JSONResponse(feature_disabled_payload("runtime_api"), status_code=503)
+    try:
+        payload = await asyncio.to_thread(oauth_provider_status_payload, provider_name)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    return JSONResponse(payload)
+
+
+@app.post("/api/control-center/runtime/oauth/{provider_name}/login")
+async def api_control_center_runtime_oauth_login(provider_name: str):
+    flags = resolve_feature_flags()
+    if not flags.runtime_api:
+        return JSONResponse(feature_disabled_payload("runtime_api"), status_code=503)
+    try:
+        payload = await asyncio.to_thread(oauth_login_provider_payload, provider_name)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    return JSONResponse(payload)
+
+
+@app.post("/api/control-center/runtime/oauth/{provider_name}/logout")
+async def api_control_center_runtime_oauth_logout(provider_name: str):
+    flags = resolve_feature_flags()
+    if not flags.runtime_api:
+        return JSONResponse(feature_disabled_payload("runtime_api"), status_code=503)
+    try:
+        payload = await asyncio.to_thread(oauth_logout_provider_payload, provider_name)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    return JSONResponse(payload)
 
 
 @app.post("/api/control-center/vantage/modules")

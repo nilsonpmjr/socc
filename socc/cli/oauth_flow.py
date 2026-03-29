@@ -35,6 +35,7 @@ class OAuthProvider:
     scopes: str
     callback_port: int
     callback_path: str
+    redirect_uri_override: str = ""  # se preenchido, usa este ao invés do localhost
     extra_params: dict[str, str] = field(default_factory=dict)
 
 
@@ -43,11 +44,12 @@ PROVIDERS: dict[str, OAuthProvider] = {
         name="anthropic",
         label="Anthropic (Claude)",
         authorize_url="https://claude.ai/oauth/authorize",
-        token_url="https://platform.claude.com/v1/oauth/token",
+        token_url="https://console.anthropic.com/v1/oauth/token",
         client_id="9d1c250a-e61b-44d9-88ed-5944d1962f5e",
         scopes="org:create_api_key user:profile user:inference",
-        callback_port=53692,
-        callback_path="/callback",
+        callback_port=0,       # não usado — fluxo é via console redirect
+        callback_path="",
+        redirect_uri_override="https://console.anthropic.com/oauth/code/callback",
     ),
     "openai": OAuthProvider(
         name="openai",
@@ -185,20 +187,46 @@ def _exchange_code(
     """Exchange authorization code for tokens."""
     import requests
 
-    data = {
-        "grant_type": "authorization_code",
-        "code": code,
-        "redirect_uri": redirect_uri,
-        "client_id": provider.client_id,
-        "code_verifier": verifier,
-    }
+    # Anthropic retorna o código no formato "auth_code#state" — precisa splittar
+    state: str | None = None
+    auth_code = code
+    if "#" in code:
+        parts = code.split("#", 1)
+        auth_code = parts[0]
+        state = parts[1]
 
-    resp = requests.post(
-        provider.token_url,
-        data=data,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-        timeout=15,
-    )
+    # Anthropic exige JSON; outros providers usam form-encoded
+    if provider.redirect_uri_override:
+        payload: dict[str, Any] = {
+            "grant_type": "authorization_code",
+            "code": auth_code,
+            "redirect_uri": redirect_uri,
+            "client_id": provider.client_id,
+            "code_verifier": verifier,
+        }
+        if state:
+            payload["state"] = state
+        resp = requests.post(
+            provider.token_url,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=15,
+        )
+    else:
+        data = {
+            "grant_type": "authorization_code",
+            "code": auth_code,
+            "redirect_uri": redirect_uri,
+            "client_id": provider.client_id,
+            "code_verifier": verifier,
+        }
+        resp = requests.post(
+            provider.token_url,
+            data=data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=15,
+        )
+
     resp.raise_for_status()
     return resp.json()
 
@@ -319,7 +347,7 @@ def clear_credentials(provider_name: str) -> bool:
 # Main OAuth login flow
 # ---------------------------------------------------------------------------
 
-def oauth_login(provider_name: str) -> dict[str, Any]:
+def oauth_login(provider_name: str, force_reauth: bool = False) -> dict[str, Any]:
     """Execute the full OAuth PKCE login flow for a provider.
 
     Returns a dict with ``access_token``, ``refresh_token``, ``expires_at``,
@@ -329,8 +357,9 @@ def oauth_login(provider_name: str) -> dict[str, Any]:
     if not provider:
         return {"error": f"Provider desconhecido: {provider_name}"}
 
-    # Check for existing valid credentials
-    if credentials_valid(provider_name):
+    # Check for existing valid credentials unless the caller explicitly asked
+    # to run the browser flow again.
+    if not force_reauth and credentials_valid(provider_name):
         token = get_access_token(provider_name)
         if token:
             return {"access_token": token, "reused": True, "provider": provider_name}
@@ -339,7 +368,11 @@ def oauth_login(provider_name: str) -> dict[str, Any]:
     verifier, challenge = _generate_pkce()
     state = _generate_state()
 
-    redirect_uri = f"http://localhost:{provider.callback_port}{provider.callback_path}"
+    # Anthropic usa redirect_uri fixo pro console deles; outros usam localhost
+    if provider.redirect_uri_override:
+        redirect_uri = provider.redirect_uri_override
+    else:
+        redirect_uri = f"http://localhost:{provider.callback_port}{provider.callback_path}"
 
     # Build authorization URL
     params = {
@@ -354,31 +387,44 @@ def oauth_login(provider_name: str) -> dict[str, Any]:
     params.update(provider.extra_params)
     auth_url = f"{provider.authorize_url}?{urlencode(params)}"
 
-    print(f"\n  Abrindo login {provider.label} no navegador...")
-    print(f"  Faça login com sua conta e autorize o acesso.")
-    print(f"  Aguardando retorno... (timeout: 2 minutos)\n")
+    # Fluxo console redirect (Anthropic): state=verifier + parâmetro code=true
+    if provider.redirect_uri_override:
+        # Anthropic usa state=verifier e exige code=true na URL
+        params["state"] = verifier
+        params["code"] = "true"
+        auth_url = f"{provider.authorize_url}?{urlencode(params)}"
 
-    # Open browser
-    try:
-        webbrowser.open(auth_url)
-    except Exception:
-        print(f"  Não foi possível abrir o navegador automaticamente.")
-        print(f"  Acesse manualmente: {auth_url}\n")
+        print(f"\n  Abrindo login {provider.label} no navegador...")
+        print(f"  Faça login, autorize o acesso e copie o código exibido.")
+        try:
+            webbrowser.open(auth_url)
+        except Exception:
+            print(f"  Não foi possível abrir automaticamente. Acesse:")
+            print(f"  {auth_url}\n")
+        code = input("  Cole o código de autorização aqui: ").strip()
+        if not code:
+            return {"error": "Nenhum código informado."}
+        cb_state = None  # fluxo console não devolve state
+    else:
+        print(f"\n  Abrindo login {provider.label} no navegador...")
+        print(f"  Faça login com sua conta e autorize o acesso.")
+        print(f"  Aguardando retorno... (timeout: 2 minutos)\n")
+        try:
+            webbrowser.open(auth_url)
+        except Exception:
+            print(f"  Não foi possível abrir o navegador automaticamente.")
+            print(f"  Acesse manualmente: {auth_url}\n")
+        code, cb_state, error = _wait_for_callback(
+            provider.callback_port,
+            provider.callback_path,
+            timeout=120,
+        )
+        if error:
+            return {"error": f"Erro OAuth: {error}"}
+        if not code:
+            return {"error": "Timeout — nenhum código de autorização recebido."}
 
-    # Wait for callback
-    code, cb_state, error = _wait_for_callback(
-        provider.callback_port,
-        provider.callback_path,
-        timeout=120,
-    )
-
-    if error:
-        return {"error": f"Erro OAuth: {error}"}
-
-    if not code:
-        return {"error": "Timeout — nenhum código de autorização recebido."}
-
-    # Verify state
+    # Verify state (apenas quando disponível)
     if cb_state and cb_state != state:
         return {"error": "State mismatch — possível ataque CSRF."}
 
@@ -410,6 +456,7 @@ def test_oauth_token(provider_name: str, access_token: str) -> bool:
                 headers={
                     "Authorization": f"Bearer {access_token}",
                     "anthropic-version": "2023-06-01",
+                    "anthropic-beta": "oauth-2025-04-20",
                 },
                 timeout=10,
             )

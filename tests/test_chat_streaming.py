@@ -51,8 +51,13 @@ original_timeout = cfg.LLM_TIMEOUT
 original_url = cfg.OLLAMA_URL
 original_model = cfg.OLLAMA_MODEL
 original_post = chat_service.requests.post
+original_resolve_auth_context = chat_service.resolve_auth_context
+original_llm_chat_enabled = chat_service._llm_chat_enabled
 original_cpu_guard = os.environ.get("SOCC_CPU_GUARD_ENABLED")
 original_fast_model = os.environ.get("SOCC_OLLAMA_FAST_MODEL")
+original_llm_enabled_env = os.environ.get("LLM_ENABLED")
+original_openai_compat_url = os.environ.get("SOCC_OPENAI_COMPAT_URL")
+original_openai_compat_model = os.environ.get("SOCC_OPENAI_COMPAT_MODEL")
 
 
 try:
@@ -75,6 +80,7 @@ except Exception as exc:
 
 try:
     cfg.LLM_ENABLED = False
+    chat_service._llm_chat_enabled = lambda target: False
     events = list(
         chat_service.stream_chat_reply_events(
             "Quais formatos de log sao suportados?",
@@ -104,6 +110,7 @@ except Exception as exc:
 
 try:
     cfg.LLM_ENABLED = False
+    chat_service._llm_chat_enabled = lambda target: False
     persistence.save_chat_message(
         "stream-hygiene-context",
         "user",
@@ -136,6 +143,7 @@ except Exception as exc:
 
 try:
     cfg.LLM_ENABLED = True
+    chat_service._llm_chat_enabled = lambda target: True
     cfg.LLM_PROVIDER = "ollama"
     cfg.OLLAMA_URL = "http://ollama.test"
     cfg.OLLAMA_MODEL = "qwen3.5:9b"
@@ -220,7 +228,130 @@ except Exception as exc:
 
 
 try:
+    cfg.LLM_ENABLED = False
+    cfg.LLM_PROVIDER = "ollama"
+    cfg.LLM_TIMEOUT = 5
+    os.environ["LLM_ENABLED"] = "true"
+    chat_service.resolve_auth_context = lambda provider_name: {
+        "provider": provider_name,
+        "method": "oauth",
+        "credential": "oauth-token",
+        "source": "oauth_store",
+    }
+    check(
+        "stream_anthropic_dynamic_enable_helper",
+        chat_service._llm_chat_enabled(
+            {
+                "backend": "anthropic",
+                "endpoint": "https://api.anthropic.com/v1/messages",
+                "model": "claude-sonnet-4-20250514",
+            }
+        ) is True,
+    )
+    chat_service._llm_chat_enabled = lambda target: True
+
+    def fake_post_anthropic(url: str, headers: dict, json: dict, timeout: float):
+        check("stream_anthropic_dynamic_enable_url", url == "https://api.anthropic.com/v1/messages", url)
+        check("stream_anthropic_dynamic_enable_auth", headers.get("Authorization") == "Bearer oauth-token", str(headers))
+
+        class FakeAnthropicResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, object]:
+                return {"content": [{"type": "text", "text": "Claude respondeu com OAuth."}]}
+
+        return FakeAnthropicResponse()
+
+    chat_service.requests.post = fake_post_anthropic
+    events = list(
+        chat_service.stream_chat_reply_events(
+            "Me explique rapidamente esta CVE.",
+            session_id="stream-anthropic-oauth",
+            cliente="Cliente Teste",
+            response_mode="balanced",
+            selected_backend="anthropic",
+            selected_model="claude-sonnet-4-20250514",
+        )
+    )
+    final_event = next((item for item in events if item.get("event") == "final"), {})
+    final_data = final_event.get("data") if isinstance(final_event.get("data"), dict) else {}
+    check(
+        "stream_anthropic_dynamic_enable_content",
+        isinstance(final_data, dict) and final_data.get("content") == "Claude respondeu com OAuth.",
+        str(final_data),
+    )
+    check(
+        "stream_anthropic_dynamic_enable_runtime_backend",
+        isinstance(final_data, dict) and ((final_data.get("runtime") or {}).get("backend") == "anthropic"),
+        str(final_data),
+    )
+except Exception as exc:
+    check("stream_anthropic_dynamic_enable_flow", False, str(exc))
+
+
+try:
+    cfg.LLM_ENABLED = False
+    cfg.LLM_TIMEOUT = 5
+    os.environ["LLM_ENABLED"] = "true"
+    os.environ["SOCC_OPENAI_COMPAT_URL"] = "https://api.openai.com/v1"
+    os.environ["SOCC_OPENAI_COMPAT_MODEL"] = "gpt-4o-mini"
+    chat_service.resolve_auth_context = lambda provider_name: {
+        "provider": provider_name,
+        "method": "oauth",
+        "credential": "oauth-token",
+        "source": "oauth_store",
+    }
+    check(
+        "stream_openai_oauth_target_endpoint",
+        chat_service._resolve_chat_target(
+            response_mode="deep",
+            selected_backend="openai-compatible",
+            selected_model="gpt-4o-mini",
+        ).get("endpoint") == "https://chatgpt.com/backend-api",
+    )
+    chat_service._llm_chat_enabled = lambda target: True
+
+    def fake_post_openai_oauth(url: str, headers: dict, json: dict, timeout: float):
+        check("stream_openai_oauth_url", url == "https://chatgpt.com/backend-api/v1/responses", url)
+        check("stream_openai_oauth_auth", headers.get("authorization") == "Bearer oauth-token", str(headers))
+        check("stream_openai_oauth_payload_has_input", isinstance(json.get("input"), list), str(json))
+        check("stream_openai_oauth_payload_has_instructions", isinstance(json.get("instructions"), str) and bool(json.get("instructions")), str(json))
+
+        class FakeOpenAIResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, object]:
+                return {"output_text": "Codex respondeu via OAuth."}
+
+        return FakeOpenAIResponse()
+
+    chat_service.requests.post = fake_post_openai_oauth
+    events = list(
+        chat_service.stream_chat_reply_events(
+            "Explique rapidamente essa técnica ATT&CK.",
+            session_id="stream-openai-oauth",
+            cliente="Cliente Teste",
+            response_mode="deep",
+            selected_backend="openai-compatible",
+            selected_model="gpt-4o-mini",
+        )
+    )
+    final_event = next((item for item in events if item.get("event") == "final"), {})
+    final_data = final_event.get("data") if isinstance(final_event.get("data"), dict) else {}
+    check(
+        "stream_openai_oauth_content",
+        isinstance(final_data, dict) and final_data.get("content") == "Codex respondeu via OAuth.",
+        str(final_data),
+    )
+except Exception as exc:
+    check("stream_openai_oauth_flow", False, str(exc))
+
+
+try:
     cfg.LLM_ENABLED = True
+    chat_service._llm_chat_enabled = lambda target: True
     cfg.LLM_PROVIDER = "ollama"
     cfg.OLLAMA_URL = "http://ollama.test"
     cfg.OLLAMA_MODEL = "qwen3.5:9b"
@@ -293,6 +424,8 @@ finally:
     cfg.OLLAMA_URL = original_url
     cfg.OLLAMA_MODEL = original_model
     chat_service.requests.post = original_post
+    chat_service.resolve_auth_context = original_resolve_auth_context
+    chat_service._llm_chat_enabled = original_llm_chat_enabled
     if original_cpu_guard is None:
         os.environ.pop("SOCC_CPU_GUARD_ENABLED", None)
     else:
@@ -301,6 +434,18 @@ finally:
         os.environ.pop("SOCC_OLLAMA_FAST_MODEL", None)
     else:
         os.environ["SOCC_OLLAMA_FAST_MODEL"] = original_fast_model
+    if original_llm_enabled_env is None:
+        os.environ.pop("LLM_ENABLED", None)
+    else:
+        os.environ["LLM_ENABLED"] = original_llm_enabled_env
+    if original_openai_compat_url is None:
+        os.environ.pop("SOCC_OPENAI_COMPAT_URL", None)
+    else:
+        os.environ["SOCC_OPENAI_COMPAT_URL"] = original_openai_compat_url
+    if original_openai_compat_model is None:
+        os.environ.pop("SOCC_OPENAI_COMPAT_MODEL", None)
+    else:
+        os.environ["SOCC_OPENAI_COMPAT_MODEL"] = original_openai_compat_model
 
 
 print(f"\n{'='*60}")

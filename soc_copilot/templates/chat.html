@@ -304,6 +304,11 @@
         <div class="control-status" id="control-model-status"></div>
       </div>
       <div class="control-card">
+        <div class="control-card-title">Contas cloud</div>
+        <div class="control-card-subtitle" id="control-oauth-status">Claude e Codex usam as credenciais OAuth configuradas no onboarding.</div>
+        <div class="control-list" id="control-oauth-list"></div>
+      </div>
+      <div class="control-card">
         <div class="control-card-title">Vantage API</div>
         <div class="control-grid" id="control-vantage-stats"></div>
         <div class="control-list" id="control-vantage-modules"></div>
@@ -441,6 +446,8 @@ const controlRuntimeStats = $('control-runtime-stats');
 const controlRuntimeBackends = $('control-runtime-backends');
 const controlRuntimeModelsStatus = $('control-runtime-models-status');
 const controlRuntimeModelsList = $('control-runtime-models-list');
+const controlOauthStatus = $('control-oauth-status');
+const controlOauthList = $('control-oauth-list');
 const controlVantageStats = $('control-vantage-stats');
 const controlVantageModules = $('control-vantage-modules');
 const controlVantageEnabled = $('control-vantage-enabled');
@@ -615,6 +622,74 @@ function buildControlModelSelect(runtimeModels, preferredMode) {
   }
 }
 
+function renderOauthProviders(oauth) {
+  const providers = Array.isArray(oauth?.providers) ? oauth.providers : [];
+  controlOauthStatus.textContent = providers.length
+    ? `${providers.filter(item => item.configured).length} conta(s) conectada(s)`
+    : 'Nenhuma conta cloud encontrada.';
+  controlOauthList.innerHTML = providers.length
+    ? providers.map(item => {
+      const provider = item.provider || '';
+      const connected = !!item.configured;
+      const status = item.status || (connected ? 'connected' : 'disconnected');
+      const actionLabel = connected ? 'Desconectar' : 'Conectar';
+      const actionKind = connected ? 'logout' : 'login';
+      const meta = [
+        `status=${status}`,
+        `auth=${item.auth_method || 'none'}`,
+        item.credential_source ? `source=${item.credential_source}` : '',
+        item.has_refresh_token ? 'refresh=sim' : 'refresh=não',
+      ].filter(Boolean).join(' · ');
+      return `
+        <div class="control-list-item control-oauth-item">
+          <div class="control-select-main">
+            <div class="control-list-title">
+              ${esc(item.label || provider || 'OAuth')}
+              ${connected ? '<span class="control-badge">conectado</span>' : '<span class="control-badge">pendente</span>'}
+            </div>
+            <div class="control-list-meta">
+              ${esc(meta)}<br>
+              ${item.scope ? `scope=${esc(item.scope)}` : 'Use a conta autenticada no onboarding para habilitar o chat cloud.'}
+            </div>
+          </div>
+          <div class="control-oauth-actions">
+            <button
+              class="btn-settings-action ${connected ? '' : 'primary'}"
+              data-oauth-provider="${esc(provider)}"
+              data-oauth-action="${esc(actionKind)}"
+            >${esc(actionLabel)}</button>
+          </div>
+        </div>
+      `;
+    }).join('')
+    : '<div class="control-list-item"><div class="control-list-meta">Nenhuma conta cloud encontrada.</div></div>';
+}
+
+async function applyOauthAction(provider, action) {
+  if (!provider || !action) return;
+  controlOauthStatus.textContent = action === 'login'
+    ? `Abrindo login ${provider}...`
+    : `Desconectando ${provider}...`;
+  try {
+    const resp = await fetch(`/api/control-center/runtime/oauth/${encodeURIComponent(provider)}/${encodeURIComponent(action)}`, {
+      method: 'POST',
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      controlOauthStatus.textContent = data.error || `Falha ao executar ${action} para ${provider}.`;
+      return;
+    }
+    const oauth = data.oauth || {};
+    controlOauthStatus.textContent = action === 'login'
+      ? `${oauth.label || provider} conectado com sucesso.`
+      : `${oauth.label || provider} desconectado.`;
+    renderControlCenter(data.control_center || null);
+    await loadRuntimeStatus();
+  } catch (err) {
+    controlOauthStatus.textContent = `Falha ao executar ${action} para ${provider}: ` + err.message;
+  }
+}
+
 function updateSetting(key, value) {
   state.settings[key] = value;
   persistChatSettings();
@@ -685,6 +760,7 @@ function renderControlCenter(payload) {
   const runtimeModels = payload?.runtime_models || {};
   const runtimeModelCatalog = runtimeModels?.catalog || {};
   const runtimeModelList = Array.isArray(runtimeModelCatalog?.models) ? runtimeModelCatalog.models : [];
+  const oauth = payload?.oauth || {};
   const runtimeProfiles = runtimeModels?.profiles || {};
   const vantage = payload?.vantage || {};
   const service = payload?.service || {};
@@ -736,6 +812,7 @@ function renderControlCenter(payload) {
       </div>
     `).join('')
     : '<div class="control-list-item"><div class="control-list-meta">Nenhum modelo listado pelo backend.</div></div>';
+  renderOauthProviders(oauth);
 
   controlVantageStats.innerHTML = [
     ['Integração', vantage.enabled ? 'ativa' : 'desligada'],
@@ -1075,6 +1152,11 @@ btnControlAgentApply.addEventListener('click', applySelectedAgent);
 btnControlModelApply.addEventListener('click', applySelectedRuntimeModel);
 btnControlModelWarmup.addEventListener('click', warmupSelectedRuntimeModel);
 btnControlVantageApply.addEventListener('click', applySelectedVantageModules);
+controlOauthList.addEventListener('click', event => {
+  const button = event.target.closest('[data-oauth-provider][data-oauth-action]');
+  if (!button) return;
+  applyOauthAction(button.dataset.oauthProvider || '', button.dataset.oauthAction || '');
+});
 btnSettingsReset.addEventListener('click', () => {
   state.settings = { ...DEFAULT_CHAT_SETTINGS };
   persistChatSettings();

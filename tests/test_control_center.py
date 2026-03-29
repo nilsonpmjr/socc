@@ -13,9 +13,12 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 from socc.cli.installer import bootstrap_runtime, runtime_agent_home
+from socc.cli import oauth_flow as oauth_flow_module
 from socc.core import engine as engine_module
 from socc.core.engine import (
     control_center_summary_payload,
+    oauth_login_provider_payload,
+    oauth_logout_provider_payload,
     select_active_agent_payload,
     select_runtime_model_payload,
     select_vantage_modules_payload,
@@ -40,6 +43,10 @@ original_agent_home = os.environ.get("SOCC_AGENT_HOME")
 original_list_backend_models = engine_module.list_backend_models
 original_warmup_backend_model = engine_module.warmup_backend_model
 original_vantage_status = vantage_gateway.status_payload
+original_oauth_login = oauth_flow_module.oauth_login
+original_load_credentials = oauth_flow_module.load_credentials
+original_credentials_valid = oauth_flow_module.credentials_valid
+original_clear_credentials = oauth_flow_module.clear_credentials
 
 try:
     engine_module.list_backend_models = lambda timeout=2.0: {
@@ -69,6 +76,28 @@ try:
             {"id": "hunting", "label": "Hunting", "path": "/api/hunting", "selected": True, "capabilities": ["hunt_cases"]},
         ],
     }
+    oauth_state = {
+        "anthropic": {},
+        "openai": {},
+    }
+    def _fake_oauth_login(provider_name: str, force_reauth: bool = False) -> dict[str, object]:
+        oauth_state[provider_name] = {
+            "access_token": f"{provider_name}-token",
+            "refresh_token": f"{provider_name}-refresh",
+            "expires_at": 4102444800,
+            "saved_at": 1700000000,
+        }
+        return {
+            "provider": provider_name,
+            "access_token": f"{provider_name}-token",
+            "refresh_token": f"{provider_name}-refresh",
+            "expires_in": 3600,
+        }
+
+    oauth_flow_module.oauth_login = _fake_oauth_login
+    oauth_flow_module.load_credentials = lambda provider_name: dict(oauth_state.get(provider_name) or {})
+    oauth_flow_module.credentials_valid = lambda provider_name: bool((oauth_state.get(provider_name) or {}).get("access_token"))
+    oauth_flow_module.clear_credentials = lambda provider_name: oauth_state.__setitem__(provider_name, {}) is None or True
     bootstrap_runtime(runtime_root, force=True)
     primary_agent = runtime_agent_home(runtime_root)
     secondary_agent = runtime_root / "workspace" / "soc-reviewer"
@@ -88,6 +117,7 @@ try:
     check("control_center_has_diagnostics", "diagnostics" in summary and "checks" in summary["diagnostics"])
     check("control_center_has_runtime_models", bool(((summary.get("runtime_models") or {}).get("catalog") or {}).get("models")))
     check("control_center_has_vantage", bool((summary.get("vantage") or {}).get("modules")))
+    check("control_center_has_oauth", len((summary.get("oauth") or {}).get("providers") or []) == 2)
 
     switched = select_active_agent_payload("soc-reviewer", home=runtime_root)
     new_selected = (switched.get("selected_agent") or {}).get("path") or ""
@@ -120,12 +150,28 @@ try:
     check("control_center_vantage_modules_payload", vantage_selected.get("selected_modules") == ["feed", "watchlist"], str(vantage_selected))
     check("control_center_vantage_modules_env", "SOCC_VANTAGE_ENABLED_MODULES=feed,watchlist" in env_text, env_text)
     check("control_center_vantage_enabled_env", "SOCC_VANTAGE_ENABLED=true" in env_text, env_text)
+
+    oauth_connected = oauth_login_provider_payload("anthropic", home=runtime_root)
+    env_text = env_file.read_text(encoding="utf-8")
+    check("control_center_oauth_login_provider", ((oauth_connected.get("oauth") or {}).get("configured")) is True, str(oauth_connected))
+    check("control_center_oauth_login_env", "SOCC_AUTH_METHOD_ANTHROPIC=oauth" in env_text, env_text)
+    check("control_center_oauth_login_llm_enabled", "LLM_ENABLED=true" in env_text, env_text)
+
+    oauth_disconnected = oauth_logout_provider_payload("anthropic", home=runtime_root)
+    env_text = env_file.read_text(encoding="utf-8")
+    check("control_center_oauth_logout_provider", ((oauth_disconnected.get("oauth") or {}).get("configured")) is False, str(oauth_disconnected))
+    active_lines = [line.strip() for line in env_text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+    check("control_center_oauth_logout_env", "SOCC_AUTH_METHOD_ANTHROPIC=oauth" not in active_lines, env_text)
 except Exception as exc:
     check("control_center_flow", False, str(exc))
 finally:
     engine_module.list_backend_models = original_list_backend_models
     engine_module.warmup_backend_model = original_warmup_backend_model
     vantage_gateway.status_payload = original_vantage_status
+    oauth_flow_module.oauth_login = original_oauth_login
+    oauth_flow_module.load_credentials = original_load_credentials
+    oauth_flow_module.credentials_valid = original_credentials_valid
+    oauth_flow_module.clear_credentials = original_clear_credentials
     if original_socc_home is None:
         os.environ.pop("SOCC_HOME", None)
     else:

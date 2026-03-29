@@ -5,6 +5,7 @@ import logging
 import os
 from time import perf_counter
 from typing import Iterator, List
+from urllib.parse import urlparse
 
 import requests
 
@@ -53,6 +54,7 @@ _REPEATED_GREETING_PATTERNS = (
     "e aí,",
     "e ai,",
 )
+_OPENAI_CODEX_BASE_URL = "https://chatgpt.com/backend-api"
 _RESPONSE_MODE_PROFILES = {
     "fast": {
         "label": "Fast",
@@ -146,6 +148,38 @@ def _chat_max_tokens(response_mode: str = _DEFAULT_RESPONSE_MODE) -> int:
     }.get(mode, 520)
 
 
+def _is_openai_oauth_transport(endpoint: str, auth_method: str) -> bool:
+    normalized_endpoint = str(endpoint or "").strip().rstrip("/")
+    return auth_method == "oauth" and normalized_endpoint == _OPENAI_CODEX_BASE_URL
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _llm_chat_enabled(target: dict[str, str]) -> bool:
+    if not _env_flag("LLM_ENABLED", bool(getattr(cfg, "LLM_ENABLED", False))):
+        return False
+
+    backend = str(target.get("backend") or "").strip().lower()
+    endpoint = str(target.get("endpoint") or "").strip()
+    if backend == "anthropic":
+        auth = resolve_auth_context("anthropic")
+        return bool(auth.get("credential"))
+    if backend == "openai-compatible":
+        if not endpoint:
+            return False
+        host = (urlparse(endpoint).hostname or "").strip().lower()
+        if host in {"127.0.0.1", "localhost", "::1"}:
+            return True
+        auth = resolve_auth_context("openai-compatible")
+        return bool(auth.get("credential"))
+    return bool(endpoint)
+
+
 def _serialize_messages(messages: list[dict[str, str]]) -> str:
     return "\n\n".join(
         f"{item.get('role', 'user')}: {item.get('content', '')}"
@@ -179,7 +213,12 @@ def _resolve_chat_target(
         model = model or os.getenv("LLM_MODEL", getattr(cfg, "LLM_MODEL", "claude-haiku-4-5-20251001"))
     else:
         provider = "openai-compatible"
-        endpoint = os.getenv("SOCC_OPENAI_COMPAT_URL", "").strip().rstrip("/") or "https://api.openai.com/v1"
+        auth = resolve_auth_context("openai-compatible")
+        endpoint = os.getenv("SOCC_OPENAI_COMPAT_URL", "").strip().rstrip("/")
+        if auth.get("method") == "oauth" and endpoint in {"", "https://api.openai.com/v1"}:
+            endpoint = _OPENAI_CODEX_BASE_URL
+        elif not endpoint:
+            endpoint = "https://api.openai.com/v1"
         model = model or os.getenv("SOCC_OPENAI_COMPAT_MODEL", "").strip() or "gpt-5-codex"
 
     return {
@@ -490,13 +529,13 @@ def _fallback_response(message: str, skill_name: str) -> str:
     if skill_name == "soc-generalist":
         return (
             "Recebi sua pergunta em modo consultivo de SOC. "
-            "A camada da conversa natural ja esta preparada, mas a resposta livre completa ainda depende de `LLM_ENABLED=true`.\n\n"
+            "A camada da conversa natural ja esta preparada, mas a resposta livre completa ainda depende de um backend LLM ativo.\n\n"
             "Enquanto isso, eu preservo o contexto da conversa e continuo apto a analisar payloads, IOCs e artefatos quando voce trouxer mais dados.\n\n"
             f"Pergunta registrada: {message.strip()[:400]}"
         )
     return (
         f"Recebi sua mensagem e selecionei a skill `{skill_name}` para este contexto. "
-        "A conversa geral com a LLM local ainda depende de `LLM_ENABLED=true`, mas a camada do SOC Copilot "
+        "A conversa geral com a LLM ainda depende de um backend ativo, mas a camada do SOC Copilot "
         "ja esta pronta para orientar o comportamento do chat. "
         "Se voce colar um payload, o pipeline analitico atual continua funcionando normalmente.\n\n"
         f"Resumo do pedido: {message.strip()[:400]}"
@@ -795,6 +834,27 @@ def _call_ollama(
 
 
 def _extract_openai_content(payload: dict[str, object]) -> str:
+    output_text = str(payload.get("output_text") or "").strip() if isinstance(payload, dict) else ""
+    if output_text:
+        return output_text
+    outputs = list(payload.get("output") or []) if isinstance(payload, dict) else []
+    if outputs:
+        parts: list[str] = []
+        for item in outputs:
+            if not isinstance(item, dict):
+                continue
+            for content_item in list(item.get("content") or []):
+                if not isinstance(content_item, dict):
+                    continue
+                text = str(
+                    content_item.get("text")
+                    or content_item.get("output_text")
+                    or ""
+                ).strip()
+                if text:
+                    parts.append(text)
+        if parts:
+            return "".join(parts).strip()
     choices = list(payload.get("choices") or []) if isinstance(payload, dict) else []
     if not choices:
         return ""
@@ -812,6 +872,108 @@ def _extract_openai_content(payload: dict[str, object]) -> str:
                 parts.append(text)
         return "".join(parts).strip()
     return ""
+
+
+def _stream_anthropic_events(
+    messages: list[dict[str, str]],
+    *,
+    response_mode: str = _DEFAULT_RESPONSE_MODE,
+    model: str,
+) -> Iterator[dict[str, object]]:
+    """Stream tokens from Anthropic SSE endpoint."""
+    auth = resolve_auth_context("anthropic")
+    credential = str(auth.get("credential") or "")
+    auth_method = str(auth.get("method") or "none")
+    if not credential:
+        raise RuntimeError("Credencial Anthropic não configurada.")
+
+    system_prompt = ""
+    request_messages: list[dict[str, str]] = []
+    for item in messages:
+        role = str(item.get("role") or "user").strip().lower()
+        content = str(item.get("content") or "")
+        if role == "system":
+            system_prompt = f"{system_prompt}\n\n{content}".strip() if system_prompt else content
+            continue
+        request_messages.append({"role": "assistant" if role == "assistant" else "user", "content": content})
+
+    timeout = float(getattr(cfg, "LLM_TIMEOUT", 60))
+    profile = response_mode_profile(response_mode)
+    started = perf_counter()
+    resp = None
+    try:
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                **(
+                    {
+                        "Authorization": f"Bearer {credential}",
+                        "anthropic-beta": "oauth-2025-04-20",
+                    }
+                    if auth_method == "oauth"
+                    else {"x-api-key": credential}
+                ),
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": model,
+                "system": system_prompt,
+                "messages": request_messages,
+                "max_tokens": _chat_max_tokens(response_mode),
+                "temperature": float(profile.get("temperature") or 0.15),
+                "stream": True,
+            },
+            timeout=timeout,
+            stream=True,
+        )
+        resp.raise_for_status()
+        for raw_line in resp.iter_lines(decode_unicode=True):
+            if not raw_line or not raw_line.startswith("data:"):
+                continue
+            data_str = raw_line[5:].strip()
+            if data_str == "[DONE]":
+                break
+            try:
+                payload = json.loads(data_str)
+            except Exception:
+                continue
+            event_type = str(payload.get("type") or "")
+            if event_type == "content_block_delta":
+                delta = str((payload.get("delta") or {}).get("text") or "")
+                if delta:
+                    yield {"kind": "delta", "delta": delta}
+            elif event_type == "message_stop":
+                break
+        yield {"kind": "meta", "done_reason": "stop", "truncated": False}
+        record_inference_event(
+            source="chat_service",
+            provider="anthropic",
+            model=model,
+            requested_device="remote",
+            effective_device="remote",
+            latency_ms=(perf_counter() - started) * 1000,
+            success=True,
+            fallback_used=False,
+        )
+    except Exception as exc:
+        record_inference_event(
+            source="chat_service",
+            provider="anthropic",
+            model=model,
+            requested_device="remote",
+            effective_device="remote",
+            latency_ms=(perf_counter() - started) * 1000,
+            success=False,
+            fallback_used=False,
+            error=str(exc),
+        )
+        raise
+    finally:
+        try:
+            resp.close()
+        except Exception:
+            pass
 
 
 def _call_anthropic(
@@ -851,7 +1013,10 @@ def _call_anthropic(
             "https://api.anthropic.com/v1/messages",
             headers={
                 **(
-                    {"Authorization": f"Bearer {credential}"}
+                    {
+                        "Authorization": f"Bearer {credential}",
+                        "anthropic-beta": "oauth-2025-04-20",
+                    }
                     if auth_method == "oauth"
                     else {"x-api-key": credential}
                 ),
@@ -914,6 +1079,7 @@ def _call_openai_compatible(
 
     auth = resolve_auth_context("openai-compatible")
     api_key = str(auth.get("credential") or "")
+    auth_method = str(auth.get("method") or "none")
     headers = {"content-type": "application/json"}
     if api_key:
         headers["authorization"] = f"Bearer {api_key}"
@@ -929,16 +1095,47 @@ def _call_openai_compatible(
     )
     started = perf_counter()
     try:
-        response = requests.post(
-            f"{endpoint.rstrip('/')}/chat/completions",
-            headers=headers,
-            json={
+        is_oauth_transport = _is_openai_oauth_transport(endpoint, auth_method)
+        system_prompt = "\n\n".join(
+            str(item.get("content") or "")
+            for item in messages
+            if str(item.get("role") or "").strip().lower() == "system"
+        ).strip()
+        if is_oauth_transport:
+            request_url = f"{endpoint.rstrip('/')}/v1/responses"
+            request_payload = {
+                "model": model,
+                "input": [
+                    {
+                        "role": str(item.get("role") or "user").strip().lower(),
+                        "content": [
+                            {
+                                "type": "input_text",
+                                "text": str(item.get("content") or ""),
+                            }
+                        ],
+                    }
+                    for item in messages
+                    if str(item.get("role") or "").strip().lower() != "system"
+                ],
+                "temperature": float(profile.get("temperature") or 0.15),
+                "max_output_tokens": _chat_max_tokens(response_mode),
+            }
+            if system_prompt:
+                request_payload["instructions"] = system_prompt
+        else:
+            request_url = f"{endpoint.rstrip('/')}/chat/completions"
+            request_payload = {
                 "model": model,
                 "messages": messages,
                 "temperature": float(profile.get("temperature") or 0.15),
                 "max_tokens": _chat_max_tokens(response_mode),
                 "stream": False,
-            },
+            }
+        response = requests.post(
+            request_url,
+            headers=headers,
+            json=request_payload,
             timeout=timeout,
         )
         response.raise_for_status()
@@ -985,11 +1182,16 @@ def stream_chat_reply_events(
         selected_backend=selected_backend,
         selected_model=selected_model,
     )
+    effective_model = str(selected_target.get("model") or "").strip()
+    # Fallback: se o modelo não foi resolvido, usa o LLM_MODEL configurado
+    if not effective_model:
+        import os as _os
+        effective_model = _os.getenv("LLM_MODEL", "claude-haiku-4-5-20251001").strip()
     effective_session, skill_name, context, history_messages, retrieval = _prepare_chat_context(
         message,
         session_id=session_id,
         cliente=cliente,
-        update_session_id=True,
+        response_mode=mode,
     )
     runtime = _build_selected_runtime(
         {
@@ -1026,7 +1228,7 @@ def stream_chat_reply_events(
         completion_meta["done_reason"] = "deterministic"
         for delta in _chunk_text(content, chunk_size=int(profile.get("chunk_size") or _STREAM_CHUNK_SIZE)):
             yield {"event": "delta", "delta": delta, "skill": skill_name}
-    elif not getattr(cfg, "LLM_ENABLED", False):
+    elif not _llm_chat_enabled(selected_target):
         content = _strip_repeated_greeting(
             _fallback_response(message, skill_name),
             has_session_history=has_session_history,
@@ -1116,9 +1318,16 @@ def stream_chat_reply_events(
                                 has_session_history=has_session_history,
                             )
             elif selected_target["backend"] == "anthropic":
-                content = _call_anthropic(messages, response_mode=mode, model=effective_model)
-                for delta in _chunk_text(content, chunk_size=int(profile.get("chunk_size") or _STREAM_CHUNK_SIZE)):
-                    yield {"event": "delta", "delta": delta, "skill": skill_name}
+                parts: list[str] = []
+                for item in _stream_anthropic_events(messages, response_mode=mode, model=effective_model):
+                    if item.get("kind") == "delta":
+                        delta = str(item.get("delta") or "")
+                        parts.append(delta)
+                        yield {"event": "delta", "delta": delta, "skill": skill_name}
+                content = _strip_repeated_greeting(
+                    "".join(parts).strip(),
+                    has_session_history=has_session_history,
+                )
             elif selected_target["backend"] == "openai-compatible":
                 content = _call_openai_compatible(
                     messages,

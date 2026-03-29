@@ -943,6 +943,7 @@ def _call_llm_anthropic(
                 headers={
                     "Authorization": f"Bearer {api_key}",
                     "anthropic-version": "2023-06-01",
+                    "anthropic-beta": "oauth-2025-04-20",
                     "content-type": "application/json",
                 },
                 json={

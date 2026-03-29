@@ -457,11 +457,13 @@ def _backend_endpoint(spec: InferenceBackendSpec) -> str:
         return spec.endpoint_default
     if spec.key == "openai-compatible":
         configured = os.getenv(spec.endpoint_env, spec.endpoint_default).strip()
+        auth = resolve_auth_context("openai-compatible")
+        if auth["method"] == "oauth" and configured in {"", "https://api.openai.com/v1"}:
+            return "https://chatgpt.com/backend-api"
         if configured:
             return configured
-        auth = resolve_auth_context("openai-compatible")
         if auth["credential"]:
-            return "https://api.openai.com/v1"
+            return "https://chatgpt.com/backend-api" if auth["method"] == "oauth" else "https://api.openai.com/v1"
         return spec.endpoint_default
     return os.getenv(spec.endpoint_env, spec.endpoint_default).strip() or spec.endpoint_default
 

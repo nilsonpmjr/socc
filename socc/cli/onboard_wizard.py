@@ -350,14 +350,19 @@ def _oauth_login(provider_name: str) -> str | None:
     Returns the access_token on success, or None on failure.
     """
     try:
-        from socc.cli.oauth_flow import oauth_login, PROVIDERS
+        from socc.cli.oauth_flow import PROVIDERS, credentials_valid, oauth_login
 
         provider = PROVIDERS.get(provider_name)
         if not provider:
             warning(f"Provider OAuth desconhecido: {provider_name}")
             return None
 
-        result = oauth_login(provider_name)
+        force_reauth = False
+        if credentials_valid(provider_name):
+            reuse_existing = confirm("Credencial existente detectada. Reutilizar?", default=True)
+            force_reauth = not reuse_existing
+
+        result = oauth_login(provider_name, force_reauth=force_reauth)
 
         if result.get("error"):
             error(f"OAuth falhou: {result['error']}")
@@ -381,15 +386,49 @@ def _oauth_login(provider_name: str) -> str | None:
         return None
 
 
-def _test_openai_key(api_key: str, url: str = "https://api.openai.com/v1") -> bool:
+def _normalize_openai_endpoint(url: str, auth_method: str = "api_key") -> str:
+    normalized = str(url or "").strip().rstrip("/")
+    if normalized:
+        if auth_method == "oauth" and normalized == "https://api.openai.com/v1":
+            return "https://chatgpt.com/backend-api"
+        return normalized
+    if auth_method == "oauth":
+        return "https://chatgpt.com/backend-api"
+    return "https://api.openai.com/v1"
+
+
+def _test_openai_key(
+    api_key: str,
+    url: str = "https://api.openai.com/v1",
+    *,
+    model: str = "gpt-5-codex",
+    auth_method: str = "api_key",
+) -> bool:
     try:
         import requests
+        effective_url = _normalize_openai_endpoint(url, auth_method)
+        headers = {"Authorization": f"Bearer {api_key}"}
+        if auth_method == "oauth" and "chatgpt.com/backend-api" in effective_url:
+            resp = requests.post(
+                f"{effective_url}/v1/responses",
+                headers={
+                    **headers,
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model or "gpt-5-codex",
+                    "input": "ping",
+                    "max_output_tokens": 8,
+                },
+                timeout=8,
+            )
+            return resp.status_code in {200, 201, 202, 429}
         resp = requests.get(
-            f"{url}/models",
-            headers={"Authorization": f"Bearer {api_key}"},
+            f"{effective_url}/models",
+            headers=headers,
             timeout=5,
         )
-        return resp.status_code == 200
+        return resp.status_code in {200, 429}
     except Exception:
         return False
 
@@ -400,7 +439,8 @@ def _configure_anthropic(env: dict[str, str]) -> None:
         "Login com conta (OAuth no navegador)",
         "Colar API key diretamente",
     ])
-    if auth_method.startswith("Login"):
+    using_oauth = auth_method.startswith("Login")
+    if using_oauth:
         api_key = _oauth_login("anthropic")
         env["SOCC_AUTH_METHOD_ANTHROPIC"] = "oauth"
     else:
@@ -410,6 +450,7 @@ def _configure_anthropic(env: dict[str, str]) -> None:
     if not api_key:
         warning("Nenhuma credencial obtida para Anthropic.")
         return
+    env["LLM_ENABLED"] = "true"
     env["ANTHROPIC_API_KEY"] = api_key
     if not env.get("SOCC_LLM_FALLBACK_PROVIDER"):
         env["SOCC_LLM_FALLBACK_PROVIDER"] = "anthropic"
@@ -420,6 +461,14 @@ def _configure_anthropic(env: dict[str, str]) -> None:
             success("Conexão OK — provider Anthropic validado.")
         else:
             warning("Falha na validação. Verifique a credencial.")
+            if using_oauth and confirm("Deseja refazer o login OAuth agora?", default=True):
+                retried_token = _oauth_login("anthropic")
+                if retried_token:
+                    env["ANTHROPIC_API_KEY"] = retried_token
+                    if _test_anthropic_key(retried_token):
+                        success("Conexão OK após refazer o login Anthropic.")
+                    else:
+                        warning("A credencial foi renovada, mas a validação ainda não respondeu como esperado.")
     success("Anthropic configurado.")
 
 
@@ -429,7 +478,8 @@ def _configure_openai(env: dict[str, str]) -> None:
         "Login com conta (OAuth no navegador)",
         "Colar API key diretamente",
     ])
-    if auth_method.startswith("Login"):
+    using_oauth = auth_method.startswith("Login")
+    if using_oauth:
         api_key = _oauth_login("openai")
         env["SOCC_AUTH_METHOD_OPENAI"] = "oauth"
     else:
@@ -440,23 +490,45 @@ def _configure_openai(env: dict[str, str]) -> None:
         warning("Nenhuma credencial obtida para OpenAI.")
         return
 
-    url = ask("URL da API OpenAI", default="https://api.openai.com/v1")
+    env["LLM_ENABLED"] = "true"
+    url_default = "https://chatgpt.com/backend-api" if using_oauth else "https://api.openai.com/v1"
+    model_default = "gpt-5-codex" if using_oauth else "gpt-4o-mini"
+    url = _normalize_openai_endpoint(ask("URL da API OpenAI", default=url_default), env["SOCC_AUTH_METHOD_OPENAI"])
     env["SOCC_OPENAI_COMPAT_URL"] = url
-    env["SOCC_OPENAI_COMPAT_MODEL"] = ask("Modelo", default="gpt-4o-mini")
+    env["SOCC_OPENAI_COMPAT_MODEL"] = ask("Modelo", default=model_default)
     if not env.get("SOCC_LLM_FALLBACK_PROVIDER"):
         env["SOCC_LLM_FALLBACK_PROVIDER"] = "openai-compatible"
     env["SOCC_OPENAI_COMPAT_API_KEY"] = api_key
 
     if confirm("Testar conexão?"):
-        if _test_openai_key(api_key, url):
+        if _test_openai_key(
+            api_key,
+            url,
+            model=env.get("SOCC_OPENAI_COMPAT_MODEL", "gpt-5-codex"),
+            auth_method=env.get("SOCC_AUTH_METHOD_OPENAI", "api_key"),
+        ):
             success("Conexão OK — provider OpenAI validado.")
         else:
             warning("Falha na validação. Verifique a credencial.")
+            if using_oauth and confirm("Deseja refazer o login OAuth agora?", default=True):
+                retried_token = _oauth_login("openai")
+                if retried_token:
+                    env["SOCC_OPENAI_COMPAT_API_KEY"] = retried_token
+                    if _test_openai_key(
+                        retried_token,
+                        url,
+                        model=env.get("SOCC_OPENAI_COMPAT_MODEL", "gpt-5-codex"),
+                        auth_method="oauth",
+                    ):
+                        success("Conexão OK após refazer o login OpenAI.")
+                    else:
+                        warning("A credencial foi renovada, mas a validação ainda não respondeu como esperado.")
     success("OpenAI configurado.")
 
 
 def _configure_manual_provider(env: dict[str, str]) -> None:
     """Configure a generic OpenAI-compatible provider via API key."""
+    env["LLM_ENABLED"] = "true"
     url = ask("URL do endpoint OpenAI-compatible", default="")
     if url:
         env["SOCC_OPENAI_COMPAT_URL"] = url

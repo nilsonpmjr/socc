@@ -1038,6 +1038,20 @@ html[data-show-trace="false"] .section-trace {
   margin-top: 4px;
 }
 
+.control-oauth-item {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.control-oauth-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .control-list-title {
   font-size: 12px;
   font-weight: 700;

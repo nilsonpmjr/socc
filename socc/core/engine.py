@@ -9,7 +9,7 @@ from time import perf_counter, time
 from typing import Any
 from pathlib import Path
 
-from soc_copilot.config import LLM_ENABLED, OUTPUT_DIR, SOC_PORT
+from soc_copilot.config import OUTPUT_DIR, SOC_PORT
 from socc.cli.installer import runtime_home
 from socc.cli.service_manager import service_status as runtime_service_status
 from socc.core import agent_loader as agent_loader_runtime
@@ -37,7 +37,11 @@ from socc.gateway.llm_gateway import (
     runtime_status,
     warmup_backend_model,
 )
-from socc.utils.config_loader import load_environment, update_env_assignment
+from socc.utils.config_loader import (
+    load_environment,
+    remove_env_assignment,
+    update_env_assignment,
+)
 from socc.utils.feature_flags import feature_flags_payload
 
 
@@ -391,13 +395,14 @@ def _chat_gateway_contract(
     runtime_override: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     runtime = runtime_override if isinstance(runtime_override, dict) else runtime_brief()
+    runtime_enabled = bool(runtime.get("enabled")) if isinstance(runtime, dict) else False
     return GatewayResponseContract(
         provider=str(runtime.get("provider", "")),
         model=str(runtime.get("model", "")),
         requested_device=str(runtime.get("device", "")),
         effective_device=str(runtime.get("device", "")),
         success=success,
-        fallback_used=not bool(LLM_ENABLED),
+        fallback_used=not runtime_enabled,
         error=error,
         metadata={
             "entrypoint": "chat_reply",
@@ -1344,7 +1349,12 @@ def _runtime_model_options(
         )
 
     openai_auth = resolve_auth_context("openai-compatible")
-    openai_endpoint = os.getenv("SOCC_OPENAI_COMPAT_URL", "").strip() or ("https://api.openai.com/v1" if openai_auth.get("credential") else "")
+    openai_endpoint = os.getenv("SOCC_OPENAI_COMPAT_URL", "").strip()
+    if openai_auth.get("credential"):
+        if openai_auth.get("method") == "oauth" and openai_endpoint in {"", "https://api.openai.com/v1"}:
+            openai_endpoint = "https://chatgpt.com/backend-api"
+        elif not openai_endpoint:
+            openai_endpoint = "https://api.openai.com/v1"
     openai_model = os.getenv("SOCC_OPENAI_COMPAT_MODEL", "").strip() or ("gpt-5-codex" if openai_auth.get("credential") else "")
     openai_ready = bool(openai_model and openai_endpoint and openai_auth.get("credential"))
     openai_auth_label = "OAuth" if openai_auth.get("method") == "oauth" else "API key"
@@ -1368,6 +1378,156 @@ def _runtime_model_options(
         }
     )
     return available
+
+
+def _oauth_env_key(provider_name: str) -> str:
+    normalized = str(provider_name or "").strip().lower()
+    if normalized == "anthropic":
+        return "SOCC_AUTH_METHOD_ANTHROPIC"
+    if normalized == "openai":
+        return "SOCC_AUTH_METHOD_OPENAI"
+    raise ValueError("provider OAuth inválido. Use anthropic ou openai.")
+
+
+def _oauth_provider_label(provider_name: str) -> str:
+    normalized = str(provider_name or "").strip().lower()
+    if normalized == "anthropic":
+        return "Claude"
+    if normalized == "openai":
+        return "Codex / OpenAI"
+    return normalized or "OAuth"
+
+
+def oauth_provider_status_payload(provider_name: str) -> dict[str, Any]:
+    normalized = str(provider_name or "").strip().lower()
+    if normalized not in {"anthropic", "openai"}:
+        raise ValueError("provider OAuth inválido. Use anthropic ou openai.")
+
+    try:
+        from socc.cli.oauth_flow import PROVIDERS, credentials_valid, load_credentials
+    except Exception as exc:
+        return {
+            "provider": normalized,
+            "label": _oauth_provider_label(normalized),
+            "available": False,
+            "configured": False,
+            "status": "unavailable",
+            "error": f"oauth_flow_unavailable: {exc}",
+        }
+
+    provider = PROVIDERS.get(normalized)
+    stored = load_credentials(normalized) or {}
+    auth = resolve_auth_context("anthropic" if normalized == "anthropic" else "openai-compatible")
+    credential_path = Path.home() / ".socc" / "credentials" / f"{normalized}.json"
+    valid = credentials_valid(normalized)
+    token_present = bool(stored.get("access_token"))
+
+    return {
+        "provider": normalized,
+        "label": _oauth_provider_label(normalized),
+        "available": provider is not None,
+        "configured": valid,
+        "status": "connected" if valid else ("stored" if token_present else "disconnected"),
+        "auth_method": str(auth.get("method") or "none"),
+        "credential_source": str(auth.get("source") or "missing"),
+        "has_token": token_present,
+        "has_refresh_token": bool(stored.get("refresh_token")),
+        "expires_at": stored.get("expires_at"),
+        "saved_at": stored.get("saved_at"),
+        "credential_file": str(credential_path),
+        "credential_file_exists": credential_path.exists(),
+        "login_supported": provider is not None,
+        "scope": str(getattr(provider, "scopes", "") or ""),
+    }
+
+
+def oauth_accounts_payload() -> dict[str, Any]:
+    providers = [
+        oauth_provider_status_payload("anthropic"),
+        oauth_provider_status_payload("openai"),
+    ]
+    return {
+        "providers": providers,
+        "connected_count": sum(1 for item in providers if item.get("configured")),
+    }
+
+
+def oauth_login_provider_payload(provider_name: str, *, home: Path | None = None) -> dict[str, Any]:
+    normalized = str(provider_name or "").strip().lower()
+    if normalized not in {"anthropic", "openai"}:
+        raise ValueError("provider OAuth inválido. Use anthropic ou openai.")
+
+    try:
+        from socc.cli.oauth_flow import oauth_login
+    except Exception as exc:
+        raise ValueError(f"oauth_flow indisponível: {exc}") from exc
+
+    result = oauth_login(normalized, force_reauth=True)
+    if result.get("error"):
+        raise ValueError(str(result.get("error")))
+
+    env_file = runtime_home(home) / ".env"
+    env_key = _oauth_env_key(normalized)
+    update_env_assignment(env_file, "LLM_ENABLED", "true")
+    update_env_assignment(env_file, env_key, "oauth")
+    os.environ["LLM_ENABLED"] = "true"
+    os.environ[env_key] = "oauth"
+
+    if normalized == "anthropic":
+        update_env_assignment(env_file, "LLM_PROVIDER", "anthropic")
+        update_env_assignment(env_file, "SOCC_INFERENCE_BACKEND", "anthropic")
+        os.environ["LLM_PROVIDER"] = "anthropic"
+        os.environ["SOCC_INFERENCE_BACKEND"] = "anthropic"
+        if not os.getenv("LLM_MODEL", "").strip():
+            update_env_assignment(env_file, "LLM_MODEL", "claude-sonnet-4-20250514")
+            os.environ["LLM_MODEL"] = "claude-sonnet-4-20250514"
+    if normalized == "openai":
+        update_env_assignment(env_file, "LLM_PROVIDER", "openai-compatible")
+        update_env_assignment(env_file, "SOCC_INFERENCE_BACKEND", "openai-compatible")
+        os.environ["LLM_PROVIDER"] = "openai-compatible"
+        os.environ["SOCC_INFERENCE_BACKEND"] = "openai-compatible"
+        if not os.getenv("SOCC_OPENAI_COMPAT_URL", "").strip():
+            update_env_assignment(env_file, "SOCC_OPENAI_COMPAT_URL", "https://chatgpt.com/backend-api")
+            os.environ["SOCC_OPENAI_COMPAT_URL"] = "https://chatgpt.com/backend-api"
+        if not os.getenv("SOCC_OPENAI_COMPAT_MODEL", "").strip():
+            update_env_assignment(env_file, "SOCC_OPENAI_COMPAT_MODEL", "gpt-5-codex")
+            os.environ["SOCC_OPENAI_COMPAT_MODEL"] = "gpt-5-codex"
+
+    return {
+        "provider": normalized,
+        "label": _oauth_provider_label(normalized),
+        "connected": True,
+        "persisted_env_file": str(env_file),
+        "oauth": oauth_provider_status_payload(normalized),
+        "control_center": control_center_summary_payload(),
+    }
+
+
+def oauth_logout_provider_payload(provider_name: str, *, home: Path | None = None) -> dict[str, Any]:
+    normalized = str(provider_name or "").strip().lower()
+    if normalized not in {"anthropic", "openai"}:
+        raise ValueError("provider OAuth inválido. Use anthropic ou openai.")
+
+    try:
+        from socc.cli.oauth_flow import clear_credentials
+    except Exception as exc:
+        raise ValueError(f"oauth_flow indisponível: {exc}") from exc
+
+    removed = bool(clear_credentials(normalized))
+    env_key = _oauth_env_key(normalized)
+    env_file = runtime_home(home) / ".env"
+    remove_env_assignment(env_file, env_key)
+    os.environ.pop(env_key, None)
+
+    return {
+        "provider": normalized,
+        "label": _oauth_provider_label(normalized),
+        "disconnected": True,
+        "removed_credentials": removed,
+        "persisted_env_file": str(env_file),
+        "oauth": oauth_provider_status_payload(normalized),
+        "control_center": control_center_summary_payload(),
+    }
 
 
 def _active_agent_payload() -> dict[str, Any]:
@@ -1430,6 +1590,7 @@ def control_center_summary_payload(limit_sessions: int = 12) -> dict[str, Any]:
             "available": _runtime_model_options(available_models, runtime_payload=runtime_payload),
             "keep_alive": os.getenv("SOCC_OLLAMA_KEEP_ALIVE", "15m"),
         },
+        "oauth": oauth_accounts_payload(),
         "service": service_payload,
         "vantage": vantage_payload,
         "agents": agent_payload,
@@ -1477,6 +1638,8 @@ def select_runtime_model_payload(
         raise ValueError("model é obrigatório.")
 
     env_file = runtime_home(home) / ".env"
+    update_env_assignment(env_file, "LLM_ENABLED", "true")
+    os.environ["LLM_ENABLED"] = "true"
     if normalized_backend == "ollama":
         env_key = {
             "fast": "SOCC_OLLAMA_FAST_MODEL",

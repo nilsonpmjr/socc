@@ -70,6 +70,9 @@ original_list_chat_sessions_payload = main_module.list_chat_sessions_payload
 original_list_chat_session_messages_payload = main_module.list_chat_session_messages_payload
 original_runtime_status_payload = main_module.runtime_status_payload
 original_control_center_summary_payload = main_module.control_center_summary_payload
+original_oauth_provider_status_payload = main_module.oauth_provider_status_payload
+original_oauth_login_provider_payload = main_module.oauth_login_provider_payload
+original_oauth_logout_provider_payload = main_module.oauth_logout_provider_payload
 original_select_active_agent_payload = main_module.select_active_agent_payload
 original_select_runtime_model_payload = main_module.select_runtime_model_payload
 original_select_vantage_modules_payload = main_module.select_vantage_modules_payload
@@ -154,6 +157,17 @@ try:
         "runtime_models": {
             "catalog": {"reachable": True, "models": [{"name": "llama3.2:3b"}, {"name": "qwen3.5:9b"}]},
             "profiles": {"fast": "llama3.2:3b", "balanced": "qwen3.5:9b", "deep": "qwen3.5:9b"},
+            "available": [
+                {"id": "ollama::llama3.2:3b", "label": "llama3.2:3b", "backend": "ollama", "model": "llama3.2:3b", "configured": True, "response_mode": "fast"},
+                {"id": "anthropic::claude-sonnet-4-20250514", "label": "Claude Sonnet 4", "backend": "anthropic", "model": "claude-sonnet-4-20250514", "configured": False, "response_mode": "balanced"},
+                {"id": "openai-compatible::gpt-5-codex", "label": "Codex", "backend": "openai-compatible", "model": "gpt-5-codex", "configured": False, "response_mode": "deep"},
+            ],
+        },
+        "oauth": {
+            "providers": [
+                {"provider": "anthropic", "label": "Claude", "configured": False, "status": "disconnected", "auth_method": "none", "credential_source": "missing", "has_refresh_token": False, "scope": "org:create_api_key"},
+                {"provider": "openai", "label": "Codex / OpenAI", "configured": False, "status": "disconnected", "auth_method": "none", "credential_source": "missing", "has_refresh_token": False, "scope": "openid profile email"},
+            ],
         },
         "agents": {
             "selected": {"id": "soc-copilot", "path": "/tmp/agent"},
@@ -178,9 +192,45 @@ try:
         "selected_agent": {"id": agent_id, "label": agent_id, "path": f"/tmp/{agent_id}"},
         "control_center": main_module.control_center_summary_payload(),
     }
-    main_module.select_runtime_model_payload = lambda response_mode, model: {
+    main_module.oauth_provider_status_payload = lambda provider_name: {
+        "provider": provider_name,
+        "label": "Claude" if provider_name == "anthropic" else "Codex / OpenAI",
+        "configured": provider_name == "anthropic",
+        "status": "connected" if provider_name == "anthropic" else "disconnected",
+        "auth_method": "oauth",
+        "credential_source": "oauth_store",
+        "has_refresh_token": provider_name == "anthropic",
+    }
+    main_module.oauth_login_provider_payload = lambda provider_name: {
+        "provider": provider_name,
+        "oauth": {
+            "provider": provider_name,
+            "label": "Claude" if provider_name == "anthropic" else "Codex / OpenAI",
+            "configured": True,
+            "status": "connected",
+            "auth_method": "oauth",
+            "credential_source": "oauth_store",
+            "has_refresh_token": True,
+        },
+        "control_center": main_module.control_center_summary_payload(),
+    }
+    main_module.oauth_logout_provider_payload = lambda provider_name: {
+        "provider": provider_name,
+        "oauth": {
+            "provider": provider_name,
+            "label": "Claude" if provider_name == "anthropic" else "Codex / OpenAI",
+            "configured": False,
+            "status": "disconnected",
+            "auth_method": "none",
+            "credential_source": "missing",
+            "has_refresh_token": False,
+        },
+        "control_center": main_module.control_center_summary_payload(),
+    }
+    main_module.select_runtime_model_payload = lambda response_mode, model, backend="ollama": {
         "response_mode": response_mode,
         "model": model,
+        "backend": backend,
         "control_center": main_module.control_center_summary_payload(),
     }
     main_module.select_vantage_modules_payload = lambda module_ids, enabled=None: {
@@ -245,6 +295,21 @@ try:
         warmup_model_body = getattr(warmup_model, "body", b"").decode("utf-8", errors="replace")
         check("chat_http_warmup_model_status", warmup_model.status_code == 200)
         check("chat_http_warmup_model_payload", "\"warmed\":true" in warmup_model_body.replace(" ", ""))
+
+        oauth_status = await main_module.api_control_center_runtime_oauth_status("anthropic")
+        oauth_status_body = getattr(oauth_status, "body", b"").decode("utf-8", errors="replace")
+        check("chat_http_oauth_status_code", oauth_status.status_code == 200)
+        check("chat_http_oauth_status_payload", "\"configured\":true" in oauth_status_body.replace(" ", ""))
+
+        oauth_login = await main_module.api_control_center_runtime_oauth_login("openai")
+        oauth_login_body = getattr(oauth_login, "body", b"").decode("utf-8", errors="replace")
+        check("chat_http_oauth_login_code", oauth_login.status_code == 200)
+        check("chat_http_oauth_login_payload", "\"configured\":true" in oauth_login_body.replace(" ", ""))
+
+        oauth_logout = await main_module.api_control_center_runtime_oauth_logout("openai")
+        oauth_logout_body = getattr(oauth_logout, "body", b"").decode("utf-8", errors="replace")
+        check("chat_http_oauth_logout_code", oauth_logout.status_code == 200)
+        check("chat_http_oauth_logout_payload", "\"configured\":false" in oauth_logout_body.replace(" ", ""))
 
         sync_response = await main_module.chat_endpoint(JsonRequest({"message": "teste endpoint", "session_id": "sessao-http"}))
         sync_body = getattr(sync_response, "body", b"").decode("utf-8", errors="replace")
@@ -317,6 +382,9 @@ finally:
     main_module.list_chat_session_messages_payload = original_list_chat_session_messages_payload
     main_module.runtime_status_payload = original_runtime_status_payload
     main_module.control_center_summary_payload = original_control_center_summary_payload
+    main_module.oauth_provider_status_payload = original_oauth_provider_status_payload
+    main_module.oauth_login_provider_payload = original_oauth_login_provider_payload
+    main_module.oauth_logout_provider_payload = original_oauth_logout_provider_payload
     main_module.select_active_agent_payload = original_select_active_agent_payload
     main_module.select_runtime_model_payload = original_select_runtime_model_payload
     main_module.select_vantage_modules_payload = original_select_vantage_modules_payload
