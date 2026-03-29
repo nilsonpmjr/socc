@@ -329,6 +329,89 @@ def _query_windows_display_adapters() -> list[dict[str, Any]]:
     return devices
 
 
+def _query_linux_gpu_devices() -> list[dict[str, Any]]:
+    """Detect AMD/Intel GPUs on Linux via /dev/dri + lspci or glxinfo."""
+    if os.name == "nt":
+        return []
+
+    # Precisa de ao menos /dev/dri/renderD* para o Ollama usar a GPU
+    dri_path = "/dev/dri"
+    render_nodes = []
+    try:
+        render_nodes = [f for f in os.listdir(dri_path) if f.startswith("renderD")]
+    except OSError:
+        return []
+
+    if not render_nodes:
+        return []
+
+    devices: list[dict[str, Any]] = []
+
+    # Tenta glxinfo primeiro (mais informativo)
+    glxinfo = shutil.which("glxinfo")
+    if glxinfo:
+        try:
+            result = subprocess.run(
+                [glxinfo],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                env={**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":0")},
+            )
+            for line in result.stdout.splitlines():
+                if "OpenGL renderer string" in line:
+                    name = line.split(":", 1)[-1].strip()
+                    vendor = _normalize_vendor(name)
+                    devices.append({
+                        "name": name,
+                        "vendor": vendor,
+                        "supported_by_ollama": vendor in {"nvidia", "amd"},
+                        "render_nodes": render_nodes,
+                        "source": "glxinfo",
+                    })
+                    break
+        except Exception:
+            pass
+
+    if not devices:
+        # Fallback: lspci
+        lspci = shutil.which("lspci")
+        if lspci:
+            try:
+                result = subprocess.run(
+                    [lspci],
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                )
+                for line in result.stdout.splitlines():
+                    lower = line.lower()
+                    if "vga" in lower or "display" in lower or "3d" in lower:
+                        name = line.split(":", 2)[-1].strip()
+                        vendor = _normalize_vendor(name)
+                        devices.append({
+                            "name": name,
+                            "vendor": vendor,
+                            "supported_by_ollama": vendor in {"nvidia", "amd"},
+                            "render_nodes": render_nodes,
+                            "source": "lspci",
+                        })
+            except Exception:
+                pass
+
+    # Se ainda vazio mas tem render nodes, reporta genérico
+    if not devices and render_nodes:
+        devices.append({
+            "name": f"DRI GPU ({render_nodes[0]})",
+            "vendor": "unknown",
+            "supported_by_ollama": False,
+            "render_nodes": render_nodes,
+            "source": "dri_only",
+        })
+
+    return devices
+
+
 def detect_gpu_hardware() -> dict[str, Any]:
     visible_devices = os.getenv("CUDA_VISIBLE_DEVICES", "").strip()
     if visible_devices and visible_devices != "-1":
@@ -369,6 +452,24 @@ def detect_gpu_hardware() -> dict[str, Any]:
             "label": str(windows_devices[0].get("name") or "GPU"),
             "reason": "unsupported_windows_gpu",
             "devices": windows_devices,
+        }
+
+    # Linux: detecta AMD/Intel via /dev/dri + lspci ou glxinfo
+    linux_devices = _query_linux_gpu_devices()
+    if linux_devices:
+        supported = [d for d in linux_devices if d.get("supported_by_ollama")]
+        if supported:
+            return {
+                "available": True,
+                "label": str(supported[0].get("name") or "GPU"),
+                "reason": "linux_dri",
+                "devices": linux_devices,
+            }
+        return {
+            "available": False,
+            "label": str(linux_devices[0].get("name") or "GPU"),
+            "reason": "linux_dri_unsupported",
+            "devices": linux_devices,
         }
 
     return {"available": False, "label": "", "reason": "not_detected", "devices": []}

@@ -1,12 +1,8 @@
 """Interactive prompt helpers for the SOCC CLI.
 
 Uses InquirerPy (arrow-key navigation, space to toggle, enter to confirm)
-when available.  Falls back to plain ``input()`` prompts so the CLI never
-hard-depends on an optional TUI library.
-
-All functions degrade gracefully when stdin is not a TTY or when
-``--no-interactive`` was passed: they return the *default* value silently
-so that scripts and JSON pipelines keep working unchanged.
+with Rich for styled output when available.
+Falls back to plain ``input()`` so the CLI never hard-depends on TUI libs.
 """
 
 from __future__ import annotations
@@ -17,7 +13,7 @@ from pathlib import Path
 from typing import Callable, Sequence
 
 # ---------------------------------------------------------------------------
-# Optional InquirerPy import
+# Optional imports
 # ---------------------------------------------------------------------------
 
 _HAS_INQUIRER = False
@@ -27,25 +23,97 @@ try:
 except ModuleNotFoundError:
     _iq = None  # type: ignore[assignment]
 
+_HAS_RICH = False
+try:
+    from rich.console import Console as _Console
+    from rich.theme import Theme as _Theme
+    _THEME = _Theme({
+        "prompt":   "bold cyan",
+        "hint":     "dim",
+        "ok":       "bold green",
+        "warn":     "bold yellow",
+        "err":      "bold red",
+        "skip":     "dim",
+        "step.num": "bold cyan",
+        "step.bar": "cyan",
+        "choice":   "white",
+        "default":  "dim cyan",
+    })
+    _con = _Console(theme=_THEME, highlight=False)
+    _HAS_RICH = True
+except ImportError:
+    _con = None  # type: ignore[assignment]
+
 # ---------------------------------------------------------------------------
-# TTY / interactive detection
+# TTY detection
 # ---------------------------------------------------------------------------
 
 _FORCE_NON_INTERACTIVE = False
 
 
 def set_non_interactive(value: bool = True) -> None:
-    """Override interactive detection (used by ``--no-interactive``)."""
     global _FORCE_NON_INTERACTIVE
     _FORCE_NON_INTERACTIVE = value
 
 
 def is_interactive() -> bool:
-    """Return *True* when the session can safely prompt the user."""
     if _FORCE_NON_INTERACTIVE:
         return False
     return sys.stdin.isatty() and sys.stdout.isatty()
 
+
+# ---------------------------------------------------------------------------
+# Internal print helpers
+# ---------------------------------------------------------------------------
+
+def _rprint(markup: str, **kwargs) -> None:
+    if _HAS_RICH and _con:
+        _con.print(markup, **kwargs)
+    else:
+        # Strip basic markup tags for plain output
+        import re
+        plain = re.sub(r"\[/?[^\]]+\]", "", markup)
+        print(plain, **kwargs)
+
+
+def _hint(text: str) -> str:
+    """Wrap text in dim style for hints."""
+    return f"[hint]{text}[/hint]"
+
+
+def _label(text: str) -> str:
+    return f"[prompt]{text}[/prompt]"
+
+
+# ---------------------------------------------------------------------------
+# InquirerPy style config
+# ---------------------------------------------------------------------------
+
+try:
+    from InquirerPy.utils import get_style as _get_iq_style
+    _IQ_STYLE = _get_iq_style({
+        "questionmark":     "#4FC3F7 bold",
+        "answermark":       "#4FC3F7 bold",
+        "answer":           "#FFFFFF bold",
+        "input":            "#FFFFFF",
+        "question":         "#4FC3F7 bold",
+        "instruction":      "#546E7A italic",
+        "long_instruction":  "#546E7A italic",
+        "pointer":          "#26C6DA bold",
+        "checkbox":         "#26C6DA",
+        "separator":        "#546E7A",
+        "skipped":          "#546E7A",
+        "validator":        "#EF5350",
+        "marker":           "#26C6DA bold",
+        "fuzzy_prompt":     "#4FC3F7 bold",
+        "fuzzy_info":       "#546E7A italic",
+        "fuzzy_border":     "#546E7A",
+        "fuzzy_match":      "#FFCA28",
+        "spinner_pattern":  "#4FC3F7",
+        "spinner_text":     "#546E7A",
+    })
+except Exception:
+    _IQ_STYLE = None  # type: ignore[assignment]
 
 # ---------------------------------------------------------------------------
 # Redaction helpers
@@ -70,85 +138,133 @@ def _redact_value(value: str) -> str:
 # ---------------------------------------------------------------------------
 
 def step(number: int, total: int, title: str) -> None:
-    """Print a step header: ``[3/12] Seleção de Modelos``."""
     if not is_interactive():
         return
-    print(f"\n[{number}/{total}] {title}")
-    print("-" * (len(title) + len(str(number)) + len(str(total)) + 5))
+    if _HAS_RICH and _con:
+        from rich.rule import Rule
+        pct = int((number / total) * 100)
+        bar_filled = int(pct / 5)
+        bar = "█" * bar_filled + "░" * (20 - bar_filled)
+        _con.print()
+        _con.print(Rule(
+            f"[step.num][{number}/{total}][/step.num] [bold white]{title}[/bold white]  "
+            f"[step.bar]{bar}[/step.bar] [hint]{pct}%[/hint]",
+            style="step.bar",
+        ))
+    else:
+        print(f"\n[{number}/{total}] {title}")
+        print("-" * (len(title) + len(str(number)) + len(str(total)) + 5))
 
 
 # ---------------------------------------------------------------------------
-# Primitives — InquirerPy when available, plain input() as fallback
+# ask — texto livre
 # ---------------------------------------------------------------------------
 
-def ask(prompt: str, *, default: str = "", validate: Callable[[str], bool] | None = None) -> str:
-    """Open-ended text question."""
+def ask(
+    prompt: str,
+    *,
+    default: str = "",
+    validate: Callable[[str], bool] | None = None,
+    hint: str = "",
+) -> str:
     if not is_interactive():
         return default
+
+    full_prompt = prompt
+    if hint:
+        _rprint(f"  {_hint(hint)}")
+
     if _HAS_INQUIRER:
         try:
             return _iq.text(  # type: ignore[union-attr]
-                message=prompt,
+                message=full_prompt,
                 default=default,
                 validate=validate or (lambda _: True),
                 invalid_message="Valor inválido.",
+                style=_IQ_STYLE,
+                amark="✓",
+                qmark="›",
             ).execute()
         except (EOFError, KeyboardInterrupt):
             return default
-    # plain fallback
+
+    # fallback
     suffix = f" [{default}]" if default else ""
     while True:
         try:
-            value = input(f"{prompt}{suffix}: ").strip()
+            value = input(f"  {prompt}{suffix}: ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             return default
         if not value:
             value = default
         if validate and not validate(value):
-            print("  Valor inválido. Tente novamente.")
+            _rprint("  [err]✗[/err]  Valor inválido.")
             continue
         return value
 
 
-def ask_secret(prompt: str) -> str:
-    """Masked input for passwords and tokens."""
+# ---------------------------------------------------------------------------
+# ask_secret — input mascarado
+# ---------------------------------------------------------------------------
+
+def ask_secret(prompt: str, *, hint: str = "") -> str:
     if not is_interactive():
         return ""
+
+    if hint:
+        _rprint(f"  {_hint(hint)}")
+
     if _HAS_INQUIRER:
         try:
-            return _iq.secret(message=prompt).execute()  # type: ignore[union-attr]
+            return _iq.secret(  # type: ignore[union-attr]
+                message=prompt,
+                style=_IQ_STYLE,
+                amark="✓",
+                qmark="›",
+            ).execute()
         except (EOFError, KeyboardInterrupt):
             return ""
+
     try:
-        return getpass.getpass(f"{prompt}: ")
+        return getpass.getpass(f"  {prompt}: ")
     except (EOFError, KeyboardInterrupt):
         print()
         return ""
 
 
-def confirm(prompt: str, *, default: bool = True) -> bool:
-    """Yes/No confirmation.  Always requires Enter to proceed."""
+# ---------------------------------------------------------------------------
+# confirm — Sim/Não
+# ---------------------------------------------------------------------------
+
+def confirm(prompt: str, *, default: bool = True, hint: str = "") -> bool:
     if not is_interactive():
         return default
+
+    if hint:
+        _rprint(f"  {_hint(hint)}")
+
     if _HAS_INQUIRER:
         try:
-            # Use select instead of confirm to avoid single-keypress auto-submit
             default_choice = "Sim" if default else "Não"
             choices = ["Sim", "Não"] if default else ["Não", "Sim"]
             result = _iq.select(  # type: ignore[union-attr]
                 message=prompt,
                 choices=choices,
                 default=default_choice,
-                pointer=">",
+                pointer="›",
                 show_cursor=False,
+                style=_IQ_STYLE,
+                amark="✓",
+                qmark="?",
             ).execute()
             return result == "Sim"
         except (EOFError, KeyboardInterrupt):
             return default
-    hint = "S/n" if default else "s/N"
+
+    hint_str = "S/n" if default else "s/N"
     try:
-        value = input(f"{prompt} ({hint}): ").strip().lower()
+        value = input(f"  {prompt} ({hint_str}): ").strip().lower()
     except (EOFError, KeyboardInterrupt):
         print()
         return default
@@ -157,53 +273,80 @@ def confirm(prompt: str, *, default: bool = True) -> bool:
     return value in {"s", "sim", "y", "yes", "1"}
 
 
-def select(prompt: str, options: Sequence[str], *, default: int = 0) -> str:
-    """Single selection with arrow-key navigation (InquirerPy) or numbered list."""
+# ---------------------------------------------------------------------------
+# select — escolha única com setas
+# ---------------------------------------------------------------------------
+
+def select(
+    prompt: str,
+    options: Sequence[str],
+    *,
+    default: int = 0,
+    hint: str = "",
+) -> str:
     if not is_interactive():
         return options[default] if options else ""
     if not options:
         return ""
+
+    if hint:
+        _rprint(f"  {_hint(hint)}")
+
     if _HAS_INQUIRER:
         try:
             return _iq.select(  # type: ignore[union-attr]
                 message=prompt,
                 choices=list(options),
                 default=options[default] if default < len(options) else None,
-                pointer=">",
+                pointer="›",
                 show_cursor=False,
+                style=_IQ_STYLE,
+                amark="✓",
+                qmark="›",
+                instruction="(↑↓ navegar, Enter confirmar)",
             ).execute()
         except (EOFError, KeyboardInterrupt):
             return options[default]
-    # plain fallback
-    print(f"\n{prompt}")
+
+    # fallback numerado
+    _rprint(f"\n  [prompt]{prompt}[/prompt]")
     for idx, opt in enumerate(options):
-        marker = ">" if idx == default else " "
-        print(f"  {marker} {idx + 1}. {opt}")
+        marker = "›" if idx == default else " "
+        _rprint(f"  [hint]{marker}[/hint] [choice]{idx + 1}. {opt}[/choice]")
     while True:
         try:
-            raw = input(f"Escolha [1-{len(options)}] (padrão {default + 1}): ").strip()
+            raw = input(f"  Escolha [1-{len(options)}]: ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             return options[default]
         if not raw:
             return options[default]
-        if raw.isdigit():
-            idx = int(raw) - 1
-            if 0 <= idx < len(options):
-                return options[idx]
-        for opt in options:
-            if raw.lower() in opt.lower():
-                return opt
-        print("  Opção inválida. Tente novamente.")
+        if raw.isdigit() and 0 <= int(raw) - 1 < len(options):
+            return options[int(raw) - 1]
+        _rprint("  [err]✗[/err]  Opção inválida.")
 
 
-def checklist(prompt: str, options: Sequence[str], *, defaults: Sequence[bool] | None = None) -> list[str]:
-    """Multiple selection with space to toggle, enter to confirm (InquirerPy)."""
+# ---------------------------------------------------------------------------
+# checklist — seleção múltipla
+# ---------------------------------------------------------------------------
+
+def checklist(
+    prompt: str,
+    options: Sequence[str],
+    *,
+    defaults: Sequence[bool] | None = None,
+    hint: str = "",
+) -> list[str]:
     if not is_interactive():
         if defaults:
             return [opt for opt, on in zip(options, defaults) if on]
         return list(options)
+
     chosen_defaults = list(defaults) if defaults else [True] * len(options)
+
+    if hint:
+        _rprint(f"  {_hint(hint)}")
+
     if _HAS_INQUIRER:
         choices = [
             {"name": opt, "value": opt, "enabled": chosen_defaults[i]}
@@ -213,21 +356,25 @@ def checklist(prompt: str, options: Sequence[str], *, defaults: Sequence[bool] |
             return _iq.checkbox(  # type: ignore[union-attr]
                 message=prompt,
                 choices=choices,
-                pointer=">",
-                enabled_symbol="x",
-                disabled_symbol=" ",
-                instruction="(espaço=toggle, enter=confirmar)",
+                pointer="›",
+                enabled_symbol="◉",
+                disabled_symbol="○",
+                instruction="(espaço=toggle, Enter=confirmar)",
+                style=_IQ_STYLE,
+                amark="✓",
+                qmark="›",
             ).execute()
         except (EOFError, KeyboardInterrupt):
             return [opt for opt, on in zip(options, chosen_defaults) if on]
-    # plain fallback
-    print(f"\n{prompt}")
+
+    # fallback
+    _rprint(f"\n  [prompt]{prompt}[/prompt]")
     for idx, opt in enumerate(options):
-        mark = "x" if chosen_defaults[idx] else " "
-        print(f"  [{mark}] {idx + 1}. {opt}")
+        mark = "◉" if chosen_defaults[idx] else "○"
+        _rprint(f"  [{mark}] [choice]{idx + 1}. {opt}[/choice]")
     raw = ""
     try:
-        raw = input("Toggle (números separados por vírgula, Enter para aceitar): ").strip()
+        raw = input("  Toggle (números, Enter=aceitar): ").strip()
     except (EOFError, KeyboardInterrupt):
         print()
     if raw:
@@ -240,12 +387,25 @@ def checklist(prompt: str, options: Sequence[str], *, defaults: Sequence[bool] |
     return [opt for opt, on in zip(options, chosen_defaults) if on]
 
 
-def ask_path(prompt: str, *, default: str = "", must_exist: bool = False) -> Path | None:
-    """Path input with ``~`` expansion, tab-completion (InquirerPy), and existence check."""
+# ---------------------------------------------------------------------------
+# ask_path — caminho com tab-completion
+# ---------------------------------------------------------------------------
+
+def ask_path(
+    prompt: str,
+    *,
+    default: str = "",
+    must_exist: bool = False,
+    hint: str = "",
+) -> Path | None:
     if not is_interactive():
         if default:
             return Path(default).expanduser()
         return None
+
+    if hint:
+        _rprint(f"  {_hint(hint)}")
+
     if _HAS_INQUIRER:
         try:
             from InquirerPy.validator import PathValidator
@@ -255,6 +415,9 @@ def ask_path(prompt: str, *, default: str = "", must_exist: bool = False) -> Pat
             raw = _iq.filepath(  # type: ignore[union-attr]
                 message=prompt,
                 default=default,
+                style=_IQ_STYLE,
+                amark="✓",
+                qmark="›",
                 **validators,
             ).execute()
             if not raw:
@@ -263,12 +426,13 @@ def ask_path(prompt: str, *, default: str = "", must_exist: bool = False) -> Pat
         except (EOFError, KeyboardInterrupt):
             return Path(default).expanduser() if default else None
         except Exception:
-            pass  # fall through to plain input
-    # plain fallback
+            pass
+
+    # fallback
     suffix = f" [{default}]" if default else ""
     while True:
         try:
-            raw = input(f"{prompt}{suffix}: ").strip()
+            raw = input(f"  {prompt}{suffix}: ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             return Path(default).expanduser() if default else None
@@ -278,7 +442,7 @@ def ask_path(prompt: str, *, default: str = "", must_exist: bool = False) -> Pat
             return None
         path = Path(raw).expanduser().resolve()
         if must_exist and not path.exists():
-            print(f"  Caminho não encontrado: {path}")
+            _rprint(f"  [err]✗[/err]  Caminho não encontrado: {path}")
             continue
         return path
 
@@ -288,28 +452,39 @@ def ask_path(prompt: str, *, default: str = "", must_exist: bool = False) -> Pat
 # ---------------------------------------------------------------------------
 
 def summary(title: str, items: dict[str, str]) -> None:
-    """Print a formatted summary table with automatic secret redaction."""
     if not is_interactive():
         return
-    print(f"\n{'=' * 3} {title} {'=' * 3}\n")
-    max_key = max((len(k) for k in items), default=0)
-    for key, value in items.items():
-        display = _redact_value(value) if _should_redact(key) and value else value
-        print(f"  {key:<{max_key + 2}} {display}")
-    print()
+    if _HAS_RICH and _con:
+        from rich.table import Table
+        from rich.panel import Panel
+        table = Table(show_header=False, box=None, padding=(0, 2))
+        table.add_column(style="dim cyan", no_wrap=True)
+        table.add_column(style="white")
+        for key, value in sorted(items.items()):
+            display = _redact_value(value) if _should_redact(key) and value else value
+            table.add_row(key, display)
+        _con.print()
+        _con.print(Panel(table, title=f"[bold cyan]{title}[/bold cyan]", border_style="cyan"))
+    else:
+        print(f"\n=== {title} ===\n")
+        max_key = max((len(k) for k in items), default=0)
+        for key, value in sorted(items.items()):
+            display = _redact_value(value) if _should_redact(key) and value else value
+            print(f"  {key:<{max_key + 2}} {display}")
+        print()
 
 
 def success(msg: str) -> None:
-    print(f"  OK: {msg}")
+    _rprint(f"  [ok]✓[/ok]  {msg}")
 
 
 def warning(msg: str) -> None:
-    print(f"  AVISO: {msg}")
+    _rprint(f"  [warn]⚠[/warn]   {msg}")
 
 
 def error(msg: str) -> None:
-    print(f"  ERRO: {msg}", file=sys.stderr)
+    _rprint(f"  [err]✗[/err]  {msg}")
 
 
 def skip(msg: str) -> None:
-    print(f"  [pulado] {msg}")
+    _rprint(f"  [skip]→ {msg}[/skip]")
