@@ -21,6 +21,8 @@ soc_copilot.db.corrupted
 # Logs
 Notas_Geradas/
 Alertas_Gerados/
+Pensamento_Ofensa_*.md
+Nota_Encerramento_*.txt
 
 .venv/
 venv/

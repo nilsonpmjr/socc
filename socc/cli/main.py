@@ -362,6 +362,47 @@ def _build_parser() -> argparse.ArgumentParser:
     models_test.add_argument("--model", default="", help="Model to test (default: current balanced)")
     models_test.add_argument("--json", action="store_true", help="Emit JSON output")
 
+    # ---- train ----
+    train_parser = subparsers.add_parser(
+        "train",
+        help="Treinar o modelo ML com os arquivos Pensamento_Ofensa_*.md do diretório Training",
+    )
+    train_parser.add_argument("--home", help="Diretório home alternativo do runtime")
+    train_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Forçar retreinamento mesmo que o modelo esteja atualizado",
+    )
+    train_parser.add_argument(
+        "--dir",
+        dest="training_dir",
+        default="",
+        help="Caminho alternativo para o diretório Training (padrão: .agents/Training)",
+    )
+    train_parser.add_argument("--json", action="store_true", help="Emitir saída em JSON")
+    train_parser.add_argument(
+        "--status",
+        action="store_true",
+        help="Exibir status do modelo sem treinar",
+    )
+    train_parser.add_argument(
+        "--list",
+        action="store_true",
+        help="Listar casos de treinamento disponíveis",
+    )
+    train_parser.add_argument(
+        "--predict",
+        default="",
+        metavar="TEXTO",
+        help="Inferir classificação para um texto ou caminho de arquivo",
+    )
+    train_parser.add_argument(
+        "--predict-file",
+        default="",
+        metavar="ARQUIVO",
+        help="Inferir classificação a partir de um arquivo de payload",
+    )
+
     # ---- vantage ----
     vantage_parser = subparsers.add_parser("vantage", help="Inspect Vantage API integration status and module catalog")
     vantage_subparsers = vantage_parser.add_subparsers(dest="vantage_command", required=True)
@@ -1050,6 +1091,101 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"- chunks_indexed: {payload.get('chunks_indexed', 0)}")
                 print(f"- index_path: {payload.get('index_path')}")
             return 0
+
+    if args.command == "train":
+        from socc.core.training_engine import TrainingEngine, default_engine
+
+        home_override = _runtime_home_arg(getattr(args, "home", None))
+
+        if getattr(args, "training_dir", ""):
+            engine = TrainingEngine(training_dir=args.training_dir)
+        else:
+            engine = default_engine(home_override)
+
+        # --- status ---
+        if getattr(args, "status", False):
+            payload = engine.status()
+            if getattr(args, "json", False):
+                print(json.dumps(payload, indent=2, ensure_ascii=False))
+            else:
+                print("Training Engine:")
+                print(f"  modelo_treinado    : {payload['model_available']}")
+                print(f"  modelo_desatualizado: {payload['model_stale']}")
+                print(f"  amostras           : {payload['n_samples']}")
+                print(f"  treinado_em        : {payload.get('trained_at') or '-'}")
+                print(f"  diretório_training : {payload['training_dir']}")
+                print(f"  distribuição:")
+                for label, count in (payload.get("label_distribution") or {}).items():
+                    print(f"    - {label}: {count}")
+            return 0
+
+        # --- list ---
+        if getattr(args, "list", False):
+            records = engine.list_training_records()
+            if getattr(args, "json", False):
+                print(json.dumps(records, indent=2, ensure_ascii=False))
+            else:
+                print(f"Casos de treinamento ({len(records)}):")
+                for rec in records:
+                    print(
+                        f"  [{rec['classificacao'][:3].upper():3}] "
+                        f"Ofensa {rec['ofensa_id']:8} | {rec['cliente']:20} | {rec['tipo_alerta'][:60]}"
+                    )
+            return 0
+
+        # --- predict ---
+        predict_text = getattr(args, "predict", "") or ""
+        predict_file = getattr(args, "predict_file", "") or ""
+        if predict_file:
+            predict_text = Path(predict_file).read_text(encoding="utf-8", errors="replace")
+
+        if predict_text:
+            if engine.is_stale():
+                print("Modelo desatualizado. Retreinando antes da inferência...")
+                engine.train(force=True)
+            payload = engine.predict(predict_text)
+            if getattr(args, "json", False):
+                print(json.dumps(payload, indent=2, ensure_ascii=False))
+            else:
+                if not payload.get("model_available"):
+                    print(f"  Erro: {payload.get('message')}")
+                    return 1
+                print(f"  Classificação prevista : {payload['predicted_classification']}")
+                print(f"  Confiança              : {payload['confidence'] * 100:.0f}%")
+                print(f"  Casos similares:")
+                for case in payload.get("similar_cases", []):
+                    print(
+                        f"    - Ofensa {case['ofensa_id']:8} ({case['cliente']}) "
+                        f"[{case['classificacao']}] {case['similaridade'] * 100:.0f}%"
+                    )
+                hints = payload.get("reasoning_hints", [])
+                if hints:
+                    print(f"  Dicas de raciocínio:")
+                    for hint in hints:
+                        print(f"    • {hint}")
+            return 0
+
+        # --- train (default) ---
+        payload = engine.train(force=getattr(args, "force", False))
+        if getattr(args, "json", False):
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+        else:
+            status = payload.get("status", "?")
+            if status == "ok":
+                print("Modelo treinado com sucesso:")
+                print(f"  amostras    : {payload['n_samples']}")
+                print(f"  k_neighbors : {payload['k_neighbors']}")
+                print(f"  distribuição:")
+                for label, count in (payload.get("label_distribution") or {}).items():
+                    print(f"    - {label}: {count}")
+                print(f"  modelo salvo em: {payload.get('model_path')}")
+            elif status == "skipped":
+                print(f"  Nenhuma ação necessária: {payload.get('reason')}")
+                print("  Use --force para retreinar.")
+            else:
+                print(f"  Erro: {payload.get('reason')}")
+                return 1
+        return 0
 
     parser.print_help()
     return 1

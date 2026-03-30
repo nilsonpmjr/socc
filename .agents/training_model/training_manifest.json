@@ -1,0 +1,24 @@
+{
+  "version": "training-v1",
+  "trained_at": "2026-03-30T18:42:54.499986+00:00",
+  "n_samples": 12,
+  "training_dir": "C:\\Users\\Nilson.Miranda\\OneDrive - iT.eam\\Documentos\\Alertas\\socc\\.agents\\training",
+  "files": {
+    "C:\\Users\\Nilson.Miranda\\OneDrive - iT.eam\\Documentos\\Alertas\\socc\\.agents\\training\\Pensamento_Ofensa_276574.md": "e3c1dbe1d8723232ccfe3a40fbeba15a9a6c30e002f023bee8b99aa788e1634f",
+    "C:\\Users\\Nilson.Miranda\\OneDrive - iT.eam\\Documentos\\Alertas\\socc\\.agents\\training\\Pensamento_Ofensa_276578.md": "2c09621dff7515b3cad8fbb338c854e263e6ba633f9345142ba6c91eaf2eeae5",
+    "C:\\Users\\Nilson.Miranda\\OneDrive - iT.eam\\Documentos\\Alertas\\socc\\.agents\\training\\Pensamento_Ofensa_276580.md": "732357d274906aaf367a4eb9b28b5b4d916de2dfc662777d791c25167afdd7d5",
+    "C:\\Users\\Nilson.Miranda\\OneDrive - iT.eam\\Documentos\\Alertas\\socc\\.agents\\training\\Pensamento_Ofensa_276582.md": "ff4b1d9ecfe89772fb1d674e1a0b60d5b02cfcba4726a31c2a06e8c7a1c4a3c4",
+    "C:\\Users\\Nilson.Miranda\\OneDrive - iT.eam\\Documentos\\Alertas\\socc\\.agents\\training\\Pensamento_Ofensa_276609.md": "24b45848a722f219a295556abfcb1560a517d892eda69d10fc08cbe20dffcb8c",
+    "C:\\Users\\Nilson.Miranda\\OneDrive - iT.eam\\Documentos\\Alertas\\socc\\.agents\\training\\Pensamento_Ofensa_276617.md": "da1e82c7edeee065deb144f68ead9d11f420b84c06f9f41e4792dc6e15afe6d7",
+    "C:\\Users\\Nilson.Miranda\\OneDrive - iT.eam\\Documentos\\Alertas\\socc\\.agents\\training\\Pensamento_Ofensa_276634.md": "8e10898e23b8075c18f59db6e821f2ab2de289bc4dc3780e305c5c648ad10668",
+    "C:\\Users\\Nilson.Miranda\\OneDrive - iT.eam\\Documentos\\Alertas\\socc\\.agents\\training\\Pensamento_Ofensa_276635.md": "f28308ac7b876096957771ac15fc321f284e5625c0a688c301b83b123ab98781",
+    "C:\\Users\\Nilson.Miranda\\OneDrive - iT.eam\\Documentos\\Alertas\\socc\\.agents\\training\\Pensamento_Ofensa_276642.md": "6062c63da37a2775acc498f23c3a462c74ffaa431b8f7a96727300887cf8ba76",
+    "C:\\Users\\Nilson.Miranda\\OneDrive - iT.eam\\Documentos\\Alertas\\socc\\.agents\\training\\Pensamento_Ofensa_276656.md": "fcc4e3f6ac2248f63ce4d3c9f21c6f36ddbd76fb5527dc5de42238b42fb6f2ab",
+    "C:\\Users\\Nilson.Miranda\\OneDrive - iT.eam\\Documentos\\Alertas\\socc\\.agents\\training\\Pensamento_Ofensa_424125.md": "434836ac55e339f50961a5bb818500e901a800928d123e1e97f8eebe88174705",
+    "C:\\Users\\Nilson.Miranda\\OneDrive - iT.eam\\Documentos\\Alertas\\socc\\.agents\\training\\Pensamento_Ofensa_424126.md": "ecdb13701b7eb34a5201a1f4e3ab471091aa9da1537b5a1f72ee553fef7534fe"
+  },
+  "label_distribution": {
+    "Benign True Positive": 6,
+    "True Positive": 6
+  }
+}

@@ -299,7 +299,20 @@ def _retrieve_knowledge(
     )
     kb_context = knowledge_base_runtime.format_retrieval_context(retrieval)
     vantage = vantage_gateway.retrieve_context(query_text, fields=fields)
-    context_parts = [section for section in (kb_context, str(vantage.get("context") or "")) if section]
+
+    # Contexto ML: inferência do Training Engine sobre o texto do evento
+    ml_context = ""
+    try:
+        from socc.core.training_engine import get_training_context
+        ml_context = get_training_context(query_text, auto_train=True)
+    except Exception:
+        pass
+
+    context_parts = [
+        section
+        for section in (kb_context, str(vantage.get("context") or ""), ml_context)
+        if section
+    ]
     retrieval["context"] = "\n\n".join(context_parts).strip()
     retrieval["vantage"] = vantage
     retrieval["sources"] = list(retrieval.get("sources") or []) + list(vantage.get("sources") or [])
