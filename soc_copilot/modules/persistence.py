@@ -198,6 +198,8 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id, id DESC);
         """)
         _ensure_column(conn, "chat_messages", "metadata_json", "TEXT")
+        _ensure_column(conn, "chat_messages", "tokens_in", "INTEGER DEFAULT 0")
+        _ensure_column(conn, "chat_messages", "tokens_out", "INTEGER DEFAULT 0")
         _ensure_column(conn, "analysis_helper", "structured_json", "TEXT")
 
 
@@ -382,6 +384,8 @@ def save_chat_message(
     content: str,
     skill: str = "",
     metadata: dict | None = None,
+    tokens_in: int = 0,
+    tokens_out: int = 0,
 ) -> None:
     if not session_id or not role or not content:
         return
@@ -389,8 +393,8 @@ def save_chat_message(
     ensure_chat_session(session_id=session_id)
     with get_conn() as conn:
         conn.execute(
-            """INSERT INTO chat_messages (session_id, created_at, role, content, skill, metadata_json)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO chat_messages (session_id, created_at, role, content, skill, metadata_json, tokens_in, tokens_out)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 session_id,
                 datetime.now().isoformat(timespec="seconds"),
@@ -398,6 +402,8 @@ def save_chat_message(
                 content,
                 skill,
                 json.dumps(metadata or {}, ensure_ascii=False),
+                int(tokens_in or 0),
+                int(tokens_out or 0),
             ),
         )
         conn.execute(
@@ -464,6 +470,53 @@ def list_chat_sessions(limit: int = 50) -> list[dict]:
             (max(1, min(limit, 200)),),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def get_session_usage(session_id: str) -> dict:
+    """Retorna tokens_in, tokens_out e contagem de mensagens da sessão."""
+    if not session_id:
+        return {"tokens_in": 0, "tokens_out": 0, "messages": 0}
+    try:
+        with get_conn() as conn:
+            row = conn.execute(
+                """SELECT COALESCE(SUM(tokens_in), 0), COALESCE(SUM(tokens_out), 0), COUNT(*)
+                   FROM chat_messages WHERE session_id=?""",
+                (session_id,),
+            ).fetchone()
+        return {
+            "tokens_in": int(row[0]) if row else 0,
+            "tokens_out": int(row[1]) if row else 0,
+            "messages": int(row[2]) if row else 0,
+        }
+    except Exception:
+        return {"tokens_in": 0, "tokens_out": 0, "messages": 0}
+
+
+def list_usage_summary(limit: int = 30) -> dict:
+    """Retorna uso agrupado por sessão (últimas N) com totais."""
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                """SELECT s.session_id, s.titulo, s.updated_at,
+                          COALESCE(SUM(m.tokens_in), 0) AS tokens_in,
+                          COALESCE(SUM(m.tokens_out), 0) AS tokens_out,
+                          COUNT(m.id) AS messages
+                   FROM chat_sessions s
+                   LEFT JOIN chat_messages m ON m.session_id = s.session_id
+                   GROUP BY s.session_id
+                   ORDER BY s.updated_at DESC
+                   LIMIT ?""",
+                (max(1, min(limit, 100)),),
+            ).fetchall()
+        sessions = [dict(row) for row in rows]
+        total_in = sum(int(r.get("tokens_in") or 0) for r in sessions)
+        total_out = sum(int(r.get("tokens_out") or 0) for r in sessions)
+        return {
+            "sessions": sessions,
+            "totals": {"tokens_in": total_in, "tokens_out": total_out},
+        }
+    except Exception:
+        return {"sessions": [], "totals": {"tokens_in": 0, "tokens_out": 0}}
 
 
 def save_feedback(

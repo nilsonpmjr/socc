@@ -819,6 +819,8 @@ def _persist_chat_exchange(
     skill_name: str,
     content: str,
     assistant_payload: dict[str, object] | None = None,
+    tokens_in: int = 0,
+    tokens_out: int = 0,
 ) -> None:
     persistence.save_chat_message(
         session_id=session_id,
@@ -831,6 +833,7 @@ def _persist_chat_exchange(
             "skill": skill_name,
             "session_id": session_id,
         },
+        tokens_in=tokens_in,
     )
     payload = dict(assistant_payload or {})
     payload.setdefault("type", "message")
@@ -843,6 +846,7 @@ def _persist_chat_exchange(
         content=content,
         skill=skill_name,
         metadata=payload,
+        tokens_out=tokens_out,
     )
 
 
@@ -1068,6 +1072,8 @@ def _stream_anthropic_events(
             stream=True,
         )
         resp.raise_for_status()
+        _tokens_in = 0
+        _tokens_out = 0
         for raw_line in resp.iter_lines(decode_unicode=True):
             if not raw_line or not raw_line.startswith("data:"):
                 continue
@@ -1079,13 +1085,19 @@ def _stream_anthropic_events(
             except Exception:
                 continue
             event_type = str(payload.get("type") or "")
-            if event_type == "content_block_delta":
+            if event_type == "message_start":
+                _usage = (payload.get("message") or {}).get("usage") or {}
+                _tokens_in = int(_usage.get("input_tokens") or 0)
+            elif event_type == "content_block_delta":
                 delta = str((payload.get("delta") or {}).get("text") or "")
                 if delta:
                     yield {"kind": "delta", "delta": delta}
+            elif event_type == "message_delta":
+                _usage = payload.get("usage") or {}
+                _tokens_out = int(_usage.get("output_tokens") or 0)
             elif event_type == "message_stop":
                 break
-        yield {"kind": "meta", "done_reason": "stop", "truncated": False}
+        yield {"kind": "meta", "done_reason": "stop", "truncated": False, "tokens_in": _tokens_in, "tokens_out": _tokens_out}
         record_inference_event(
             source="chat_service",
             provider="anthropic",
@@ -1361,6 +1373,8 @@ def stream_chat_reply_events(
         "truncated": False,
         "continuation_used": False,
         "continuation_done_reason": "",
+        "tokens_in": 0,
+        "tokens_out": 0,
     }
     deterministic_reply = _deterministic_consultive_reply(
         message=message,
@@ -1468,6 +1482,8 @@ def stream_chat_reply_events(
                         delta = str(item.get("delta") or "")
                         parts.append(delta)
                         yield {"event": "delta", "delta": delta, "skill": skill_name}
+                    else:
+                        completion_meta.update(dict(item))
                 content = _strip_repeated_greeting(
                     "".join(parts).strip(),
                     has_session_history=has_session_history,
@@ -1508,6 +1524,8 @@ def stream_chat_reply_events(
         message=message,
         skill_name=skill_name,
         content=content,
+        tokens_in=int(completion_meta.get("tokens_in") or completion_meta.get("prompt_eval_count") or 0),
+        tokens_out=int(completion_meta.get("tokens_out") or completion_meta.get("eval_count") or 0),
         assistant_payload={
             "type": "message",
             "content": content,

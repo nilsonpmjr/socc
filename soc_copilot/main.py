@@ -9,9 +9,11 @@ Rotas:
 """
 from __future__ import annotations
 import asyncio
+from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
 from datetime import datetime
+import time as _time
 
 from fastapi import FastAPI, Request, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
@@ -49,6 +51,21 @@ from socc.core import storage as storage_runtime
 from socc.gateway.llm_gateway import record_analysis_event
 from socc.utils.feature_flags import resolve_feature_flags
 from socc.utils.http_api import feature_disabled_payload, sse_event
+from soc_copilot.modules import persistence as _persistence
+
+# ---------------------------------------------------------------------------
+# Event Log (ring buffer em memória)
+# ---------------------------------------------------------------------------
+_event_log: deque = deque(maxlen=50)
+
+
+def log_event(event: str, payload: dict | None = None) -> None:
+    _event_log.appendleft({
+        "ts": datetime.now().isoformat(timespec="seconds"),
+        "event": event,
+        "payload": payload or {},
+    })
+
 
 # ---------------------------------------------------------------------------
 # App
@@ -313,6 +330,7 @@ async def api_control_center_runtime_oauth_login(provider_name: str):
         return JSONResponse(feature_disabled_payload("runtime_api"), status_code=503)
     try:
         payload = await asyncio.to_thread(oauth_login_provider_payload, provider_name)
+        log_event("oauth.token.refresh", {"provider": provider_name})
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
     return JSONResponse(payload)
@@ -393,6 +411,94 @@ async def chat_session_messages(session_id: str, limit: int = 100):
     return JSONResponse(list_chat_session_messages_payload(session_id=session_id, limit=limit))
 
 
+@app.get("/api/chat/sessions/{session_id}/usage")
+async def chat_session_usage(session_id: str):
+    try:
+        return JSONResponse(_persistence.get_session_usage(session_id))
+    except Exception as exc:
+        return JSONResponse({"tokens_in": 0, "tokens_out": 0, "messages": 0, "error": str(exc)})
+
+
+@app.get("/api/usage/summary")
+async def usage_summary(limit: int = 30):
+    try:
+        return JSONResponse(_persistence.list_usage_summary(limit=limit))
+    except Exception as exc:
+        return JSONResponse({"sessions": [], "totals": {"tokens_in": 0, "tokens_out": 0}, "error": str(exc)})
+
+
+@app.get("/api/health/attention")
+async def health_attention():
+    items: list[dict] = []
+    try:
+        import os as _os
+        import urllib.request as _ureq
+        # Verifica LLM habilitado
+        llm_enabled = str(_os.getenv("LLM_ENABLED", "")).strip().lower() in {"1", "true", "yes", "on"}
+        if not llm_enabled:
+            items.append({
+                "severity": "warning",
+                "icon": "⚠️",
+                "title": "LLM desabilitado",
+                "description": "LLM_ENABLED não está ativo. Respostas usam fallback.",
+            })
+        # Verifica OAuth Anthropic
+        try:
+            oauth_payload = await asyncio.to_thread(oauth_provider_status_payload, "anthropic")
+            providers = (oauth_payload.get("oauth") or {}).get("providers") or []
+            for prov in providers:
+                if str(prov.get("provider") or "").lower() == "anthropic":
+                    expires_at = str(prov.get("expires_at") or "")
+                    if expires_at:
+                        try:
+                            from datetime import datetime as _dt, timezone as _tz
+                            exp_dt = _dt.fromisoformat(expires_at.replace("Z", "+00:00"))
+                            now_dt = _dt.now(_tz.utc)
+                            diff_secs = (exp_dt - now_dt).total_seconds()
+                            if diff_secs < 0:
+                                items.append({"severity": "error", "icon": "❌", "title": "Token Anthropic expirado", "description": f"O token OAuth Anthropic expirou em {expires_at}."})
+                            elif diff_secs < 3600:
+                                items.append({"severity": "warning", "icon": "⚠️", "title": "Token Anthropic expirando", "description": f"O token OAuth Anthropic expira em menos de 1h ({expires_at})."})
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+        # Verifica Ollama offline
+        try:
+            ollama_url = _os.getenv("OLLAMA_URL", "http://localhost:11434").rstrip("/")
+            req = _ureq.Request(f"{ollama_url}/api/tags", method="GET")
+            with _ureq.urlopen(req, timeout=2):
+                pass
+        except Exception:
+            items.append({
+                "severity": "warning",
+                "icon": "⚠️",
+                "title": "Ollama offline",
+                "description": "Não foi possível conectar ao Ollama local. Backend local indisponível.",
+            })
+        # Verifica KB vazia
+        try:
+            from socc.core import knowledge_base as _kb
+            doc_count = _kb.count_documents()
+            if doc_count == 0:
+                items.append({
+                    "severity": "info",
+                    "icon": "ℹ️",
+                    "title": "Base de conhecimento vazia",
+                    "description": "Nenhum documento indexado na KB local.",
+                })
+        except Exception:
+            pass
+    except Exception as exc:
+        items.append({"severity": "info", "icon": "ℹ️", "title": "Verificação parcial", "description": str(exc)})
+    return JSONResponse({"items": items})
+
+
+@app.get("/api/events")
+async def get_events():
+    return JSONResponse({"events": list(_event_log)})
+
+
 # ---------------------------------------------------------------------------
 # Chat UI — nova interface estilo OpenWebUI
 # ---------------------------------------------------------------------------
@@ -454,15 +560,35 @@ async def chat_stream_endpoint(request: Request):
     session_id = str(prepared["session_id"])
 
     async def event_stream():
+        _started = _time.perf_counter()
+        _meta: dict = {}
         try:
             async for event in stream_chat_submission_events(
                 **prepared,
                 threat_intel_enabled=flags.threat_intel,
                 source="chat_payload",
             ):
-                yield sse_event(event["event"], event["payload"])
+                ev_name = event["event"]
+                ev_payload = event["payload"]
+                if ev_name == "meta" and not _meta:
+                    _meta = ev_payload or {}
+                    log_event("chat.inference.start", {
+                        "backend": _meta.get("selected_backend") or _meta.get("backend") or "unknown",
+                        "model": _meta.get("model") or "",
+                        "session_id": _meta.get("session_id") or session_id,
+                    })
+                elif ev_name == "final":
+                    _dur = int((_time.perf_counter() - _started) * 1000)
+                    _fmeta = (ev_payload or {}).get("metadata") or {}
+                    log_event("chat.inference.done", {
+                        "tokens_out": int(_fmeta.get("tokens_out") or 0),
+                        "duration_ms": _dur,
+                        "session_id": (ev_payload or {}).get("session_id") or session_id,
+                    })
+                yield sse_event(ev_name, ev_payload)
         except Exception as exc:
             effective_session = session_id or str(int(datetime.now().timestamp() * 1000))
+            log_event("chat.inference.error", {"error": str(exc), "session_id": effective_session})
             record_analysis_event(
                 source="chat_payload_stream",
                 latency_ms=0,
