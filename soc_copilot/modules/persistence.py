@@ -341,6 +341,41 @@ def ensure_chat_session(session_id: str, cliente: str = "", titulo: str = "") ->
         )
 
 
+def update_chat_session_titulo(session_id: str, titulo: str) -> None:
+    """Atualiza o título da sessão. Usado após geração de título via LLM."""
+    if not session_id or not titulo:
+        return
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE chat_sessions SET titulo=? WHERE session_id=?",
+            (titulo.strip()[:120], session_id),
+        )
+
+
+def get_chat_session_titulo(session_id: str) -> str:
+    """Retorna o título atual da sessão, ou string vazia se não existe/sem título."""
+    if not session_id:
+        return ""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT titulo FROM chat_sessions WHERE session_id=?",
+            (session_id,),
+        ).fetchone()
+    return str(row[0] or "") if row else ""
+
+
+def count_chat_messages(session_id: str) -> int:
+    """Retorna o número de mensagens salvas na sessão."""
+    if not session_id:
+        return 0
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM chat_messages WHERE session_id=?",
+            (session_id,),
+        ).fetchone()
+    return int(row[0]) if row else 0
+
+
 def save_chat_message(
     session_id: str,
     role: str,

@@ -375,17 +375,24 @@ try:
                     jsonlib.dumps({"done": True, "done_reason": "length"}),
                 ]
             )
-        check(
-            "stream_ollama_truncated_continuation_prompt",
-            "Continue exatamente de onde voce parou" in str((json.get("messages") or [])[-1].get("content") or ""),
-            str((json.get("messages") or [])[-1]),
-        )
-        return FakeStreamResponse(
-            [
-                jsonlib.dumps({"message": {"content": " concluída."}, "done": False}),
-                jsonlib.dumps({"done": True, "done_reason": "stop"}),
-            ]
-        )
+        if request_counter["count"] == 2:
+            # Continuation da resposta truncada
+            check(
+                "stream_ollama_truncated_continuation_prompt",
+                "Continue exatamente de onde voce parou" in str((json.get("messages") or [])[-1].get("content") or ""),
+                str((json.get("messages") or [])[-1]),
+            )
+            return FakeStreamResponse(
+                [
+                    jsonlib.dumps({"message": {"content": " concluída."}, "done": False}),
+                    jsonlib.dumps({"done": True, "done_reason": "stop"}),
+                ]
+            )
+        # Call 3+: geração de título de sessão (stream=False) — retorna JSON direto
+        class _FakeTitleResp:
+            def raise_for_status(self) -> None: return None
+            def json(self) -> dict: return {"message": {"content": "Análise do alerta"}}
+        return _FakeTitleResp()
 
     chat_service.requests.post = fake_post_truncated
     events = list(
@@ -400,7 +407,8 @@ try:
     final_data = final_event.get("data") if isinstance(final_event.get("data"), dict) else {}
     final_metadata = final_data.get("metadata") if isinstance(final_data, dict) else {}
 
-    check("stream_ollama_truncated_second_call", request_counter["count"] == 2, str(request_counter))
+    # 2 calls = main + continuation (sem título gerado); 3 = com geração de título no primeiro turno
+    check("stream_ollama_truncated_second_call", request_counter["count"] in (2, 3), str(request_counter))
     check(
         "stream_ollama_truncated_content_completed",
         isinstance(final_data, dict) and final_data.get("content") == "Primeira parte. Segunda parte concluída.",

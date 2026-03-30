@@ -614,10 +614,13 @@ def _prepare_chat_context(
     kb_limit = 0 if lightweight else int(profile.get("kb_limit") or 3)
     kb_chars = 0 if lightweight else int(profile.get("kb_chars") or 1100)
     skill_name = select_skill(message)
+    # Passa título vazio — o título real será gerado via LLM após o primeiro turno.
+    # O ON CONFLICT do ensure_chat_session só sobrescreve título não-vazio,
+    # então passar vazio aqui garante que títulos gerados nunca sejam sobrescritos.
     persistence.ensure_chat_session(
         session_id=effective_session,
         cliente=cliente,
-        titulo=message.strip()[:80],
+        titulo="",
     )
     session_context = "" if lightweight else _format_history(effective_session, limit=history_limit)
     artifact_context = "" if lightweight else _find_recent_artifact_context(effective_session, message)
@@ -679,6 +682,114 @@ def _prepare_chat_context(
     retrieval["matches"] = list(retrieval.get("matches") or []) + list(vantage.get("matches") or [])
     retrieval["lightweight"] = lightweight
     return effective_session, skill_name, context, history_messages, retrieval
+
+
+def _generate_session_title(message: str, response: str, selected_target: dict) -> str:
+    """Gera um título curto para a sessão via LLM baseado no primeiro turno.
+    
+    Usa o backend/modelo já configurado. Retorna string vazia em caso de falha.
+    Prompt minimalista — resposta esperada: 3-6 palavras, sem pontuação final.
+    """
+    try:
+        prompt = (
+            "Gere um título curto (3 a 6 palavras, sem pontuação final) para uma conversa "
+            "que começa com a mensagem do usuário abaixo. Responda SOMENTE o título, "
+            "sem aspas, sem explicação.\n\n"
+            f"Mensagem: {message.strip()[:300]}\n"
+            f"Resposta inicial: {response.strip()[:300]}"
+        )
+        messages = [{"role": "user", "content": prompt}]
+        backend = str(selected_target.get("backend") or "").lower()
+
+        if backend == "ollama":
+            runtime_cfg = resolve_runtime()
+            model = resolve_ollama_model_for_mode("fast")
+            base_url = getattr(cfg, "OLLAMA_URL", "http://localhost:11434").rstrip("/")
+            timeout = float(getattr(cfg, "LLM_TIMEOUT", 60))
+            body = {
+                "model": model,
+                "messages": messages,
+                "stream": False,
+                "options": {"num_predict": 32, "temperature": 0.3},
+            }
+            resp = requests.post(
+                f"{base_url}/api/chat",
+                json=body,
+                timeout=min(timeout, 30),
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            title = str(data.get("message", {}).get("content") or "").strip()
+        else:
+            # Anthropic / OpenAI-compatible
+            auth = resolve_auth_context(backend=backend, model="")
+            api_key = auth.get("api_key") or resolve_api_key(backend)
+            model = str(selected_target.get("model") or "").strip()
+            if not model:
+                import os as _os
+                model = _os.getenv("LLM_MODEL", "claude-haiku-4-5-20251001")
+            if "anthropic" in backend or "claude" in model.lower():
+                base_url = "https://api.anthropic.com/v1"
+                headers = {
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                }
+                if auth.get("auth_type") == "oauth":
+                    headers = {
+                        "Authorization": f"Bearer {api_key}",
+                        "anthropic-version": "2023-06-01",
+                        "anthropic-beta": "oauth-2025-04-20",
+                        "content-type": "application/json",
+                    }
+                body = {
+                    "model": model,
+                    "max_tokens": 32,
+                    "messages": messages,
+                }
+                resp = requests.post(
+                    f"{base_url}/messages",
+                    headers=headers,
+                    json=body,
+                    timeout=20,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                title = str((data.get("content") or [{}])[0].get("text") or "").strip()
+            else:
+                # OpenAI-compatible
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "content-type": "application/json",
+                }
+                base_url = getattr(cfg, "OPENAI_BASE_URL", "https://api.openai.com/v1")
+                body = {
+                    "model": model,
+                    "max_tokens": 32,
+                    "messages": messages,
+                    "temperature": 0.3,
+                }
+                resp = requests.post(
+                    f"{base_url}/chat/completions",
+                    headers=headers,
+                    json=body,
+                    timeout=20,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                title = str(
+                    (data.get("choices") or [{}])[0]
+                    .get("message", {})
+                    .get("content") or ""
+                ).strip()
+
+        # Sanitiza: remove aspas, pontuação final, limita tamanho
+        import re as _re
+        title = _re.sub(r'^["\']|["\']$', "", title).strip().rstrip(".,;:")
+        return title[:80] if title else ""
+    except Exception as exc:
+        _logger.debug("Falha ao gerar título de sessão: %s", exc)
+        return ""
 
 
 def _handle_memory_persistence(message: str, response: str, session_id: str) -> None:
@@ -1388,6 +1499,10 @@ def stream_chat_reply_events(
 
     _handle_memory_persistence(message, content, effective_session)
 
+    # Detecta primeiro turno: sem histórico E sem título ainda gerado
+    existing_titulo = persistence.get_chat_session_titulo(effective_session)
+    is_first_turn = not has_session_history and not existing_titulo and persistence.count_chat_messages(effective_session) == 0
+
     _persist_chat_exchange(
         session_id=effective_session,
         message=message,
@@ -1416,6 +1531,14 @@ def stream_chat_reply_events(
         },
     )
 
+    # Gera título de sessão no primeiro turno (assíncrono após resposta)
+    session_title: str = ""
+    if is_first_turn and content:
+        session_title = _generate_session_title(message, content, selected_target)
+        if session_title:
+            persistence.update_chat_session_titulo(effective_session, session_title)
+            _logger.debug("Título de sessão gerado: %s", session_title)
+
     yield {
         "event": "final",
         "data": {
@@ -1423,6 +1546,7 @@ def stream_chat_reply_events(
             "content": content,
             "skill": skill_name,
             "session_id": effective_session,
+            "session_title": session_title,
             "runtime": runtime,
             "metadata": {
                 "response_mode": mode,

@@ -1982,6 +1982,11 @@ function handleStreamEvent(eventName, payload) {
 
   if (eventName === 'final') {
     addAssistantMessage(payload);
+    // Atualiza título da sessão quando o backend gerar um título contextual
+    if (payload.session_title && payload.session_title !== state.sessionTitle) {
+      state.sessionTitle = payload.session_title;
+      sessionTitle.textContent = state.sessionTitle;
+    }
     return;
   }
 
