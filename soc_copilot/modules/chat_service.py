@@ -109,12 +109,21 @@ def response_mode_profile(value: str = "") -> dict[str, object]:
     return dict(_RESPONSE_MODE_PROFILES[normalize_response_mode(value)])
 
 
-def resolve_ollama_model_for_mode(response_mode: str = _DEFAULT_RESPONSE_MODE) -> str:
+def resolve_ollama_model_for_mode(
+    response_mode: str = _DEFAULT_RESPONSE_MODE,
+    skill_name: str = "",
+) -> str:
     mode = normalize_response_mode(response_mode)
     primary = getattr(cfg, "OLLAMA_MODEL", "qwen3.5:9b")
     fast_model = os.getenv("SOCC_OLLAMA_FAST_MODEL", "llama3.2:3b").strip() or primary
     balanced_model = os.getenv("SOCC_OLLAMA_BALANCED_MODEL", primary).strip() or primary
     deep_model = os.getenv("SOCC_OLLAMA_DEEP_MODEL", primary).strip() or primary
+
+    # Skill de chat livre (soc-generalist) → sempre usa o modelo mais capaz disponível
+    # pra não ter o problema do llama3.2:3b não conseguir seguir persona e tom
+    if skill_name in {"soc-generalist", ""} and mode in {"balanced", "deep"}:
+        return deep_model or balanced_model or primary
+
     mapping = {
         "fast": fast_model,
         "balanced": balanced_model,
@@ -672,6 +681,26 @@ def _prepare_chat_context(
     return effective_session, skill_name, context, history_messages, retrieval
 
 
+def _handle_memory_persistence(message: str, response: str, session_id: str) -> None:
+    """If the user asked to remember something, persist it to agent memory."""
+    try:
+        from socc.core.agent_memory import (
+            should_remember,
+            extract_memory_fact,
+            append_long_term_memory,
+            append_daily_note,
+        )
+        if should_remember(message):
+            fact = extract_memory_fact(message, response)
+            if fact:
+                append_long_term_memory(fact)
+                _logger.info("Memória persistida: %s", fact[:80])
+        # Sempre registra nota diária quando a skill for analítica
+        append_daily_note(f"[sessão {session_id[:8]}] {message.strip()[:120]}")
+    except Exception:
+        pass
+
+
 def _persist_chat_exchange(
     *,
     session_id: str,
@@ -1183,7 +1212,6 @@ def stream_chat_reply_events(
         selected_model=selected_model,
     )
     effective_model = str(selected_target.get("model") or "").strip()
-    # Fallback: se o modelo não foi resolvido, usa o LLM_MODEL configurado
     if not effective_model:
         import os as _os
         effective_model = _os.getenv("LLM_MODEL", "claude-haiku-4-5-20251001").strip()
@@ -1193,6 +1221,11 @@ def stream_chat_reply_events(
         cliente=cliente,
         response_mode=mode,
     )
+
+    # Recalcula modelo com skill conhecido — chat livre usa modelo mais capaz
+    if selected_target.get("backend") == "ollama" and not selected_model:
+        effective_model = resolve_ollama_model_for_mode(mode, skill_name=skill_name)
+
     runtime = _build_selected_runtime(
         {
             **selected_target,
@@ -1352,6 +1385,8 @@ def stream_chat_reply_events(
             )
             for delta in _chunk_text(content, chunk_size=int(profile.get("chunk_size") or _STREAM_CHUNK_SIZE)):
                 yield {"event": "delta", "delta": delta, "skill": skill_name}
+
+    _handle_memory_persistence(message, content, effective_session)
 
     _persist_chat_exchange(
         session_id=effective_session,

@@ -409,12 +409,22 @@ def build_prompt_context(
     )
     skill = config.skills[skill_name]
 
+    # Carrega memória persistente entre sessões
+    try:
+        from socc.core.agent_memory import load_recent_memory_context
+        persistent_memory = load_recent_memory_context(max_chars=1200)
+    except Exception:
+        persistent_memory = ""
+
+    # Memória do agente: combina MEMORY.md estático + memória dinâmica
+    combined_memory = "\n\n".join(m for m in [config.memory, persistent_memory] if m).strip()
+
     return {
         "identity": config.identity,
         "soul": config.soul,
         "user": config.user,
         "agents": config.agents,
-        "memory": config.memory,
+        "memory": combined_memory,
         "tools": config.tools,
         "skills_index": config.skills_index,
         "references_index": ", ".join(sorted(config.references.keys())),
