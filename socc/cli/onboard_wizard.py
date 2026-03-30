@@ -1,9 +1,9 @@
 """Interactive onboarding wizard for ``socc onboard``.
 
-Guides the user through 12 configuration steps, collecting settings and
+Guides the user through 14 configuration steps, collecting settings and
 persisting them in ``~/.socc/.env`` via :func:`batch_update_env`.
 
-Uses Rich for a modern, interactive TUI experience.
+Uses Rich for a modern, interactive TUI experience with Vantage color palette.
 """
 
 from __future__ import annotations
@@ -30,10 +30,45 @@ from socc.cli.prompt_runtime import (
 )
 from socc.gateway.llm_gateway import detect_gpu_hardware
 
-TOTAL_STEPS = 12
+TOTAL_STEPS = 14
 
 # ---------------------------------------------------------------------------
-# Rich UI helpers
+# Vantage color palette
+# ---------------------------------------------------------------------------
+# Primary  : #00D4FF  → cyan bold
+# Secondary: #7B2FBE  → purple
+# Accent   : #00FF94  → green bright
+# Warning  : #FFB800  → yellow
+# Danger   : #FF4D6D  → red
+# Muted    : #8B949E  → dim
+# Background highlight: #161B22
+
+_C_PRIMARY   = "bold cyan"
+_C_SECONDARY = "bold magenta"
+_C_ACCENT    = "bold green"
+_C_WARN      = "bold yellow"
+_C_DANGER    = "bold red"
+_C_MUTED     = "dim"
+_C_LABEL     = "cyan"
+
+# Step category icons
+_ICON_FOLDER   = "📁"
+_ICON_BRAIN    = "🧠"
+_ICON_SERVER   = "⚡"
+_ICON_MODEL    = "🤖"
+_ICON_CLOUD    = "☁️"
+_ICON_SHIELD   = "🔒"
+_ICON_VANTAGE  = "🔭"
+_ICON_AGENT    = "🕵️"
+_ICON_NOTES    = "📝"
+_ICON_DRAFTS   = "📨"
+_ICON_TRAINING = "🎓"
+_ICON_FLAGS    = "🚩"
+_ICON_AUDIT    = "🔐"
+_ICON_SAVE     = "💾"
+
+# ---------------------------------------------------------------------------
+# Rich UI helpers — Vantage color palette
 # ---------------------------------------------------------------------------
 
 def _get_console():
@@ -47,36 +82,51 @@ def _get_console():
 def _banner():
     console = _get_console()
     if not console:
-        print("\n" + "=" * 58)
-        print("  SOCC — Wizard de Onboarding")
-        print("=" * 58)
-        print("Pressione Ctrl+C a qualquer momento para cancelar.\n")
+        print("\n" + "═" * 62)
+        print("  ⚡ SOCC  —  SOC Copilot  ·  Onboarding")
+        print("═" * 62)
+        print("  Pressione Ctrl+C a qualquer momento para cancelar.\n")
         return
     try:
         from rich.panel import Panel
+        from rich.columns import Columns
         from rich.text import Text
         from rich.align import Align
-        title = Text()
-        title.append("⚡ SOCC", style="bold cyan")
-        title.append(" — SOC Copilot", style="bold white")
-        subtitle = Text("Configure seu runtime local de IA para SOC", style="dim")
-        content = Align.center(title) 
+
+        logo = Text()
+        logo.append("\n")
+        logo.append("  ██████╗  ██████╗  ██████╗ ██████╗ \n", style="bold cyan")
+        logo.append("  ██╔════╝ ██╔═══██╗██╔════╝██╔════╝\n", style="bold cyan")
+        logo.append("  ╚█████╗  ██║   ██║██║     ██║     \n", style="bold cyan")
+        logo.append("   ╚═══██╗ ██║   ██║██║     ██║     \n", style="bold cyan")
+        logo.append("  ██████╔╝ ╚██████╔╝╚██████╗╚██████╗\n", style="bold cyan")
+        logo.append("  ╚═════╝   ╚═════╝  ╚═════╝ ╚═════╝\n", style="bold cyan")
+
+        subtitle = Text()
+        subtitle.append("\n  SOC Copilot", style="bold white")
+        subtitle.append("  ·  AI-powered Security Operations\n", style="dim")
+        subtitle.append("  Powered by ", style="dim")
+        subtitle.append("Vantage Platform", style="bold magenta")
+        subtitle.append("  Pressione ", style="dim")
+        subtitle.append("Ctrl+C", style="bold yellow")
+        subtitle.append(" a qualquer momento para cancelar.\n", style="dim")
+
         console.print()
         console.print(Panel(
-            f"[bold cyan]⚡ SOCC[/bold cyan] [bold white]SOC Copilot[/bold white]\n\n"
-            "[dim]Configure seu runtime local de IA para SOC[/dim]\n"
-            "[dim]Pressione Ctrl+C a qualquer momento para cancelar[/dim]",
+            Align.left(Text.assemble(logo, subtitle)),
             border_style="cyan",
-            padding=(1, 4),
+            padding=(0, 2),
+            title="[bold cyan]⚡ Wizard de Configuração[/bold cyan]",
+            title_align="left",
         ))
         console.print()
     except Exception:
-        print("\n" + "=" * 58)
-        print("  SOCC — Wizard de Onboarding")
-        print("=" * 58)
+        print("\n" + "═" * 62)
+        print("  ⚡ SOCC  —  SOC Copilot  ·  Onboarding")
+        print("═" * 62)
 
 
-def _section_header(num: int, total: int, title: str):
+def _section_header(num: int, total: int, title: str, icon: str = ""):
     console = _get_console()
     if not console:
         step(num, total, title)
@@ -84,14 +134,16 @@ def _section_header(num: int, total: int, title: str):
     try:
         from rich.rule import Rule
         pct = int((num / total) * 100)
-        bar_filled = int(pct / 5)
-        bar = "█" * bar_filled + "░" * (20 - bar_filled)
+        filled = int(pct / 5)
+        bar = f"[bold cyan]{'█' * filled}[/bold cyan][dim]{'░' * (20 - filled)}[/dim]"
+        label = f"{icon + '  ' if icon else ''}[bold white]{title}[/bold white]"
         console.print()
         console.print(Rule(
-            f"[bold cyan][{num}/{total}][/bold cyan] [bold white]{title}[/bold white]  "
-            f"[dim cyan]{bar}[/dim cyan] [dim]{pct}%[/dim]",
+            f"[{_C_MUTED}][{num}/{total}][/{_C_MUTED}]  {label}  {bar}  [{_C_MUTED}]{pct}%[/{_C_MUTED}]",
             style="cyan",
+            align="left",
         ))
+        console.print()
     except Exception:
         step(num, total, title)
 
@@ -99,7 +151,7 @@ def _section_header(num: int, total: int, title: str):
 def _ok(msg: str):
     console = _get_console()
     if console:
-        console.print(f"  [bold green]✓[/bold green] {msg}")
+        console.print(f"  [{_C_ACCENT}]✔[/{_C_ACCENT}]  {msg}")
     else:
         success(msg)
 
@@ -107,7 +159,7 @@ def _ok(msg: str):
 def _warn(msg: str):
     console = _get_console()
     if console:
-        console.print(f"  [bold yellow]⚠[/bold yellow]  {msg}")
+        console.print(f"  [{_C_WARN}]⚠[/{_C_WARN}]   {msg}")
     else:
         warning(msg)
 
@@ -115,7 +167,7 @@ def _warn(msg: str):
 def _err(msg: str):
     console = _get_console()
     if console:
-        console.print(f"  [bold red]✗[/bold red]  {msg}")
+        console.print(f"  [{_C_DANGER}]✖[/{_C_DANGER}]  {msg}")
     else:
         error(msg)
 
@@ -123,7 +175,7 @@ def _err(msg: str):
 def _info(msg: str):
     console = _get_console()
     if console:
-        console.print(f"  [dim]{msg}[/dim]")
+        console.print(f"  [{_C_MUTED}]→[/{_C_MUTED}]  [{_C_MUTED}]{msg}[/{_C_MUTED}]")
     else:
         print(f"  {msg}")
 
@@ -273,7 +325,7 @@ def _count_indexable_files(path: Path) -> int:
 # ---------------------------------------------------------------------------
 
 def step_runtime_home(env: dict[str, str], current_home: Path | None) -> Path:
-    _section_header(1, TOTAL_STEPS, "Runtime Home")
+    _section_header(1, TOTAL_STEPS, "Runtime Home", _ICON_FOLDER)
     default = str(current_home or "~/.socc")
     exists = Path(default).expanduser().exists()
     if exists:
@@ -314,7 +366,7 @@ def _configure_one_kb_source(env: dict[str, str], index: int) -> dict[str, str] 
 
 
 def step_knowledge_base(env: dict[str, str]) -> None:
-    _section_header(2, TOTAL_STEPS, "Base Local de Conhecimento")
+    _section_header(2, TOTAL_STEPS, "Base Local de Conhecimento", _ICON_BRAIN)
     if not confirm("Apontar pastas de conhecimento local (SOPs, playbooks, regras)?", default=False):
         skip("Knowledge base será configurada depois.")
         return
@@ -347,7 +399,7 @@ def step_knowledge_base(env: dict[str, str]) -> None:
 
 
 def step_backend(env: dict[str, str]) -> None:
-    _section_header(3, TOTAL_STEPS, "Backend de Inferência")
+    _section_header(3, TOTAL_STEPS, "Backend de Inferência", _ICON_SERVER)
 
     backends_to_probe = {
         "ollama": os.environ.get("OLLAMA_URL", "http://localhost:11434"),
@@ -433,7 +485,7 @@ def step_backend(env: dict[str, str]) -> None:
 
 
 def step_models(env: dict[str, str]) -> None:
-    _section_header(4, TOTAL_STEPS, "Seleção de Modelos Locais")
+    _section_header(4, TOTAL_STEPS, "Seleção de Modelos Locais", _ICON_MODEL)
 
     backend = env.get("SOCC_INFERENCE_BACKEND", "ollama")
     models: list[str] = []
@@ -676,7 +728,7 @@ def _configure_manual_provider(env: dict[str, str]) -> None:
 
 
 def step_cloud_provider(env: dict[str, str]) -> None:
-    _section_header(5, TOTAL_STEPS, "Providers de Nuvem")
+    _section_header(5, TOTAL_STEPS, "Providers de Nuvem", _ICON_CLOUD)
 
     if not confirm("Configurar providers de nuvem?", default=False):
         skip("Sem provider de nuvem configurado.")
@@ -733,7 +785,7 @@ def step_cloud_provider(env: dict[str, str]) -> None:
 
 
 def step_threat_intel(env: dict[str, str]) -> None:
-    _section_header(6, TOTAL_STEPS, "Threat Intelligence")
+    _section_header(6, TOTAL_STEPS, "Threat Intelligence", _ICON_SHIELD)
 
     if not confirm("Integrar com Threat Intelligence Tool?", default=False):
         skip("Threat Intel não configurado.")
@@ -766,7 +818,7 @@ def _test_ti(url: str) -> bool:
 
 
 def step_vantage(env: dict[str, str]) -> None:
-    _section_header(7, TOTAL_STEPS, "Vantage (Threat Intelligence Platform)")
+    _section_header(7, TOTAL_STEPS, "Vantage — Threat Intelligence Platform", _ICON_VANTAGE)
 
     _info("Plataforma de threat intelligence do time: feeds, recon, watchlists, hunting e exposure.")
 
@@ -828,7 +880,7 @@ def _test_vantage(url: str, env: dict[str, str]) -> bool:
 
 
 def step_agent(env: dict[str, str]) -> None:
-    _section_header(8, TOTAL_STEPS, "Agente Ativo")
+    _section_header(8, TOTAL_STEPS, "Agente Ativo", _ICON_AGENT)
 
     try:
         from socc.core.agent_loader import list_available_agents
@@ -853,20 +905,80 @@ def step_agent(env: dict[str, str]) -> None:
     _ok(f"Agente: {chosen}")
 
 
-def step_output_dir(env: dict[str, str]) -> None:
-    _section_header(9, TOTAL_STEPS, "Pasta de Saída")
-    default = os.environ.get("OUTPUT_DIR", "")
-    out = ask_path("Onde salvar notas e drafts gerados?", default=default)
+def step_notes_dir(env: dict[str, str]) -> None:
+    _section_header(9, TOTAL_STEPS, "Pasta de Notas de Encerramento", _ICON_NOTES)
+    _info("Notas BTP / FP / TN  →  encerramento sem alerta completo.")
+    default = os.environ.get("NOTES_DIR", os.environ.get("OUTPUT_DIR", ""))
+    out = ask_path("Onde salvar notas de encerramento?", default=default)
     if out:
         out.mkdir(parents=True, exist_ok=True)
-        env["OUTPUT_DIR"] = str(out)
-        _ok(f"Saída: {out}")
+        env["NOTES_DIR"] = str(out)
+        _ok(f"Notas → {out}")
     else:
-        skip("Pasta de saída será configurada depois.")
+        skip("Pasta de notas será configurada depois.")
+
+
+def step_drafts_dir(env: dict[str, str]) -> None:
+    _section_header(10, TOTAL_STEPS, "Pasta de Alertas (True Positive)", _ICON_DRAFTS)
+    _info("Alertas TP completos  →  encaminhados ao cliente.")
+    default = os.environ.get("DRAFT_DIR", "")
+    out = ask_path("Onde salvar alertas TP gerados?", default=default)
+    if out:
+        out.mkdir(parents=True, exist_ok=True)
+        env["DRAFT_DIR"] = str(out)
+        _ok(f"Alertas TP → {out}")
+    else:
+        skip("Pasta de alertas será configurada depois.")
+
+
+def step_training_dir(env: dict[str, str]) -> None:
+    _section_header(11, TOTAL_STEPS, "Training — Modelo de Machine Learning", _ICON_TRAINING)
+    _info("O modelo ML aprende com os arquivos Pensamento_Ofensa_*.md desta pasta.")
+    _info("A cada nova análise, um arquivo é adicionado e o modelo retreina automaticamente.")
+
+    from socc.core.training_engine import default_engine
+    current_engine = default_engine()
+    detected = str(current_engine.training_dir)
+    _info(f"Diretório detectado automaticamente: {detected}")
+
+    custom = confirm("Usar um diretório diferente?", default=False)
+    if not custom:
+        env["SOCC_TRAINING_DIR"] = detected
+        status = current_engine.status()
+        n = status.get("n_samples", 0)
+        if n > 0:
+            _ok(f"Training Engine: {n} casos disponíveis em {detected}")
+        else:
+            _warn(f"Nenhum caso de treinamento encontrado em {detected}")
+            _info("Execute  socc train  após adicionar os primeiros Pensamentos.")
+        return
+
+    out = ask_path("Caminho do diretório Training:", default=detected, must_exist=True)
+    if not out:
+        skip("Training dir não configurado. Usando detecção automática.")
+        return
+
+    env["SOCC_TRAINING_DIR"] = str(out)
+
+    # Contar arquivos na pasta escolhida
+    count = len(list(out.glob("Pensamento_Ofensa_*.md")))
+    if count > 0:
+        train_now = confirm(f"{count} Pensamentos encontrados. Treinar modelo agora?", default=True)
+        if train_now:
+            from socc.core.training_engine import TrainingEngine
+            engine = TrainingEngine(training_dir=out)
+            result = engine.train(force=True)
+            if result.get("status") == "ok":
+                _ok(f"Modelo treinado: {result['n_samples']} amostras, k={result['k_neighbors']}")
+            else:
+                _warn(f"Treino falhou: {result.get('reason')}")
+    else:
+        _warn(f"Nenhum Pensamento_Ofensa_*.md encontrado em {out}")
+        _info("Execute  socc train  após adicionar os primeiros casos.")
 
 
 def step_features(env: dict[str, str]) -> None:
-    _section_header(10, TOTAL_STEPS, "Feature Flags")
+    _section_header(12, TOTAL_STEPS, "Feature Flags", _ICON_FLAGS)
 
     if not confirm("Alterar feature flags? (todas ON por padrão)", default=False):
         skip("Feature flags mantidas no padrão (todas ON).")
@@ -887,7 +999,7 @@ def step_features(env: dict[str, str]) -> None:
 
 
 def step_security(env: dict[str, str]) -> None:
-    _section_header(11, TOTAL_STEPS, "Segurança e Observabilidade")
+    _section_header(13, TOTAL_STEPS, "Segurança e Observabilidade", _ICON_AUDIT)
     redact = confirm("Redação de dados sensíveis em logs?", default=True)
     audit = confirm("Auditoria de prompts?", default=False)
     env["SOCC_LOG_REDACTION_ENABLED"] = "true" if redact else "false"
@@ -925,7 +1037,7 @@ def _rich_summary(env: dict[str, str]) -> None:
 
 
 def step_summary_and_save(env: dict[str, str], runtime_home: Path) -> bool:
-    _section_header(12, TOTAL_STEPS, "Resumo e Confirmação")
+    _section_header(14, TOTAL_STEPS, "Resumo e Confirmação", _ICON_SAVE)
     _rich_summary(env)
 
     if not confirm("Salvar configuração?"):
@@ -989,7 +1101,9 @@ def run_onboard_wizard(home: Path | None = None) -> dict[str, Any]:
         step_threat_intel(env)
         step_vantage(env)
         step_agent(env)
-        step_output_dir(env)
+        step_notes_dir(env)
+        step_drafts_dir(env)
+        step_training_dir(env)
         step_features(env)
         step_security(env)
         saved = step_summary_and_save(env, runtime_home)
@@ -1012,16 +1126,29 @@ def run_onboard_wizard(home: Path | None = None) -> dict[str, Any]:
         console = _get_console()
         if console:
             from rich.panel import Panel
+            from rich.table import Table
+
+            tbl = Table(show_header=False, box=None, padding=(0, 2))
+            tbl.add_column(style=_C_LABEL, no_wrap=True)
+            tbl.add_column(style="white")
+
+            tbl.add_row("socc doctor",              "Validar o ambiente e dependências")
+            tbl.add_row("socc train",               f"{_ICON_TRAINING} Treinar modelo ML com os Pensamentos")
+            tbl.add_row("socc train --status",      "Ver status do modelo de Machine Learning")
+            tbl.add_row("socc serve",               "Iniciar a interface web")
+            tbl.add_row("socc chat --interactive",  "Chat interativo com o agente")
+            tbl.add_row("socc analyze --text ...",  "Analisar payload diretamente")
+            tbl.add_row("socc intel ingest ...",    "Indexar base de conhecimento local")
+
             console.print()
             console.print(Panel(
-                "[bold green]✓ SOCC configurado com sucesso![/bold green]\n\n"
-                "[cyan]socc doctor[/cyan]          → Validar o ambiente\n"
-                "[cyan]socc serve[/cyan]            → Iniciar a interface web\n"
-                "[cyan]socc chat --interactive[/cyan] → Chat interativo\n"
-                "[cyan]socc analyze --text ...[/cyan] → Analisar payload",
-                title="[bold]Próximos passos[/bold]",
+                f"[{_C_ACCENT}]✔  SOCC configurado com sucesso![/{_C_ACCENT}]\n\n" + tbl.__rich_console__(console, console.options).__next__().__str__() if False else
+                f"[{_C_ACCENT}]✔  SOCC configurado com sucesso![/{_C_ACCENT}]\n",
+                title=f"[{_C_PRIMARY}]Próximos passos[/{_C_PRIMARY}]",
                 border_style="green",
             ))
+            console.print(tbl)
+            console.print()
         else:
             print("\n--- Próximos passos ---")
             print("  socc doctor          Validar o ambiente")

@@ -9,7 +9,7 @@ from time import perf_counter, time
 from typing import Any
 from pathlib import Path
 
-from soc_copilot.config import OUTPUT_DIR, SOC_PORT
+from soc_copilot.config import DRAFT_DIR, NOTES_DIR, OUTPUT_DIR, SOC_PORT
 from socc.cli.installer import runtime_home
 from socc.cli.service_manager import service_status as runtime_service_status
 from socc.core import agent_loader as agent_loader_runtime
@@ -1058,10 +1058,23 @@ def save_note_submission(
     run_id: int = 0,
     output_dir: Path | None = None,
 ) -> dict[str, Any]:
+    """
+    Salva o conteúdo gerado na pasta correta conforme a classificação:
+      - True Positive           → DRAFT_DIR  (alerta completo)
+      - Demais (BTP / FP / TN)  → NOTES_DIR  (nota de encerramento)
+
+    output_dir sobrescreve ambos quando fornecido explicitamente.
+    """
     if not (conteudo or "").strip():
         raise ValueError("Conteúdo vazio.")
 
-    base_dir = (output_dir or OUTPUT_DIR).resolve()
+    if output_dir:
+        base_dir = output_dir.resolve()
+    else:
+        cls_norm = str(classificacao or "").strip().upper()
+        is_tp = cls_norm in ("TP", "TRUE POSITIVE", "TRUE_POSITIVE")
+        base_dir = (DRAFT_DIR if is_tp else NOTES_DIR).resolve()
+
     base_dir.mkdir(parents=True, exist_ok=True)
     timestamp = time_filename()
     ofensa_safe = re.sub(r"[^\w\-]", "_", ofensa_id or "SEM_ID")[:40]
@@ -1079,7 +1092,7 @@ def save_note_submission(
             conteudo=conteudo,
             salvo_em=str(target_path),
         )
-    return {"salvo_em": str(target_path), "nome": filename}
+    return {"salvo_em": str(target_path), "nome": filename, "pasta": str(base_dir)}
 
 
 def list_history_payload(limit: int = 50) -> dict[str, Any]:

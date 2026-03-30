@@ -33,12 +33,24 @@ ALERTAS_ROOT = Path(
         r"C:\Users\Nilson.Miranda\OneDrive - iT.eam\Documentos\Alertas",
     )
 )
-OUTPUT_DIR = Path(
+# Pasta de notas de encerramento (BTP / FP / TN)
+NOTES_DIR = Path(
     os.getenv(
-        "OUTPUT_DIR",
+        "NOTES_DIR",
         r"C:\Users\Nilson.Miranda\OneDrive - iT.eam\Documentos\Alertas\Notas_Geradas",
     )
 )
+
+# Pasta de alertas completos (TP)
+DRAFT_DIR = Path(
+    os.getenv(
+        "DRAFT_DIR",
+        r"C:\Users\Nilson.Miranda\OneDrive - iT.eam\Documentos\Alertas\Alertas_Gerados",
+    )
+)
+
+# Mantido por compatibilidade — aponta para NOTES_DIR
+OUTPUT_DIR = NOTES_DIR
 BATCH_SCRIPT = os.getenv(
     "BATCH_SCRIPT",
     str(ALERTAS_ROOT / "batch.py"),
