@@ -106,7 +106,7 @@ def _banner():
         subtitle.append("\n  SOC Copilot", style="bold white")
         subtitle.append("  ·  AI-powered Security Operations\n", style="dim")
         subtitle.append("  Powered by ", style="dim")
-        subtitle.append("Vantage Platform", style="bold magenta")
+        subtitle.append("Vantage Platform\n\n", style="bold magenta")
         subtitle.append("  Pressione ", style="dim")
         subtitle.append("Ctrl+C", style="bold yellow")
         subtitle.append(" a qualquer momento para cancelar.\n", style="dim")
