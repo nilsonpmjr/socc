@@ -13,6 +13,11 @@ from soc_copilot import config as cfg
 from soc_copilot.modules import persistence
 from soc_copilot.modules.soc_copilot_loader import build_prompt_context, choose_skill
 from socc.core import knowledge_base as knowledge_base_runtime
+from socc.core.context_budget import (
+    apply_budget_to_prompt_context,
+    estimate_tokens,
+    ContextBudgetResult,
+)
 from socc.gateway import vantage_api as vantage_gateway
 from socc.gateway.llm_gateway import (
     inference_guard,
@@ -446,26 +451,60 @@ def _format_history(session_id: str, *, limit: int) -> str:
     return "\n".join(lines[-max(1, limit):])
 
 
-def _build_system_prompt(context: dict[str, str], *, response_mode: str = _DEFAULT_RESPONSE_MODE) -> str:
+def _build_system_prompt(context: dict[str, str], *, response_mode: str = _DEFAULT_RESPONSE_MODE, model_name: str = "") -> str:
     profile = response_mode_profile(response_mode)
+
+    # Aplica budget de contexto se modelo conhecido
+    effective_context = context
+    budget_result: ContextBudgetResult | None = None
+    if model_name:
+        effective_context, budget_result = apply_budget_to_prompt_context(
+            model_name=model_name,
+            response_mode=response_mode,
+            context=context,
+            user_input=context.get("user_input", ""),
+        )
+        if budget_result:
+            metrics = budget_result.metrics()
+            _logger.info(
+                "Context budget: model=%s utilization=%.0f%% overflow=%s",
+                metrics.get("model"),
+                metrics.get("utilization_pct", 0),
+                metrics.get("overflow"),
+            )
+            if budget_result.overflow:
+                _logger.warning(
+                    "Context budget overflow: %d tokens over limit for model %s",
+                    budget_result.overflow_tokens,
+                    model_name,
+                )
+
     sections = [
-        context.get("identity", ""),
+        effective_context.get("identity", ""),
         "Siga a persona e regras abaixo.",
-        context.get("soul", ""),
-        context.get("user", ""),
-        context.get("agents", ""),
-        context.get("memory", ""),
-        context.get("tools", ""),
-        "Referencias operacionais compartilhadas:",
-        context.get("evidence_rules", ""),
-        context.get("ioc_extraction", ""),
-        context.get("security_json_patterns", ""),
-        context.get("telemetry_investigation_patterns", ""),
-        context.get("mitre_guidance", ""),
-        context.get("output_contract", ""),
+        effective_context.get("soul", ""),
+        effective_context.get("user", ""),
+        effective_context.get("agents", ""),
+        effective_context.get("memory", ""),
+        effective_context.get("tools", ""),
+    ]
+
+    # References: só inclui as que sobreviveram ao budget
+    ref_sections = []
+    for ref_key in ("evidence_rules", "ioc_extraction", "security_json_patterns",
+                    "telemetry_investigation_patterns", "mitre_guidance", "output_contract"):
+        ref_content = effective_context.get(ref_key, "")
+        if ref_content:
+            ref_sections.append(ref_content)
+
+    if ref_sections:
+        sections.append("Referencias operacionais compartilhadas:")
+        sections.extend(ref_sections)
+
+    sections.extend([
         "Skill selecionada:",
-        context.get("selected_skill", ""),
-        context.get("skill_content", ""),
+        effective_context.get("selected_skill", ""),
+        effective_context.get("skill_content", ""),
         str(profile.get("instruction") or ""),
         (
             "Regras de saida: responda em PT-BR, seja tecnico e objetivo, "
@@ -485,7 +524,7 @@ def _build_system_prompt(context: dict[str, str], *, response_mode: str = _DEFAU
             "Evite reabrir a resposta com saudacoes como 'Olá', 'Oi' ou equivalentes, "
             "a menos que o usuario esteja claramente iniciando uma nova conversa."
         ),
-    ]
+    ])
     return "\n\n".join(section for section in sections if section)
 
 
@@ -1394,7 +1433,7 @@ def stream_chat_reply_events(
         for delta in _chunk_text(content, chunk_size=int(profile.get("chunk_size") or _STREAM_CHUNK_SIZE)):
             yield {"event": "delta", "delta": delta, "skill": skill_name}
     elif not content:
-        messages = [{"role": "system", "content": _build_system_prompt(context, response_mode=mode)}]
+        messages = [{"role": "system", "content": _build_system_prompt(context, response_mode=mode, model_name=effective_model)}]
         messages.extend(history_messages)
         messages.append(
             {"role": "user", "content": _build_user_prompt(message, cliente, context, response_mode=mode)}
