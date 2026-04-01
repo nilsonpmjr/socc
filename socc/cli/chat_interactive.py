@@ -97,6 +97,16 @@ SLASH_COMMANDS = [
     "/new",
 ]
 
+QUICK_ACTIONS = [
+    "/help",
+    "/session",
+    "/new",
+    "/agents",
+    "/tools",
+    "/case",
+    "/hunt",
+]
+
 HELP_LINES = [
     ("", ""),
     ("bold", "  Comandos disponíveis"),
@@ -205,6 +215,10 @@ class SoccChatTUI:
         self._running = False
         self._busy = False
         self._stream_buffer: list[str] = []
+        self._last_skill = ""
+        self._last_phase = ""
+        self._last_latency_ms = 0.0
+        self._transport_mode = "local"
 
         # Welcome message
         self._welcome()
@@ -214,18 +228,13 @@ class SoccChatTUI:
     # ------------------------------------------------------------------
 
     def _welcome(self) -> None:
-        self.history.append_line(_dim("  " + "─" * 60))
+        self.history.append_line(f"  {_bold(_cyan('SOCC operator cockpit'))}")
         self.history.append_line(
-            f"  {_bold(_cyan('⚡ SOCC'))}  {_bold('SOC Copilot')}  "
-            f"{_dim('│')}  sessão {_dim(self.session_id[:16])}"
+            _dim("  Harness ativo  │  slash commands  │  sessoes  │  runtime observavel")
         )
         self.history.append_line(
-            f"  {_dim('backend')} {_cyan(self.backend)}  "
-            f"{_dim('│')}  {_dim('modelo')} {_cyan(self.model or '(auto)')}  "
-            f"{_dim('│')}  {_dim('modo')} {_cyan(self.mode)}"
+            _dim("  /help para comandos  │  Tab autocomplete  │  Ctrl+C ou Esc para sair")
         )
-        self.history.append_line(_dim("  " + "─" * 60))
-        self.history.append_line(_dim("  /help para comandos  │  Ctrl+C ou /exit para sair"))
         self.history.append_line("")
 
     # ------------------------------------------------------------------
@@ -248,6 +257,92 @@ class SoccChatTUI:
             ("class:status-bar", " " * 40),
         ])
 
+    def _top_chrome_text(self) -> FormattedText:
+        be = BACKEND_ICON.get(self.backend, self.backend)
+        model_short = self.model[:18] if self.model else "auto"
+        return FormattedText([
+            ("class:chrome.brand", "  SOCC  "),
+            ("class:chrome.sep", " // "),
+            ("class:chrome.title", "Claude-style SOC cockpit"),
+            ("class:chrome.sep", "  │  "),
+            ("class:chrome.meta", f"{be}"),
+            ("class:chrome.sep", "  ·  "),
+            ("class:chrome.meta", model_short),
+            ("class:chrome.sep", "  ·  "),
+            ("class:chrome.meta", f"session {self.session_id[:12]}"),
+            ("class:chrome.sep", "  ·  "),
+            ("class:chrome.meta", self._transport_mode),
+        ])
+
+    def _transcript_header_text(self) -> FormattedText:
+        return FormattedText([
+            ("class:panel-title.accent", "  transcript  "),
+            ("class:panel-title.sep", "│"),
+            ("class:panel-title.meta", " operator activity / phases / responses "),
+        ])
+
+    def _sidebar_header_text(self) -> FormattedText:
+        return FormattedText([
+            ("class:panel-title.accent", "  runtime  "),
+            ("class:panel-title.sep", "│"),
+            ("class:panel-title.meta", " session / hints / transport "),
+        ])
+
+    def _composer_header_text(self) -> FormattedText:
+        hint = "busy" if self._busy else "ready"
+        return FormattedText([
+            ("class:composer-title.accent", "  composer  "),
+            ("class:composer-title.sep", "│"),
+            ("class:composer-title.meta", f" Enter send  ·  Tab commands  ·  state {hint} "),
+        ])
+
+    def _footer_bar_text(self) -> FormattedText:
+        skill = self._last_skill or "general"
+        phase = self._last_phase or "idle"
+        latency = f"{self._last_latency_ms:.0f}ms" if self._last_latency_ms else "-"
+        return FormattedText([
+            ("class:footer.key", "  /help "),
+            ("class:footer.sep", "│"),
+            ("class:footer.meta", " /session "),
+            ("class:footer.sep", "│"),
+            ("class:footer.meta", " /new "),
+            ("class:footer.sep", "│"),
+            ("class:footer.meta", f" skill {skill} "),
+            ("class:footer.sep", "│"),
+            ("class:footer.meta", f" phase {phase} "),
+            ("class:footer.sep", "│"),
+            ("class:footer.meta", f" latency {latency} "),
+        ])
+
+    def _sidebar_text(self):
+        quick = "  " + "\n  ".join(QUICK_ACTIONS)
+        model = self.model or "(auto)"
+        runtime_lines = [
+            ("class:sidebar.label", "  session\n"),
+            ("class:sidebar.value", f"  {self.session_id}\n\n"),
+            ("class:sidebar.label", "  transport\n"),
+            ("class:sidebar.value", f"  {self._transport_mode}\n\n"),
+            ("class:sidebar.label", "  backend\n"),
+            ("class:sidebar.value", f"  {self.backend}\n\n"),
+            ("class:sidebar.label", "  model\n"),
+            ("class:sidebar.value", f"  {model}\n\n"),
+            ("class:sidebar.label", "  mode\n"),
+            ("class:sidebar.value", f"  {self.mode}\n\n"),
+            ("class:sidebar.label", "  last skill\n"),
+            ("class:sidebar.value", f"  {self._last_skill or '-'}\n\n"),
+            ("class:sidebar.label", "  last phase\n"),
+            ("class:sidebar.value", f"  {self._last_phase or '-'}\n\n"),
+            ("class:sidebar.label", "  quick actions\n"),
+            ("class:sidebar.value", quick + "\n"),
+        ]
+        return FormattedText(runtime_lines)
+
+    def _append_phase_event(self, phase: str, label: str) -> None:
+        self._last_phase = phase or self._last_phase
+        rendered = label or phase or "processing"
+        self.history.append_line(_dim(f"  · {rendered}"))
+        self.history.append_line("")
+
     # ------------------------------------------------------------------
     # Build layout
     # ------------------------------------------------------------------
@@ -262,6 +357,26 @@ class SoccChatTUI:
             content=history_control,
             wrap_lines=True,
             ignore_content_width=True,
+            style="class:transcript",
+        )
+
+        history_header = Window(
+            height=1,
+            content=FormattedTextControl(text=self._transcript_header_text),
+            style="class:panel-title",
+        )
+
+        sidebar_window = Window(
+            content=FormattedTextControl(text=self._sidebar_text),
+            wrap_lines=True,
+            ignore_content_width=True,
+            style="class:sidebar",
+        )
+
+        sidebar_header = Window(
+            height=1,
+            content=FormattedTextControl(text=self._sidebar_header_text),
+            style="class:panel-title",
         )
 
         completer = WordCompleter(SLASH_COMMANDS + _harness_commands(), sentence=True, ignore_case=True)
@@ -293,6 +408,7 @@ class SoccChatTUI:
             height=3,
             dont_extend_height=True,
             wrap_lines=True,
+            style="class:composer",
         )
 
         input_area = VSplit([
@@ -300,10 +416,16 @@ class SoccChatTUI:
             input_line,
         ])
 
-        divider = Window(
+        chrome_bar = Window(
             height=1,
-            char="─",
-            style="class:divider",
+            content=FormattedTextControl(text=self._top_chrome_text),
+            style="class:chrome",
+        )
+
+        composer_header = Window(
+            height=1,
+            content=FormattedTextControl(text=self._composer_header_text),
+            style="class:composer-title",
         )
 
         status_bar = Window(
@@ -312,12 +434,36 @@ class SoccChatTUI:
             style="class:status-bar",
         )
 
+        footer_bar = Window(
+            height=1,
+            content=FormattedTextControl(text=self._footer_bar_text),
+            style="class:footer",
+        )
+
+        body_split = VSplit(
+            [
+                HSplit(
+                    [history_header, history_window],
+                    style="class:panel-shell",
+                ),
+                Window(width=1, char="│", style="class:panel-divider"),
+                HSplit(
+                    [sidebar_header, sidebar_window],
+                    width=D(preferred=34, min=28, max=40),
+                    style="class:sidebar-shell",
+                ),
+            ]
+        )
+
         root_container = FloatContainer(
             content=HSplit([
-                history_window,
-                divider,
+                chrome_bar,
+                body_split,
+                Window(height=1, char="─", style="class:divider"),
+                composer_header,
                 input_area,
                 status_bar,
+                footer_bar,
             ]),
             floats=[
                 Float(
@@ -331,16 +477,41 @@ class SoccChatTUI:
         layout = Layout(root_container, focused_element=input_buffer)
 
         style = Style.from_dict({
-            "prompt.arrow":          "#4FC3F7 bold",
-            "divider":               "#37474F",
-            "status-bar":            "bg:#1A2332 #546E7A",
-            "status-bar.key":        "bg:#1A2332 #4FC3F7 bold",
-            "status-bar.backend":    "bg:#1A2332 #4DB6AC",
-            "status-bar.session":    "bg:#1A2332 #546E7A",
-            "status-bar.sep":        "bg:#1A2332 #37474F",
-            "status-bar.busy":       "bg:#1A2332 #FFB300 bold",
-            "completion-menu.completion":         "bg:#1E2A2E #B0BEC5",
-            "completion-menu.completion.current": "bg:#26C6DA #000000 bold",
+            "chrome":                          "bg:#0B1118 #8EA1B5",
+            "chrome.brand":                    "bg:#0B1118 #5EEAD4 bold",
+            "chrome.title":                    "bg:#0B1118 #F8FAFC bold",
+            "chrome.meta":                     "bg:#0B1118 #93C5FD",
+            "chrome.sep":                      "bg:#0B1118 #334155",
+            "panel-shell":                     "bg:#0F1720",
+            "sidebar-shell":                   "bg:#111A23",
+            "transcript":                      "bg:#0F1720 #D6DEE6",
+            "sidebar":                         "bg:#111A23 #C0CBD7",
+            "panel-title":                     "bg:#16212C #94A3B8",
+            "panel-title.accent":              "bg:#16212C #67E8F9 bold",
+            "panel-title.sep":                 "bg:#16212C #334155",
+            "panel-title.meta":                "bg:#16212C #94A3B8",
+            "panel-divider":                   "bg:#0B1118 #243140",
+            "prompt.arrow":                    "#67E8F9 bold",
+            "divider":                         "#243140",
+            "composer-title":                  "bg:#17202B #94A3B8",
+            "composer-title.accent":           "bg:#17202B #FBBF24 bold",
+            "composer-title.sep":              "bg:#17202B #334155",
+            "composer-title.meta":             "bg:#17202B #94A3B8",
+            "composer":                        "bg:#0D141C #E2E8F0",
+            "status-bar":                      "bg:#0E1620 #64748B",
+            "status-bar.key":                  "bg:#0E1620 #67E8F9 bold",
+            "status-bar.backend":              "bg:#0E1620 #5EEAD4",
+            "status-bar.session":              "bg:#0E1620 #94A3B8",
+            "status-bar.sep":                  "bg:#0E1620 #334155",
+            "status-bar.busy":                 "bg:#0E1620 #FBBF24 bold",
+            "footer":                          "bg:#0B1118 #7C8CA0",
+            "footer.key":                      "bg:#0B1118 #F8FAFC bold",
+            "footer.meta":                     "bg:#0B1118 #7C8CA0",
+            "footer.sep":                      "bg:#0B1118 #334155",
+            "sidebar.label":                   "#7C8CA0",
+            "sidebar.value":                   "#D6DEE6",
+            "completion-menu.completion":         "bg:#12202B #CBD5E1",
+            "completion-menu.completion.current": "bg:#67E8F9 #0B1118 bold",
         })
 
         kb = KeyBindings()
@@ -443,6 +614,9 @@ class SoccChatTUI:
 
         if verb == "/new":
             self.session_id = str(int(time() * 1000))
+            self._last_phase = ""
+            self._last_skill = ""
+            self._last_latency_ms = 0.0
             self.history.clear()
             self._welcome()
             self.history.append_line(_dim(f"  Nova sessão: {self.session_id}"))
@@ -511,7 +685,7 @@ class SoccChatTUI:
     # ------------------------------------------------------------------
 
     def _call_llm(self, message: str) -> None:
-        from socc.core.engine import chat_reply, stream_chat_events
+        from socc.core.engine import chat_reply, stream_chat_submission_events
 
         self._busy = True
         if self.app:
@@ -526,20 +700,35 @@ class SoccChatTUI:
                 self.history.append_line(
                     f"  {_dim(BACKEND_ICON.get(self.backend, self.backend))}"
                 )
-                # Linha inicial vazia pra receber o texto
-                self.history.append_line("  ")
 
                 parts: list[str] = []
-                for event in stream_chat_events(
-                    message,
+                self.history.append_line("  ")
+
+                for event in stream_chat_submission_events(
+                    message=message,
                     session_id=self.session_id,
+                    classificacao="AUTO",
                     cliente=self.cliente,
                     response_mode=self.mode,
                     selected_backend=self.backend,
                     selected_model=self.model,
                 ):
-                    if event.get("event") == "delta":
-                        delta = str(event.get("delta") or "")
+                    event_name = str(event.get("event") or "")
+                    payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+
+                    if event_name == "meta":
+                        self.session_id = str(payload.get("session_id") or self.session_id)
+                        self._last_skill = str(payload.get("skill") or self._last_skill)
+                        self.model = str(payload.get("model") or self.model)
+                        continue
+                    if event_name == "phase":
+                        self._append_phase_event(
+                            str(payload.get("phase") or ""),
+                            str(payload.get("label") or ""),
+                        )
+                        continue
+                    if event_name == "delta":
+                        delta = str(payload.get("delta") or "")
                         parts.append(delta)
                         # Divide em linhas e adiciona corretamente
                         segments = delta.split("\n")
@@ -552,12 +741,14 @@ class SoccChatTUI:
                                 self.history.append_line("  " + seg)
                         if self.app:
                             self.app.invalidate()
-                    elif event.get("event") == "final":
-                        data = event.get("data") or {}
+                    elif event_name == "final":
+                        data = payload
                         if isinstance(data, dict):
                             self.session_id = str(data.get("session_id") or self.session_id)
                             skill = str((data.get("metadata") or {}).get("skill") or data.get("skill") or "")
-                            self.model = str(data.get("model") or self.model)
+                            self._last_skill = skill or self._last_skill
+                            runtime_info = data.get("runtime") if isinstance(data.get("runtime"), dict) else {}
+                            self.model = str(runtime_info.get("model") or data.get("model") or self.model)
 
                 content = "".join(parts)
 
@@ -573,6 +764,7 @@ class SoccChatTUI:
                 self.session_id = str(response.get("session_id") or self.session_id)
                 content = str(response.get("content") or response.get("message") or "")
                 skill = str((response.get("metadata") or {}).get("skill") or response.get("skill") or "")
+                self._last_skill = skill or self._last_skill
                 self.model = str(response.get("model") or self.model)
 
                 # Render content line by line
@@ -587,6 +779,7 @@ class SoccChatTUI:
 
         finally:
             latency = (time() - started) * 1000
+            self._last_latency_ms = latency
             meta_parts = [f"{latency:.0f}ms"]
             if skill and skill != "soc-generalist":
                 meta_parts.append(f"skill:{skill}")
@@ -626,7 +819,7 @@ def _run_plain_repl(
     selected_model: str,
     stream: bool,
 ) -> int:
-    from socc.core.engine import chat_reply, stream_chat_events
+    from socc.core.engine import chat_reply, stream_chat_submission_events
 
     sid = session_id or str(int(time() * 1000))
     backend = selected_backend or "ollama"
@@ -653,14 +846,24 @@ def _run_plain_repl(
 
         if stream:
             print(f"\n{backend}/{model} › ", end="", flush=True)
-            for event in stream_chat_events(
-                raw, session_id=sid, cliente=cliente,
-                response_mode=mode, selected_backend=backend, selected_model=model,
+            for event in stream_chat_submission_events(
+                message=raw,
+                session_id=sid,
+                classificacao="AUTO",
+                cliente=cliente,
+                response_mode=mode,
+                selected_backend=backend,
+                selected_model=model,
             ):
-                if event.get("event") == "delta":
-                    print(str(event.get("delta") or ""), end="", flush=True)
-                elif event.get("event") == "final":
-                    data = event.get("data")
+                event_name = str(event.get("event") or "")
+                payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+                if event_name == "phase":
+                    print(f"\n  · {payload.get('label') or payload.get('phase')}")
+                    print(f"{backend}/{model} › ", end="", flush=True)
+                elif event_name == "delta":
+                    print(str(payload.get("delta") or ""), end="", flush=True)
+                elif event_name == "final":
+                    data = payload
                     if isinstance(data, dict):
                         sid = str(data.get("session_id") or sid)
             print("\n")
