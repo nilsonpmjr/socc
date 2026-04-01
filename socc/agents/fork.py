@@ -160,8 +160,32 @@ def _run_subagent(
                         findings.append(f"Found {len(values)} {ioc_type}: {values[:5]}")
                 reasoning.append(f"[step 1] Extracted IOCs: {len(findings)} findings")
 
-        # Placeholder for LLM integration
-        reasoning.append(f"[step {len(reasoning)}] Analysis complete (LLM integration pending)")
+        # LLM synthesis — call the same gateway the chat uses
+        llm_content = ""
+        try:
+            from socc.core.chat import generate_chat_reply
+            llm_result = generate_chat_reply(
+                message=prompt,
+                session_id=f"subagent-{handle.id}",
+                response_mode="fast",   # lightweight — subagents use fast model
+            )
+            llm_content = str(llm_result.get("content") or "").strip()
+            if llm_content:
+                import re as _re
+                bullet_findings = _re.findall(
+                    r"^[\s]*[-*\u2022]\s+(.+)$", llm_content, _re.MULTILINE
+                )
+                if bullet_findings:
+                    findings.extend(bullet_findings)
+                elif not findings:
+                    # no bullets — use first 200 chars as single finding
+                    findings.append(llm_content[:200])
+                reasoning.append(f"[llm] {len(bullet_findings)} findings from LLM response")
+            else:
+                reasoning.append("[llm] empty response — using deterministic findings only")
+        except Exception as _llm_exc:
+            _logger.warning("fork_subagent LLM call failed: %s", _llm_exc)
+            reasoning.append(f"[llm] failed ({type(_llm_exc).__name__}) — deterministic only")
 
         handle.result = AgentResult(
             ok=True,
