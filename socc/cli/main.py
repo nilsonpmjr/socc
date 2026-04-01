@@ -421,6 +421,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _run_interactive_chat(args: argparse.Namespace) -> int:
+    # Bootstrap runtime (non-blocking daemon thread)
+    from socc.cli.startup import startup
+    startup(verbose=getattr(args, "verbose", False))
+
     try:
         from socc.cli.chat_interactive import run_chat_tui
         return run_chat_tui(

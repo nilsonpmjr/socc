@@ -77,6 +77,15 @@ def _blue(t: str) -> str:     return _ansi("34", t)
 # Slash commands
 # ---------------------------------------------------------------------------
 
+def _harness_commands() -> list[str]:
+    """Return slash-command names registered in the harness CommandRegistry."""
+    try:
+        from socc.core.harness.commands import COMMAND_REGISTRY
+        return [f"/{c.name}" for c in COMMAND_REGISTRY.list()]
+    except Exception:
+        return []
+
+
 SLASH_COMMANDS = [
     "/exit", "/quit",
     "/clear",
@@ -255,7 +264,7 @@ class SoccChatTUI:
             ignore_content_width=True,
         )
 
-        completer = WordCompleter(SLASH_COMMANDS, sentence=True, ignore_case=True)
+        completer = WordCompleter(SLASH_COMMANDS + _harness_commands(), sentence=True, ignore_case=True)
 
         input_buffer = Buffer(
             name="input",
@@ -484,7 +493,17 @@ class SoccChatTUI:
             self.history.append_line("")
             return
 
-        self.history.append_line(_yellow(f"  ⚠  Comando desconhecido: {verb}. Digite /help."))
+        # Delegate unknown commands to the harness CommandRegistry
+        try:
+            from socc.core.harness.commands import COMMAND_REGISTRY
+            result = COMMAND_REGISTRY.dispatch(cmd)
+            if result.ok:
+                for line in result.output.splitlines():
+                    self.history.append_line(f"  {line}")
+            else:
+                self.history.append_line(_yellow(f"  ⚠  {result.error}"))
+        except Exception as _exc:
+            self.history.append_line(_yellow(f"  ⚠  Erro no comando: {_exc}"))
         self.history.append_line("")
 
     # ------------------------------------------------------------------
