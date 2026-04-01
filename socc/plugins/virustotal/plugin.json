@@ -1,0 +1,9 @@
+{
+  "name": "virustotal",
+  "version": "0.1.0",
+  "description": "VirusTotal lookup tools for hashes, URLs and domains",
+  "author": "SOCC Team",
+  "tools": ["vt_lookup_hash", "vt_lookup_url", "vt_lookup_domain"],
+  "requires_env": ["VT_API_KEY"],
+  "enabled": true
+}

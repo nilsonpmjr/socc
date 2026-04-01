@@ -1,0 +1,9 @@
+{
+  "name": "opencti",
+  "version": "0.1.0",
+  "description": "OpenCTI threat intelligence platform integration (GraphQL + STIX 2.1)",
+  "author": "SOCC Team",
+  "tools": ["opencti_search", "opencti_create_indicator"],
+  "requires_env": ["OPENCTI_URL", "OPENCTI_API_KEY"],
+  "enabled": true
+}
