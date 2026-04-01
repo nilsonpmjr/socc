@@ -1,9 +1,35 @@
 # PRD: SOCC Harness Evolution
 
-**Versão:** 1.1.0  
+**Versão:** 1.2.0  
 **Data:** 2026-03-31  
 **Status:** Draft  
 **Autor:** Análise comparativa com pi-coding-agent + diagnóstico de prompt bloat
+**Integração:** Claude Code Python Port (instructkr/claude-code)
+
+---
+
+## 0. Integration Source
+
+### Claude Code Python Port
+
+Este PRD incorpora a arquitetura do **Claude Code Python Port** por Sigrid Jin (instructkr),
+um clean-room rewrite do harness do Claude Code de TypeScript para Python.
+
+> **Repositório:** `/home/nilsonpmjr/claude-code/` (local) | `github.com/instructkr/claude-code`
+> **Métricas:** 184 tools | 207 commands | 30 subsystems | 54 Python files
+> **Análise Detalhada:** `docs/claude-code-port-analysis.md`
+
+**Componentes a Integrar:**
+
+| Port Component | Source Path | SOCC Target | Prioridade |
+|----------------|-------------|-------------|------------|
+| `models.py` | `src/models.py` | `socc/core/harness/models.py` | P0 |
+| `runtime.py` | `src/runtime.py` | `socc/core/harness/runtime.py` | P0 |
+| `commands.py` | `src/commands.py` | `socc/core/harness/commands.py` | P0 |
+| `BashTool/security` | `tools/BashTool/*Security*.ts` | `socc/tools/bash/security.py` | P0 |
+| `AgentTool/fork` | `tools/AgentTool/forkSubagent.ts` | `socc/agents/fork.py` | P1 |
+| `AgentTool/memory` | `tools/AgentTool/agentMemory.ts` | `socc/agents/memory.py` | P1 |
+| Plugin System | `commands/plugin/` | `socc/plugins/` | P1 |
 
 ---
 
@@ -11,18 +37,20 @@
 
 ### Problem Statement
 
-O SOCC atual opera como um assistente de triagem SOC com capacidades limitadas de interação: fluxo request-response básico, tools hardcoded, e sem sistema de extensibilidade. Comparado com harnesses modernos como o **pi-coding-agent**, o SOCC carece de: sistema de ferramentas dinâmico, CLI interativo, gerenciamento de sessões robusto, e capacidade de extensão via plugins.
+O SOCC atual opera como um assistente de triagem SOC com capacidades limitadas de interação: fluxo request-response básico, tools hardcoded, e sem sistema de extensibilidade. Comparado com harnesses modernos como o **pi-coding-agent** e o **Claude Code harness**, o SOCC carece de: sistema de ferramentas dinâmico, CLI interativo, gerenciamento de sessões robusto, e capacidade de extensão via plugins.
 
 ### Proposed Solution
 
-Transformar o SOCC de um "script de análise" para um **harness de agente SOC completo**, adotando padrões estabelecidos pelo pi-coding-agent e adaptando para o domínio de Security Operations. Isso inclui:
+Transformar o SOCC de um "script de análise" para um **harness de agente SOC completo**, adotando padrões estabelecidos pelo Claude Code Python Port e adaptando para o domínio de Security Operations. Isso inclui:
 
-1. **Sistema de Tools Dinâmico** - Registry extensível de ferramentas SOC e de sistema
-2. **CLI Interativo estilo REPL** - Interface de linha de comando profissional
-3. **Sistema de Plugins** - Extensibilidade via diretório de plugins
-4. **Memória Persistente com RAG** - Contexto persistente entre sessões
-5. **Gerenciamento de Sessões** - Resume, fork, e export de sessões
-6. **Context Budget Manager** - Orçamento de contexto por modelo para suportar LLMs de baixo contexto
+1. **Sistema de Tools Dinâmico** - Registry extensível baseado no port (184 tools)
+2. **CLI Interativo estilo REPL** - Interface profissional inspirada no Claude Code CLI
+3. **Sistema de Plugins** - Extensibilidade via sistema do port (207 commands)
+4. **Sistema de Agentes** - Fork de subagentes especializados (IR, TI, Hunt)
+5. **BashTool Security** - Validação de comandos, RBAC, sandbox
+6. **Memória Persistente com RAG** - Contexto persistente entre sessões
+7. **Gerenciamento de Sessões** - Resume, fork, e export de sessões
+8. **Context Budget Manager** - Orçamento de contexto por modelo
 
 ### Success Criteria
 

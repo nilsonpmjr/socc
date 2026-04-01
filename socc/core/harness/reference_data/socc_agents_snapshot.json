@@ -1,0 +1,42 @@
+[
+  {
+    "name": "soc_analyst",
+    "specialty": "general",
+    "description": "General-purpose SOC analyst for alert triage, IOC analysis, and investigation",
+    "prompt_template": "",
+    "tools_whitelist": ["extract_iocs", "defang", "decode_base64", "read", "bash"],
+    "tools_blacklist": [],
+    "max_steps": 15,
+    "timeout_seconds": 600
+  },
+  {
+    "name": "ir_agent",
+    "specialty": "incident_response",
+    "description": "Incident Response specialist for handling security incidents, containment, and remediation",
+    "prompt_template": "",
+    "tools_whitelist": ["read", "bash", "extract_iocs", "defang"],
+    "tools_blacklist": [],
+    "max_steps": 20,
+    "timeout_seconds": 1800
+  },
+  {
+    "name": "threat_hunter",
+    "specialty": "threat_hunt",
+    "description": "Hypothesis-driven threat hunting agent for proactive detection",
+    "prompt_template": "",
+    "tools_whitelist": ["bash", "read", "extract_iocs"],
+    "tools_blacklist": [],
+    "max_steps": 15,
+    "timeout_seconds": 900
+  },
+  {
+    "name": "malware_analyst",
+    "specialty": "malware_analysis",
+    "description": "Static and dynamic malware analysis agent",
+    "prompt_template": "",
+    "tools_whitelist": ["read", "bash", "extract_iocs", "decode_base64"],
+    "tools_blacklist": [],
+    "max_steps": 20,
+    "timeout_seconds": 1200
+  }
+]

@@ -37,3 +37,11 @@ include = ["socc*", "soc_copilot*"]
 
 [tool.setuptools.package-data]
 soc_copilot = ["templates/*.html", "static/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+addopts = "-q --tb=short"

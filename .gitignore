@@ -27,3 +27,13 @@ Nota_Encerramento_*.txt
 .venv/
 venv/
 env/
+
+# IDE / tool caches
+.cline/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+socc.egg-info/
+
+# Node
+node_modules/

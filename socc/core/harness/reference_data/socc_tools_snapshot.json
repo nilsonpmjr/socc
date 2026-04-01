@@ -1,0 +1,51 @@
+[
+  {
+    "name": "extract_iocs",
+    "description": "Extract Indicators of Compromise (IPs, domains, URLs, hashes) from text",
+    "category": "ioc",
+    "risk_level": "low",
+    "tags": ["ioc", "extraction", "analysis"]
+  },
+  {
+    "name": "defang",
+    "description": "Defang URLs and indicators by replacing dangerous characters",
+    "category": "utility",
+    "risk_level": "low",
+    "tags": ["defang", "sanitize"]
+  },
+  {
+    "name": "decode_base64",
+    "description": "Decode base64 encoded strings",
+    "category": "utility",
+    "risk_level": "low",
+    "tags": ["decode", "base64"]
+  },
+  {
+    "name": "read",
+    "description": "Read file contents with optional offset and limit",
+    "category": "file",
+    "risk_level": "low",
+    "tags": ["file", "read"]
+  },
+  {
+    "name": "write",
+    "description": "Write content to a file",
+    "category": "file",
+    "risk_level": "medium",
+    "tags": ["file", "write"]
+  },
+  {
+    "name": "edit",
+    "description": "Replace exact string in a file",
+    "category": "file",
+    "risk_level": "medium",
+    "tags": ["file", "edit"]
+  },
+  {
+    "name": "bash",
+    "description": "Execute shell commands with security validation",
+    "category": "shell",
+    "risk_level": "high",
+    "tags": ["shell", "command", "execute"]
+  }
+]

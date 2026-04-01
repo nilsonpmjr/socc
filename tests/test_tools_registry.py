@@ -662,14 +662,14 @@ class TestRealToolsIntegration:
     @pytest.fixture(autouse=True)
     def _setup_real_tools(self):
         """Register real tools before each integration test.
-        
+
         Unlike unit tests, integration tests need the actual SOC tools registered.
         We clear and re-register to ensure a clean state.
         """
         from socc.core.tools_registry import clear_registry
+        from socc.core.tools import register_builtin_tools
         clear_registry()
-        # Import tools module which registers builtin tools
-        import socc.core.tools
+        register_builtin_tools()
         yield
         clear_registry()
     

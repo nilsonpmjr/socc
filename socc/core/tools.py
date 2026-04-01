@@ -146,6 +146,17 @@ def _register_builtin_tools() -> None:
 _register_builtin_tools()
 
 
+def register_builtin_tools() -> None:
+    """Register (or re-register) built-in SOC tools. Safe to call multiple times.
+
+    Useful in tests after ``clear_registry()`` to restore the built-in tool set.
+    """
+    from socc.core.tools_registry import unregister_tool
+    for name in ("extract_iocs", "defang", "decode_base64"):
+        unregister_tool(name)
+    _register_builtin_tools()
+
+
 # ============================================================================
 # Legacy API (v1 Compatibility)
 # ============================================================================

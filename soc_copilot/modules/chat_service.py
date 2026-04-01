@@ -451,49 +451,56 @@ def _format_history(session_id: str, *, limit: int) -> str:
     return "\n".join(lines[-max(1, limit):])
 
 
-def _build_system_prompt(context: dict[str, str], *, response_mode: str = _DEFAULT_RESPONSE_MODE, model_name: str = "") -> str:
+def _apply_context_budget(
+    context: dict[str, str],
+    *,
+    model_name: str,
+    response_mode: str,
+) -> tuple[dict[str, str], ContextBudgetResult | None]:
+    """Aplica budget de contexto. Retorna (context_ajustado, budget_result)."""
+    if not model_name:
+        return context, None
+    effective_context, budget_result = apply_budget_to_prompt_context(
+        model_name=model_name,
+        response_mode=response_mode,
+        context=context,
+        user_input=context.get("user_input", ""),
+    )
+    metrics = budget_result.metrics()
+    _logger.info(
+        "Context budget: model=%s utilization=%.0f%% overflow=%s",
+        metrics.get("model"),
+        metrics.get("utilization_pct", 0),
+        metrics.get("overflow"),
+    )
+    if budget_result.overflow:
+        _logger.warning(
+            "Context budget overflow: %d tokens over limit for model %s",
+            budget_result.overflow_tokens,
+            model_name,
+        )
+    return effective_context, budget_result
+
+
+def _build_system_prompt(context: dict[str, str], *, response_mode: str = _DEFAULT_RESPONSE_MODE) -> str:
+    """Constrói o system prompt a partir de um context já ajustado pelo budget."""
     profile = response_mode_profile(response_mode)
 
-    # Aplica budget de contexto se modelo conhecido
-    effective_context = context
-    budget_result: ContextBudgetResult | None = None
-    if model_name:
-        effective_context, budget_result = apply_budget_to_prompt_context(
-            model_name=model_name,
-            response_mode=response_mode,
-            context=context,
-            user_input=context.get("user_input", ""),
-        )
-        if budget_result:
-            metrics = budget_result.metrics()
-            _logger.info(
-                "Context budget: model=%s utilization=%.0f%% overflow=%s",
-                metrics.get("model"),
-                metrics.get("utilization_pct", 0),
-                metrics.get("overflow"),
-            )
-            if budget_result.overflow:
-                _logger.warning(
-                    "Context budget overflow: %d tokens over limit for model %s",
-                    budget_result.overflow_tokens,
-                    model_name,
-                )
-
     sections = [
-        effective_context.get("identity", ""),
+        context.get("identity", ""),
         "Siga a persona e regras abaixo.",
-        effective_context.get("soul", ""),
-        effective_context.get("user", ""),
-        effective_context.get("agents", ""),
-        effective_context.get("memory", ""),
-        effective_context.get("tools", ""),
+        context.get("soul", ""),
+        context.get("user", ""),
+        context.get("agents", ""),
+        context.get("memory", ""),
+        context.get("tools", ""),
     ]
 
     # References: só inclui as que sobreviveram ao budget
     ref_sections = []
     for ref_key in ("evidence_rules", "ioc_extraction", "security_json_patterns",
                     "telemetry_investigation_patterns", "mitre_guidance", "output_contract"):
-        ref_content = effective_context.get(ref_key, "")
+        ref_content = context.get(ref_key, "")
         if ref_content:
             ref_sections.append(ref_content)
 
@@ -503,8 +510,8 @@ def _build_system_prompt(context: dict[str, str], *, response_mode: str = _DEFAU
 
     sections.extend([
         "Skill selecionada:",
-        effective_context.get("selected_skill", ""),
-        effective_context.get("skill_content", ""),
+        context.get("selected_skill", ""),
+        context.get("skill_content", ""),
         str(profile.get("instruction") or ""),
         (
             "Regras de saida: responda em PT-BR, seja tecnico e objetivo, "
@@ -534,6 +541,7 @@ def _build_user_prompt(
     context: dict[str, str],
     *,
     response_mode: str = _DEFAULT_RESPONSE_MODE,
+    has_history_messages: bool = False,
 ) -> str:
     mode = normalize_response_mode(response_mode)
     selected_skill = str(context.get("selected_skill") or "").strip()
@@ -543,7 +551,9 @@ def _build_user_prompt(
     parts.append(f"Modo de resposta: {mode}")
     if selected_skill:
         parts.append(f"Skill ativa: {selected_skill}")
-    if context.get("session_context"):
+    # Evita duplicar histórico: session_context no prompt só quando
+    # não existem history_messages passadas diretamente para a API.
+    if not has_history_messages and context.get("session_context"):
         parts.append("Contexto recente da sessao:")
         parts.append(context["session_context"])
     if context.get("knowledge_context"):
