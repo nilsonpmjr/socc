@@ -1443,7 +1443,8 @@ def stream_chat_reply_events(
         for delta in _chunk_text(content, chunk_size=int(profile.get("chunk_size") or _STREAM_CHUNK_SIZE)):
             yield {"event": "delta", "delta": delta, "skill": skill_name}
     elif not content:
-        messages = [{"role": "system", "content": _build_system_prompt(context, response_mode=mode, model_name=effective_model)}]
+        context, _ = _apply_context_budget(context, model_name=effective_model, response_mode=mode)
+        messages = [{"role": "system", "content": _build_system_prompt(context, response_mode=mode)}]
         messages.extend(history_messages)
         messages.append(
             {"role": "user", "content": _build_user_prompt(message, cliente, context, response_mode=mode)}
