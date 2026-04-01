@@ -20,7 +20,7 @@
 ## Sprint MVP — Dispatch + Startup
 
 ### TASK-HW-001: Remover `socc/commands/` órfã
-**Prioridade:** P0 | **Estimativa:** 15min | **Status:** ⬜
+**Prioridade:** P0 | **Estimativa:** 15min | **Status:** ✅ DONE
 
 **Por quê primeiro:** evitar confusão entre a versão correta (`socc/cli/commands/`) e a duplicata sem `register()`.
 
@@ -39,7 +39,7 @@ DELETE socc/commands/__init__.py
 ---
 
 ### TASK-HW-002: `register_builtin_agents()` no `socc/agents/__init__.py`
-**Prioridade:** P0 | **Estimativa:** 30min | **Status:** ⬜
+**Prioridade:** P0 | **Estimativa:** 30min | **Status:** ✅ DONE
 
 **Acceptance Criteria:**
 - [ ] `socc/agents/__init__.py` expõe `register_builtin_agents()`
@@ -66,7 +66,7 @@ def register_builtin_agents() -> None:
 ---
 
 ### TASK-HW-003: `startup()` no `socc/cli/main.py`
-**Prioridade:** P0 | **Estimativa:** 45min | **Status:** ⬜
+**Prioridade:** P0 | **Estimativa:** 45min | **Status:** ✅ DONE
 
 **Acceptance Criteria:**
 - [ ] Função `startup()` criada em `main.py` (ou módulo `socc/cli/startup.py`)
@@ -110,7 +110,7 @@ startup()   # non-blocking — TUI sobe imediatamente
 ---
 
 ### TASK-HW-004: Dispatch bridge no `chat_interactive.py`
-**Prioridade:** P0 | **Estimativa:** 1h | **Status:** ⬜
+**Prioridade:** P0 | **Estimativa:** 1h | **Status:** ✅ DONE
 
 **Acceptance Criteria:**
 - [ ] `_handle_command()` roteia para `COMMAND_REGISTRY.dispatch()` ao final do bloco de ifs
@@ -148,7 +148,7 @@ all_cmds = list(set(COMMANDS + harness_cmds))
 ## Sprint v1.1 — fork_subagent com LLM real
 
 ### TASK-HW-005: LLM bridge em `fork_subagent`
-**Prioridade:** P1 | **Estimativa:** 3h | **Status:** ⬜
+**Prioridade:** P1 | **Estimativa:** 3h | **Status:** ✅ DONE
 
 **Acceptance Criteria:**
 - [ ] `_run_subagent()` chama LLM real via `socc.core.chat.generate_chat_reply()`
