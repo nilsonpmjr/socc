@@ -508,6 +508,26 @@ def _build_system_prompt(context: dict[str, str], *, response_mode: str = _DEFAU
         sections.append("Referencias operacionais compartilhadas:")
         sections.extend(ref_sections)
 
+    # Inject available tools so the model knows it can call them
+    try:
+        from socc.core.tools_registry import list_tools_specs
+        specs = list_tools_specs()
+        if specs:
+            tool_lines = ["## Ferramentas disponíveis", ""]
+            tool_lines.append(
+                "Você tem acesso às ferramentas abaixo. "
+                "Sempre que o contexto envolver um IP, domínio, hash, URL, "
+                "arquivo ou comando shell, **chame a ferramenta adequada** "
+                "em vez de dizer que não consegue verificar. "
+                "Nunca responda 'não posso verificar em tempo real' se uma ferramenta cobre o caso."
+            )
+            tool_lines.append("")
+            for s in specs:
+                tool_lines.append(f"- **{s.name}**: {s.description[:120]}")
+            sections.append("\n".join(tool_lines))
+    except Exception:
+        pass
+
     sections.extend([
         "Skill selecionada:",
         context.get("selected_skill", ""),
@@ -533,6 +553,37 @@ def _build_system_prompt(context: dict[str, str], *, response_mode: str = _DEFAU
         ),
     ])
     return "\n\n".join(section for section in sections if section)
+
+
+def _prefetch_ioc_context(message: str) -> str:
+    """Pre-invoke extract_iocs on the user message.
+
+    When the message contains IOC patterns (IPs, domains, hashes, URLs),
+    invoke extract_iocs immediately at the Python level and return a
+    formatted context block. This guarantees IOC data reaches the LLM
+    regardless of whether the model decides to call tools itself.
+
+    Returns empty string when no IOCs are found or on error.
+    """
+    try:
+        from socc.core.tools_registry import invoke_tool
+        result = invoke_tool("extract_iocs", {"text": message})
+        if not result.ok or not result.output:
+            return ""
+        iocs = result.output
+        # Only proceed if at least one IOC type has values
+        found: list[str] = []
+        for ioc_type, values in iocs.items():
+            if values:
+                for v in values[:10]:
+                    found.append(f"  - [{ioc_type}] {v}")
+        if not found:
+            return ""
+        lines = ["Indicadores detectados na mensagem (via extract_iocs):"]
+        lines.extend(found)
+        return "\n".join(lines)
+    except Exception:
+        return ""
 
 
 def _build_user_prompt(
@@ -568,6 +619,11 @@ def _build_user_prompt(
     if context.get("artifact_hint"):
         parts.append("Leitura inicial determinística do artefato recente:")
         parts.append(context["artifact_hint"])
+    # Pre-invoke extract_iocs if message contains IOC patterns
+    ioc_ctx = _prefetch_ioc_context(message)
+    if ioc_ctx:
+        parts.append("Indicadores detectados (resultado automático de extract_iocs):")
+        parts.append(ioc_ctx)
     parts.append("Pedido atual do usuario:")
     parts.append(message.strip())
     if selected_skill == "soc-generalist":
@@ -987,6 +1043,7 @@ def _stream_ollama_events(
     base_body: dict = {
         "model": model,
         "stream": False,   # collect full response to inspect tool_calls
+        "think": False,    # disable extended thinking — content field would be empty otherwise
         "keep_alive": os.getenv("SOCC_OLLAMA_KEEP_ALIVE", "15m"),
         "options": {
             "temperature": float(profile.get("temperature") or 0.15),
