@@ -907,88 +907,179 @@ def _chunk_text(text: str, chunk_size: int = _STREAM_CHUNK_SIZE) -> Iterator[str
         yield content[index : index + max(1, chunk_size)]
 
 
+
+_MAX_TOOL_ROUNDS = 5  # prevent infinite agentic loops
+
+
+def _build_ollama_tools() -> list[dict]:
+    """Convert registered ToolSpecs to Ollama tool definitions."""
+    try:
+        from socc.core.tools_registry import list_tools_specs
+        tools = []
+        for spec in list_tools_specs():
+            params: dict = {"type": "object", "properties": {}, "required": []}
+            for pname, pspec in (spec.parameters or {}).items():
+                prop: dict = {"type": pspec.type, "description": pspec.description}
+                if pspec.enum:
+                    prop["enum"] = list(pspec.enum)
+                params["properties"][pname] = prop
+                if pspec.required:
+                    params["required"].append(pname)
+            tools.append({
+                "type": "function",
+                "function": {
+                    "name": spec.name,
+                    "description": spec.description,
+                    "parameters": params,
+                },
+            })
+        return tools
+    except Exception:
+        return []
+
+
+def _run_tool_calls(tool_calls: list[dict]) -> list[dict]:
+    """Invoke tool calls returned by the model; return tool-role messages."""
+    from socc.core.tools_registry import invoke_tool
+    results = []
+    for tc in tool_calls:
+        fn = tc.get("function") or {}
+        name = str(fn.get("name") or "")
+        args = fn.get("arguments") or {}
+        if not name:
+            continue
+        try:
+            tr = invoke_tool(name, args if isinstance(args, dict) else {})
+            content = json.dumps(tr.output, ensure_ascii=False) if tr.ok else json.dumps({"error": tr.error})
+        except Exception as exc:
+            content = json.dumps({"error": str(exc)})
+        results.append({"role": "tool", "content": content})
+    return results
+
+
 def _stream_ollama_events(
     messages: list[dict[str, str]],
     *,
     response_mode: str = _DEFAULT_RESPONSE_MODE,
     model_override: str = "",
     num_predict_override: int | None = None,
+    use_tools: bool = True,
 ) -> Iterator[dict[str, object]]:
+    """Stream Ollama chat events, with optional agentic tool-call loop.
+
+    When ``use_tools=True`` (default), registered tools are sent in the
+    request.  If the model responds with ``tool_calls``, each tool is
+    invoked locally and the result is fed back for up to
+    ``_MAX_TOOL_ROUNDS`` rounds before a final text response is forced.
+
+    Yields event dicts with ``kind`` in:
+        "delta"       — incremental text token
+        "tool_call"   — model requested a tool (name, args)
+        "tool_result" — tool invocation result (truncated preview)
+        "meta"        — completion metadata
+    """
     runtime = resolve_runtime()
     base_url = getattr(cfg, "OLLAMA_URL", "http://localhost:11434").rstrip("/")
     model = str(model_override or "").strip() or resolve_ollama_model_for_mode(response_mode)
     timeout = float(getattr(cfg, "LLM_TIMEOUT", 60))
     profile = response_mode_profile(response_mode)
-    body = {
+
+    base_body: dict = {
         "model": model,
-        "messages": messages,
-        "stream": True,
+        "stream": False,   # collect full response to inspect tool_calls
         "keep_alive": os.getenv("SOCC_OLLAMA_KEEP_ALIVE", "15m"),
         "options": {
             "temperature": float(profile.get("temperature") or 0.15),
             "num_ctx": int(profile.get("num_ctx") or 32768),
-            "num_predict": -1,  # sem limite de tokens gerados
+            "num_predict": -1,
         },
     }
     if num_predict_override is not None:
-        body["options"]["num_predict"] = int(num_predict_override)
+        base_body["options"]["num_predict"] = int(num_predict_override)
+
+    ollama_tools = _build_ollama_tools() if use_tools else []
+
     started = perf_counter()
-    resp = None
-    final_payload: dict[str, object] = {}
-    try:
-        resp = requests.post(
-            f"{base_url}/api/chat",
-            json=body,
-            timeout=timeout,
-            stream=True,
-        )
-        resp.raise_for_status()
-        for raw_line in resp.iter_lines(decode_unicode=True):
-            if not raw_line:
-                continue
-            payload = json.loads(raw_line)
-            if isinstance(payload, dict):
-                final_payload = payload
-            delta = (payload.get("message") or {}).get("content") or ""
+    active_messages = list(messages)
+    final_payload: dict = {}
+
+    for _round in range(_MAX_TOOL_ROUNDS + 1):
+        is_last_round = (_round == _MAX_TOOL_ROUNDS)
+        body = dict(base_body)
+        body["messages"] = active_messages
+        if ollama_tools and not is_last_round:
+            body["tools"] = ollama_tools
+        # last round: no tools → model must answer in plain text
+
+        try:
+            resp = requests.post(
+                f"{base_url}/api/chat",
+                json=body,
+                timeout=timeout,
+            )
+            resp.raise_for_status()
+            raw = resp.json()
+            if isinstance(raw, dict):
+                final_payload = raw
+        except Exception as exc:
+            record_inference_event(
+                source="chat_service", provider="ollama", model=model,
+                requested_device=runtime.device, effective_device=runtime.device,
+                latency_ms=(perf_counter() - started) * 1000,
+                success=False, fallback_used=False, error=str(exc),
+            )
+            raise
+
+        msg = final_payload.get("message") or {}
+        tool_calls = msg.get("tool_calls") or []
+
+        if tool_calls and not is_last_round:
+            # Emit tool events so the UI can show what's happening
+            for tc in tool_calls:
+                fn = tc.get("function") or {}
+                yield {"kind": "tool_call", "tool": fn.get("name", ""), "args": fn.get("arguments", {})}
+
+            # Execute tools and collect results
+            active_messages.append({
+                "role": "assistant",
+                "content": str(msg.get("content") or ""),
+                "tool_calls": tool_calls,
+            })
+            tool_results = _run_tool_calls(tool_calls)
+            active_messages.extend(tool_results)
+
+            for tr in tool_results:
+                yield {"kind": "tool_result", "content": tr["content"][:200]}
+
+            continue  # feed results back to model
+
+        # No tool calls (or last round) — emit the text as deltas
+        content = str(msg.get("content") or "")
+        chunk_size = 8
+        for i in range(0, max(1, len(content)), chunk_size):
+            delta = content[i : i + chunk_size]
             if delta:
                 yield {"kind": "delta", "delta": delta}
-        done_reason = str(final_payload.get("done_reason") or ("stop" if final_payload.get("done") else "unknown"))
-        yield {
-            "kind": "meta",
-            "done_reason": done_reason,
-            "truncated": done_reason in {"length", "max_tokens"} or bool(final_payload.get("truncated")),
-            "eval_count": int(final_payload.get("eval_count") or 0),
-            "prompt_eval_count": int(final_payload.get("prompt_eval_count") or 0),
-            "num_predict": int(num_predict_override) if num_predict_override is not None else None,
-        }
-        record_inference_event(
-            source="chat_service",
-            provider="ollama",
-            model=model,
-            requested_device=runtime.device,
-            effective_device=runtime.device,
-            latency_ms=(perf_counter() - started) * 1000,
-            success=True,
-            fallback_used=False,
-        )
-    except Exception as exc:
-        record_inference_event(
-            source="chat_service",
-            provider="ollama",
-            model=model,
-            requested_device=runtime.device,
-            effective_device=runtime.device,
-            latency_ms=(perf_counter() - started) * 1000,
-            success=False,
-            fallback_used=False,
-            error=str(exc),
-        )
-        raise
-    finally:
-        try:
-            resp.close()
-        except Exception:
-            pass
+        break  # done
+
+    done_reason = str(
+        final_payload.get("done_reason")
+        or ("stop" if final_payload.get("done") else "unknown")
+    )
+    yield {
+        "kind": "meta",
+        "done_reason": done_reason,
+        "truncated": done_reason in {"length", "max_tokens"} or bool(final_payload.get("truncated")),
+        "eval_count": int(final_payload.get("eval_count") or 0),
+        "prompt_eval_count": int(final_payload.get("prompt_eval_count") or 0),
+        "num_predict": int(num_predict_override) if num_predict_override is not None else None,
+    }
+    record_inference_event(
+        source="chat_service", provider="ollama", model=model,
+        requested_device=runtime.device, effective_device=runtime.device,
+        latency_ms=(perf_counter() - started) * 1000,
+        success=True, fallback_used=False,
+    )
 
 
 def _stream_ollama(
