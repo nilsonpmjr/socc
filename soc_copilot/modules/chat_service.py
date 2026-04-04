@@ -1564,6 +1564,8 @@ def stream_chat_reply_events(
     }
 
     content = ""
+    tool_calls_seen: list[dict[str, object]] = []
+    tool_results_seen: list[dict[str, object]] = []
     lightweight = bool(retrieval.get("lightweight"))
     completion_meta: dict[str, object] = {
         "done_reason": "",
@@ -1629,10 +1631,24 @@ def stream_chat_reply_events(
                             model_override=effective_model,
                             num_predict_override=num_predict_override,
                         ):
-                            if item.get("kind") == "delta":
+                            kind = str(item.get("kind") or "")
+                            if kind == "delta":
                                 delta = str(item.get("delta") or "")
                                 parts.append(delta)
                                 yield {"event": "delta", "delta": delta, "skill": skill_name}
+                            elif kind == "tool_call":
+                                tool_payload = {
+                                    "tool": str(item.get("tool") or ""),
+                                    "arguments": item.get("args") if isinstance(item.get("args"), dict) else {},
+                                }
+                                tool_calls_seen.append(tool_payload)
+                                yield {"event": "tool_call", **tool_payload, "skill": skill_name}
+                            elif kind == "tool_result":
+                                result_payload = {
+                                    "content": str(item.get("content") or ""),
+                                }
+                                tool_results_seen.append(result_payload)
+                                yield {"event": "tool_result", **result_payload, "skill": skill_name}
                             else:
                                 completion_meta.update(dict(item))
                         content = _strip_repeated_greeting(
@@ -1659,10 +1675,24 @@ def stream_chat_reply_events(
                                 response_mode=mode,
                                 model_override=effective_model,
                             ):
-                                if item.get("kind") == "delta":
+                                kind = str(item.get("kind") or "")
+                                if kind == "delta":
                                     delta = str(item.get("delta") or "")
                                     continuation_parts.append(delta)
                                     yield {"event": "delta", "delta": delta, "skill": skill_name}
+                                elif kind == "tool_call":
+                                    tool_payload = {
+                                        "tool": str(item.get("tool") or ""),
+                                        "arguments": item.get("args") if isinstance(item.get("args"), dict) else {},
+                                    }
+                                    tool_calls_seen.append(tool_payload)
+                                    yield {"event": "tool_call", **tool_payload, "skill": skill_name}
+                                elif kind == "tool_result":
+                                    result_payload = {
+                                        "content": str(item.get("content") or ""),
+                                    }
+                                    tool_results_seen.append(result_payload)
+                                    yield {"event": "tool_result", **result_payload, "skill": skill_name}
                                 else:
                                     continuation_meta.update(dict(item))
                             completion_meta["continuation_done_reason"] = str(
@@ -1743,7 +1773,9 @@ def stream_chat_reply_events(
                 "vantage_context": str((retrieval.get("vantage") or {}).get("context") or ""),
                 "vantage_sources": list((retrieval.get("vantage") or {}).get("sources") or []),
                 "vantage_modules": list((retrieval.get("vantage") or {}).get("modules") or []),
+                "tool_results": list(tool_results_seen),
             },
+            "tool_calls": list(tool_calls_seen),
         },
     )
 
@@ -1777,7 +1809,9 @@ def stream_chat_reply_events(
                 "vantage_context": str((retrieval.get("vantage") or {}).get("context") or ""),
                 "vantage_sources": list((retrieval.get("vantage") or {}).get("sources") or []),
                 "vantage_modules": list((retrieval.get("vantage") or {}).get("modules") or []),
+                "tool_results": list(tool_results_seen),
             },
+            "tool_calls": list(tool_calls_seen),
         },
     }
 

@@ -1,15 +1,11 @@
-"""
-SOCC Harness — runtime, models, and command system.
-
-Based on Claude Code Python Port architecture (instructkr/claude-code).
-Extends the existing tools_registry.py with agent routing, command dispatch,
-and SOC-specific models.
-"""
+"""Public exports for the SOCC harness package."""
 
 from .models import (
     AgentResult,
     AgentSpecialty,
     CommandArg,
+    InventoryRecord,
+    InventoryStatus,
     RiskLevel,
     SOCAgentSpec,
     SOCCommand,
@@ -23,6 +19,8 @@ __all__ = [
     "AgentResult",
     "AgentSpecialty",
     "CommandArg",
+    "InventoryRecord",
+    "InventoryStatus",
     "RiskLevel",
     "RUNTIME",
     "SOCAgentSpec",

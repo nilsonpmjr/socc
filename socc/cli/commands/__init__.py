@@ -1,8 +1,4 @@
-"""
-SOCC slash-commands — /case, /hunt, /report, /tools, /agents, /help.
-
-Commands are registered in the global CommandRegistry on import.
-"""
+"""Built-in slash commands layered on top of the harness runtime."""
 
 from socc.core.harness.commands import register_command
 from socc.core.harness.models import CommandArg, SOCCommand
@@ -39,12 +35,18 @@ def _register_help() -> None:
 
 
 def _register_tools() -> None:
-    from socc.core.tools_registry import TOOL_REGISTRY
-
     def _handle_tools(args: list[str], ctx: dict) -> str:
+        from socc.core.harness.runtime import RUNTIME
+
+        query = " ".join(args).strip()
+        records = RUNTIME.list_tool_inventory(query=query, limit=25)
         lines = ["# Available Tools", ""]
-        for name, spec in sorted(TOOL_REGISTRY.items()):
-            lines.append(f"  **{name}** ({spec.category.value}) — {spec.description[:60]}")
+        for record in records:
+            badge = record.status.value
+            lines.append(
+                f"  **{record.name}** [{badge}] ({record.category or '-'}) — "
+                f"{record.description[:72]}"
+            )
         return "\n".join(lines)
 
     try:
@@ -61,12 +63,16 @@ def _register_tools() -> None:
 def _register_agents() -> None:
     def _handle_agents(args: list[str], ctx: dict) -> str:
         from socc.core.harness.runtime import RUNTIME
-        agents = RUNTIME.list_agents()
+        query = " ".join(args).strip()
+        agents = RUNTIME.list_agent_inventory(query=query, limit=25)
         if not agents:
             return "No agents registered."
         lines = ["# Available Agents", ""]
         for agent in agents:
-            lines.append(f"  **{agent.name}** ({agent.specialty.value}) — {agent.description[:60]}")
+            lines.append(
+                f"  **{agent.name}** [{agent.status.value}] ({agent.specialty}) — "
+                f"{agent.description[:72]}"
+            )
         return "\n".join(lines)
 
     try:

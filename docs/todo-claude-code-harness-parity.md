@@ -1,5 +1,9 @@
 # TODO — SOCC Claude-Code Harness Parity
 
+> **Status:** superseded por `docs/todo-clean-room-harness-rewrite.md`.
+> Este TODO não governa mais a execução principal; use-o apenas como histórico do plano anterior.
+> Os status/checklists abaixo podem divergir do estado real atual e não devem ser usados para aceite.
+
 **PRD pai:** `prd-claude-code-harness-parity.md`  
 **Data:** 2026-04-01  
 **Status geral:** Draft executavel  

@@ -472,6 +472,41 @@ def list_chat_sessions(limit: int = 50) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def get_chat_session(session_id: str) -> dict | None:
+    if not session_id:
+        return None
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT
+                s.session_id,
+                s.created_at,
+                s.updated_at,
+                s.cliente,
+                s.titulo,
+                (
+                    SELECT content
+                    FROM chat_messages m
+                    WHERE m.session_id = s.session_id
+                    ORDER BY m.id DESC
+                    LIMIT 1
+                ) AS preview,
+                (
+                    SELECT role
+                    FROM chat_messages m
+                    WHERE m.session_id = s.session_id
+                    ORDER BY m.id DESC
+                    LIMIT 1
+                ) AS last_role
+            FROM chat_sessions s
+            WHERE s.session_id = ?
+            LIMIT 1
+            """,
+            (session_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
 def get_session_usage(session_id: str) -> dict:
     """Retorna tokens_in, tokens_out e contagem de mensagens da sessão."""
     if not session_id:

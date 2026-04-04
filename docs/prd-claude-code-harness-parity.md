@@ -1,5 +1,9 @@
 # PRD — SOCC Claude-Code Harness Parity
 
+> **Status:** superseded pela clean-room rewrite definida em `docs/prd-clean-room-harness-rewrite.md`.
+> Este documento permanece apenas como contexto histórico. Quando houver conflito, a clean-room rewrite vence.
+> Os checklists e estados abaixo não são mais fonte de verdade do repositório atual.
+
 **Versao:** 1.0  
 **Data:** 2026-04-01  
 **Status:** Draft para implementacao  

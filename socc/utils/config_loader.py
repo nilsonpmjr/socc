@@ -32,7 +32,7 @@ def load_environment() -> dict[str, str]:
     repo_env = repo_env_path()
 
     if runtime_env.exists():
-        load_dotenv(runtime_env, override=True)
+        load_dotenv(runtime_env, override=False)
     if repo_env.exists():
         load_dotenv(repo_env, override=False)
 

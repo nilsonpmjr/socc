@@ -16,6 +16,7 @@ from socc.core import agent_loader as agent_loader_runtime
 from socc.core import analysis as analysis_runtime
 from socc.core import chat as chat_runtime
 from socc.core import knowledge_base as knowledge_base_runtime
+from socc.core import task_state as task_state_runtime
 from socc.core.contracts import (
     AnalysisEnvelope,
     ChatResponseEnvelope,
@@ -767,8 +768,18 @@ def build_chat_payload_response(
     response_mode: str = "balanced",
     threat_intel_enabled: bool = True,
     source: str = "chat_payload",
+    task_id: str = "",
 ) -> dict[str, Any]:
     started = perf_counter()
+    task = _ensure_task_state(
+        task_id=task_id,
+        session_id=session_id,
+        kind="payload_chat",
+        source=source,
+        input_preview=message,
+        skill=skill,
+        metadata={"response_mode": response_mode},
+    )
     storage_runtime.ensure_chat_session(
         session_id=session_id,
         cliente=cliente,
@@ -858,6 +869,7 @@ def build_chat_payload_response(
         "formato_detectado": str(prepared["format"]),
         "payload_hash": storage_runtime.hash_input(raw_text),
         "response_mode": response_mode,
+        "task": task.to_dict(),
     }
     storage_runtime.save_chat_message(
         session_id=session_id,
@@ -881,11 +893,42 @@ def build_chat_payload_response(
         threat_intel_used=bool(ti_results),
         payload_hash=str(response_payload.get("payload_hash") or ""),
     )
+    task_state_runtime.complete_task(
+        task.task_id,
+        summary=str(draft or response_payload.get("analise_tecnica") or "payload processed")[:160],
+    )
+    response_payload["task"] = task_state_runtime.get_task(task.task_id).to_dict() if task_state_runtime.get_task(task.task_id) else {}
     return response_payload
 
 
 def ensure_session_id(session_id: str = "") -> str:
     return str(session_id or int(time() * 1000))
+
+
+def _ensure_task_state(
+    *,
+    task_id: str = "",
+    session_id: str = "",
+    kind: str,
+    source: str = "",
+    input_preview: str = "",
+    skill: str = "",
+    metadata: dict[str, Any] | None = None,
+):
+    if task_id:
+        task = task_state_runtime.get_task(task_id)
+        if task is not None:
+            return task
+    task = task_state_runtime.create_task(
+        session_id=session_id,
+        kind=kind,
+        source=source,
+        input_preview=input_preview,
+        skill=skill,
+        metadata=metadata,
+    )
+    task_state_runtime.update_task(task.task_id, status="running")
+    return task
 
 
 def _merge_chat_metadata(
@@ -919,27 +962,47 @@ def chat_submission(
     selected_model: str = "",
     threat_intel_enabled: bool = True,
     source: str = "chat_payload",
+    task_id: str = "",
 ) -> dict[str, Any]:
     effective_session = ensure_session_id(session_id)
+    selected_skill = chat_runtime.select_skill(message)
+    task = _ensure_task_state(
+        task_id=task_id,
+        session_id=effective_session,
+        kind="payload_chat" if looks_like_payload(message) else "chat_reply",
+        source=source,
+        input_preview=message,
+        skill=selected_skill,
+        metadata={"response_mode": response_mode},
+    )
     if looks_like_payload(message):
-        return build_chat_payload_response(
+        response = build_chat_payload_response(
             message=message,
             session_id=effective_session,
-            skill=chat_runtime.select_skill(message),
+            skill=selected_skill,
             classificacao=classificacao,
             cliente=cliente,
             response_mode=response_mode,
             threat_intel_enabled=threat_intel_enabled,
             source=source,
+            task_id=task.task_id,
         )
-    return chat_reply(
+        return response
+    response = chat_reply(
         message=message,
         session_id=effective_session,
         cliente=cliente,
         response_mode=response_mode,
         selected_backend=selected_backend,
         selected_model=selected_model,
+        task_id=task.task_id,
     )
+    task_state_runtime.complete_task(
+        task.task_id,
+        summary=str(response.get("content") or response.get("message") or "")[:160],
+        error=str(response.get("message") or "") if str(response.get("type") or "") == "error" else "",
+    )
+    return response
 
 
 def looks_like_payload(text: str) -> bool:
@@ -967,12 +1030,23 @@ async def stream_chat_payload_events(
     selected_model: str = "",
     threat_intel_enabled: bool = True,
     source: str = "chat_payload",
+    task_id: str = "",
 ):
     selected_skill = chat_runtime.select_skill(message)
+    task = _ensure_task_state(
+        task_id=task_id,
+        session_id=session_id,
+        kind="payload_chat",
+        source=source,
+        input_preview=message,
+        skill=selected_skill,
+        metadata={"response_mode": response_mode},
+    )
     yield {
         "event": "meta",
         "payload": {
             "session_id": session_id,
+            "task": task.to_dict(),
             "skill": selected_skill,
             "runtime": runtime_brief(),
             "response_mode": response_mode,
@@ -987,9 +1061,10 @@ async def stream_chat_payload_events(
         (3, "analysis", "Classificando..."),
         (4, "draft", "Gerando draft..."),
     ):
+        task_state_runtime.set_task_phase(task.task_id, phase=phase, label=label)
         yield {
             "event": "phase",
-            "payload": {"step": step, "phase": phase, "label": label},
+            "payload": {"step": step, "phase": phase, "label": label, "task_id": task.task_id},
         }
     response_payload = await asyncio.to_thread(
         build_chat_payload_response,
@@ -1001,7 +1076,9 @@ async def stream_chat_payload_events(
         response_mode=response_mode,
         threat_intel_enabled=threat_intel_enabled,
         source=source,
+        task_id=task.task_id,
     )
+    response_payload["task"] = task_state_runtime.get_task(task.task_id).to_dict() if task_state_runtime.get_task(task.task_id) else {}
     yield {"event": "final", "payload": response_payload}
 
 
@@ -1016,6 +1093,7 @@ async def stream_chat_submission_events(
     selected_model: str = "",
     threat_intel_enabled: bool = True,
     source: str = "chat_payload",
+    task_id: str = "",
 ):
     effective_session = ensure_session_id(session_id)
     if looks_like_payload(message):
@@ -1029,9 +1107,21 @@ async def stream_chat_submission_events(
             selected_model=selected_model,
             threat_intel_enabled=threat_intel_enabled,
             source=source,
+            task_id=task_id,
         ):
             yield event
         return
+
+    selected_skill = chat_runtime.select_skill(message)
+    task = _ensure_task_state(
+        task_id=task_id,
+        session_id=effective_session,
+        kind="chat_reply",
+        source=source,
+        input_preview=message,
+        skill=selected_skill,
+        metadata={"response_mode": response_mode},
+    )
 
     for event in stream_chat_events(
         message=message,
@@ -1040,13 +1130,22 @@ async def stream_chat_submission_events(
         response_mode=response_mode,
         selected_backend=selected_backend,
         selected_model=selected_model,
+        task_id=task.task_id,
     ):
         event_name = str(event.get("event") or "message")
         if event_name == "final":
             data = event.get("data")
             payload = dict(data) if isinstance(data, dict) else {}
+            task_state_runtime.complete_task(
+                task.task_id,
+                summary=str(payload.get("content") or payload.get("message") or "")[:160],
+                error=str(payload.get("message") or "") if str(payload.get("type") or "") == "error" else "",
+            )
+            payload["task"] = task_state_runtime.get_task(task.task_id).to_dict() if task_state_runtime.get_task(task.task_id) else {}
         else:
             payload = {key: value for key, value in event.items() if key != "event"}
+            if event_name == "meta":
+                payload["task"] = task.to_dict()
         yield {"event": event_name, "payload": payload}
 
 
@@ -1288,6 +1387,38 @@ def list_chat_session_messages_payload(session_id: str, limit: int = 100) -> dic
             "messages": [],
             "error": str(exc),
         }
+
+
+def get_chat_session_payload(session_id: str, limit: int = 20) -> dict[str, Any]:
+    capped = max(1, min(limit, 200))
+    try:
+        summary = storage_runtime.get_chat_session_summary(session_id=session_id, limit=capped)
+    except Exception as exc:
+        return {
+            "session_id": session_id,
+            "found": False,
+            "session": None,
+            "messages": [],
+            "error": str(exc),
+        }
+    if summary is None:
+        return {
+            "session_id": session_id,
+            "found": False,
+            "session": None,
+            "messages": [],
+            "error": "session_not_found",
+        }
+    messages = list(summary.get("messages") or [])
+    session_payload = dict(summary)
+    session_payload.pop("messages", None)
+    return {
+        "session_id": session_id,
+        "found": True,
+        "session": session_payload,
+        "messages": messages,
+        "error": "",
+    }
 
 
 def _runtime_model_profiles() -> dict[str, str]:
@@ -1858,8 +1989,18 @@ def chat_reply(
     response_mode: str = "balanced",
     selected_backend: str = "",
     selected_model: str = "",
+    task_id: str = "",
 ) -> dict[str, Any]:
     storage_runtime.init_db()
+    effective_session_for_task = ensure_session_id(session_id)
+    task = _ensure_task_state(
+        task_id=task_id,
+        session_id=effective_session_for_task,
+        kind="chat_reply",
+        source="chat_reply",
+        input_preview=message,
+        metadata={"response_mode": response_mode},
+    )
     response = chat_runtime.generate_chat_reply(
         message=message,
         session_id=session_id,
@@ -1876,7 +2017,7 @@ def chat_reply(
     runtime = response.get("runtime")
     if not isinstance(runtime, dict):
         runtime = runtime_brief()
-    return ChatResponseEnvelope(
+    envelope = ChatResponseEnvelope(
         response_type=response_type,
         session_id=effective_session,
         skill=skill,
@@ -1889,6 +2030,7 @@ def chat_reply(
         ),
         content=content,
         message=error_message if response_type == "error" else "",
+        tool_calls=list(response.get("tool_calls") or []),
         metadata=_merge_chat_metadata(
             response.get("metadata") if isinstance(response.get("metadata"), dict) else None,
             cliente=cliente,
@@ -1897,6 +2039,14 @@ def chat_reply(
             selected_model=selected_model,
         ),
     ).to_dict()
+    task_state_runtime.update_task(task.task_id, skill=skill or task.skill)
+    task_state_runtime.complete_task(
+        task.task_id,
+        summary=content[:160] if content else error_message[:160],
+        error=error_message if response_type == "error" else "",
+    )
+    envelope["task"] = task_state_runtime.get_task(task.task_id).to_dict() if task_state_runtime.get_task(task.task_id) else {}
+    return envelope
 
 
 def stream_chat_events(
@@ -1906,8 +2056,18 @@ def stream_chat_events(
     response_mode: str = "balanced",
     selected_backend: str = "",
     selected_model: str = "",
+    task_id: str = "",
 ):
     storage_runtime.init_db()
+    effective_session_for_task = ensure_session_id(session_id)
+    task = _ensure_task_state(
+        task_id=task_id,
+        session_id=effective_session_for_task,
+        kind="chat_reply",
+        source="chat_stream",
+        input_preview=message,
+        metadata={"response_mode": response_mode},
+    )
     for event in chat_runtime.stream_chat_reply_events(
         message=message,
         session_id=session_id,
@@ -1917,6 +2077,8 @@ def stream_chat_events(
         selected_model=selected_model,
     ):
         if event.get("event") != "final":
+            if event.get("event") == "meta":
+                event = {**event, "task": task.to_dict()}
             yield event
             continue
 
@@ -1931,27 +2093,36 @@ def stream_chat_events(
         runtime = data.get("runtime")
         if not isinstance(runtime, dict):
             runtime = runtime_brief()
+        payload = ChatResponseEnvelope(
+            response_type=response_type,
+            session_id=str(data.get("session_id") or session_id or "default"),
+            skill=str(data.get("skill") or ""),
+            runtime=runtime,
+            gateway=_chat_gateway_contract(
+                stream=True,
+                success=response_type != "error",
+                error=error_message if response_type == "error" else "",
+                runtime_override=runtime,
+            ),
+            content=content,
+            message=error_message if response_type == "error" else "",
+            tool_calls=list(data.get("tool_calls") or []),
+            metadata=_merge_chat_metadata(
+                data.get("metadata") if isinstance(data.get("metadata"), dict) else None,
+                cliente=cliente,
+                response_mode=response_mode,
+                selected_backend=selected_backend,
+                selected_model=selected_model,
+            ),
+        ).to_dict()
+        task_state_runtime.update_task(task.task_id, skill=str(data.get("skill") or task.skill))
+        task_state_runtime.complete_task(
+            task.task_id,
+            summary=content[:160] if content else error_message[:160],
+            error=error_message if response_type == "error" else "",
+        )
+        payload["task"] = task_state_runtime.get_task(task.task_id).to_dict() if task_state_runtime.get_task(task.task_id) else {}
         yield {
             "event": "final",
-            "data": ChatResponseEnvelope(
-                response_type=response_type,
-                session_id=str(data.get("session_id") or session_id or "default"),
-                skill=str(data.get("skill") or ""),
-                runtime=runtime,
-                gateway=_chat_gateway_contract(
-                    stream=True,
-                    success=response_type != "error",
-                    error=error_message if response_type == "error" else "",
-                    runtime_override=runtime,
-                ),
-                content=content,
-                message=error_message if response_type == "error" else "",
-                metadata=_merge_chat_metadata(
-                    data.get("metadata") if isinstance(data.get("metadata"), dict) else None,
-                    cliente=cliente,
-                    response_mode=response_mode,
-                    selected_backend=selected_backend,
-                    selected_model=selected_model,
-                ),
-            ).to_dict(),
+            "data": payload,
         }

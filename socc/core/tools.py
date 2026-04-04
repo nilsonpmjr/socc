@@ -213,6 +213,12 @@ def invoke_tool(name: str, arguments: dict[str, Any] | None = None) -> dict[str,
         Dictionary with ok, output, error, arguments fields
     """
     result = _invoke_tool_v2(name, arguments)
+    error = result.error
+    metadata = dict(result.metadata)
+
+    if not result.ok and "not found in registry" in error:
+        metadata["error_detail"] = error
+        error = "tool_not_found"
     
     # Convert to legacy format
     return ToolExecutionContract(
@@ -220,8 +226,8 @@ def invoke_tool(name: str, arguments: dict[str, Any] | None = None) -> dict[str,
         ok=result.ok,
         arguments=result.arguments,
         output=result.output,
-        error=result.error,
-        metadata=result.metadata,
+        error=error,
+        metadata=metadata,
     ).to_dict()
 
 

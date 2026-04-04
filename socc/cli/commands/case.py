@@ -46,8 +46,11 @@ class CaseManager:
     """CRUD for incident cases, persisted as JSON files."""
 
     def __init__(self, cases_dir: Path | None = None) -> None:
+        global _manager
         self.cases_dir = cases_dir or Path.home() / ".socc" / "cases"
         self.cases_dir.mkdir(parents=True, exist_ok=True)
+        if cases_dir is not None or _manager is None:
+            _manager = self
 
     def create(self, title: str, severity: str = "medium") -> Case:
         now = datetime.now(timezone.utc).isoformat()

@@ -631,13 +631,6 @@ def resolve_auth_context(provider_name: str) -> dict[str, str]:
             "source": "missing",
         }
 
-    if configured_method == "oauth" and oauth_credential:
-        return {
-            "provider": normalized,
-            "method": "oauth",
-            "credential": oauth_credential,
-            "source": "oauth_store",
-        }
     if configured_method == "oauth":
         if env_credential:
             return {
@@ -645,6 +638,13 @@ def resolve_auth_context(provider_name: str) -> dict[str, str]:
                 "method": "oauth",
                 "credential": env_credential,
                 "source": "env",
+            }
+        if oauth_credential:
+            return {
+                "provider": normalized,
+                "method": "oauth",
+                "credential": oauth_credential,
+                "source": "oauth_store",
             }
         return {
             "provider": normalized,

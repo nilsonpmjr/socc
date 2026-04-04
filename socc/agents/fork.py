@@ -1,11 +1,4 @@
-"""
-Subagent forking system for SOCC.
-
-Creates specialised subagents that run tasks with restricted tool sets
-and return structured results.
-
-Attribution: Inspired by instructkr/claude-code AgentTool/forkSubagent.
-"""
+"""Subagent execution helpers for the harness runtime."""
 
 from __future__ import annotations
 
@@ -16,8 +9,8 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-from socc.core.harness.models import AgentResult, AgentSpecialty, SOCAgentSpec
-from socc.core.tools_registry import invoke_tool
+from socc.core.harness.models import AgentResult, SOCAgentSpec
+from socc.core.tools_registry import ToolResult, invoke_tool
 
 __all__ = [
     "SubagentConfig",
@@ -25,6 +18,7 @@ __all__ = [
     "fork_subagent",
     "get_subagent",
     "list_active_subagents",
+    "list_all_subagents",
 ]
 
 _logger = logging.getLogger(__name__)
@@ -42,6 +36,7 @@ class SubagentConfig:
     max_steps: int = 10
     timeout_seconds: int = 300
     parent_id: str | None = None
+    task_id: str = ""
 
 
 @dataclass
@@ -50,10 +45,14 @@ class SubagentHandle:
 
     id: str
     name: str
+    specialty: str = ""
+    task_id: str = ""
     status: str = "pending"  # pending, running, completed, failed, timeout
     result: AgentResult | None = None
     started_at: float = field(default_factory=time.time)
     completed_at: float | None = None
+    error_kind: str = ""
+    resolved_tools: list[str] = field(default_factory=list)
 
     @property
     def elapsed_seconds(self) -> float:
@@ -63,6 +62,21 @@ class SubagentHandle:
     @property
     def is_done(self) -> bool:
         return self.status in ("completed", "failed", "timeout")
+
+    def to_dict(self) -> dict[str, Any]:
+        result = self.result
+        metadata = result.metadata if result is not None else {}
+        return {
+            "id": self.id,
+            "name": self.name,
+            "specialty": self.specialty,
+            "task_id": self.task_id,
+            "status": self.status,
+            "elapsed_seconds": round(self.elapsed_seconds, 3),
+            "error_kind": self.error_kind or (result.error_kind if result else ""),
+            "summary": result.conclusion if result is not None else "",
+            "resolved_tools": list(self.resolved_tools or metadata.get("allowed_tools") or []),
+        }
 
 
 # ── Registry ──────────────────────────────────────────────────────────────
@@ -90,16 +104,23 @@ def fork_subagent(
     handle = SubagentHandle(
         id=uuid.uuid4().hex[:8],
         name=config.name,
+        specialty=config.specialty,
+        task_id=config.task_id,
         status="pending",
     )
 
     with _lock:
         _registry[handle.id] = handle
 
-    _logger.info(
-        "Forking subagent %s (%s) for task: %s",
-        handle.id, config.specialty, config.task[:80],
-    )
+    if config.task_id:
+        try:
+            from socc.core import task_state
+
+            task_state.attach_subagent(config.task_id, handle.id)
+        except Exception:
+            pass
+
+    _logger.info("Forking subagent %s (%s)", handle.id, config.specialty)
 
     thread = threading.Thread(
         target=_run_subagent,
@@ -113,11 +134,13 @@ def fork_subagent(
         thread.join(timeout=config.timeout_seconds)
         if thread.is_alive():
             handle.status = "timeout"
+            handle.error_kind = "timeout"
             handle.completed_at = time.time()
             handle.result = AgentResult(
                 ok=False,
                 agent_name=config.specialty,
                 conclusion=f"Subagent timed out after {config.timeout_seconds}s",
+                error_kind="timeout",
             )
             _logger.warning("Subagent %s timed out", handle.id)
 
@@ -134,68 +157,88 @@ def _run_subagent(
     start = time.time()
 
     try:
-        # Resolve agent spec
         spec = _resolve_agent(config.specialty, agent_specs)
-
-        # Filter tools
-        allowed_tools = config.tools or (
-            spec.tools_whitelist if spec else []
-        )
-
-        # Build prompt
+        allowed_tools = _resolve_allowed_tools(config, spec)
+        handle.resolved_tools = list(allowed_tools)
         prompt = _build_prompt(config, spec)
 
-        # Execute reasoning steps
         findings: list[str] = []
         reasoning: list[str] = []
+        tool_calls: list[ToolResult] = []
+        tool_errors: list[str] = []
+        llm_error = ""
 
-        reasoning.append(f"[step 0] Received task: {config.task}")
+        reasoning.append(f"[step 0] Task accepted: {config.task}")
+        reasoning.append(
+            f"[policy] allowed tools: {', '.join(allowed_tools) if allowed_tools else '(none)'}"
+        )
 
-        # Step 1: Extract IOCs if text context provided
         if "text" in config.context and "extract_iocs" in allowed_tools:
-            ioc_result = invoke_tool("extract_iocs", {"text": config.context["text"]})
+            ioc_result = _invoke_allowed_tool(
+                "extract_iocs",
+                {"text": config.context["text"]},
+                allowed_tools=allowed_tools,
+                tool_calls=tool_calls,
+            )
             if ioc_result.ok and ioc_result.output:
                 for ioc_type, values in ioc_result.output.items():
                     if values:
                         findings.append(f"Found {len(values)} {ioc_type}: {values[:5]}")
-                reasoning.append(f"[step 1] Extracted IOCs: {len(findings)} findings")
+                reasoning.append(f"[step 1] deterministic IOC extraction yielded {len(findings)} findings")
+            elif ioc_result.error:
+                tool_errors.append(ioc_result.error)
+                reasoning.append(f"[tool] extract_iocs failed: {ioc_result.error}")
 
-        # LLM synthesis — call the same gateway the chat uses
-        llm_content = ""
         try:
             from socc.core.chat import generate_chat_reply
+
             llm_result = generate_chat_reply(
                 message=prompt,
                 session_id=f"subagent-{handle.id}",
-                response_mode="fast",   # lightweight — subagents use fast model
+                response_mode="fast",
             )
             llm_content = str(llm_result.get("content") or "").strip()
-            if llm_content:
-                import re as _re
-                bullet_findings = _re.findall(
-                    r"^[\s]*[-*\u2022]\s+(.+)$", llm_content, _re.MULTILINE
-                )
-                if bullet_findings:
-                    findings.extend(bullet_findings)
-                elif not findings:
-                    # no bullets — use first 200 chars as single finding
-                    findings.append(llm_content[:200])
-                reasoning.append(f"[llm] {len(bullet_findings)} findings from LLM response")
+            llm_findings = _extract_findings(llm_content)
+            if llm_findings:
+                findings.extend(llm_findings)
+                reasoning.append(f"[llm] merged {len(llm_findings)} findings from model output")
             else:
-                reasoning.append("[llm] empty response — using deterministic findings only")
+                reasoning.append("[llm] empty response, deterministic findings kept")
         except Exception as _llm_exc:
-            _logger.warning("fork_subagent LLM call failed: %s", _llm_exc)
-            reasoning.append(f"[llm] failed ({type(_llm_exc).__name__}) — deterministic only")
+            llm_error = f"{type(_llm_exc).__name__}: {_llm_exc}"
+            _logger.warning("fork_subagent LLM call failed: %s", llm_error)
+            reasoning.append(f"[llm] failed ({type(_llm_exc).__name__}) — falling back to deterministic path")
+
+        error_kind = ""
+        ok = True
+        if not findings and tool_errors:
+            ok = False
+            error_kind = "tool_error"
+        elif not findings and llm_error and not tool_calls:
+            ok = False
+            error_kind = "llm_error"
+
+        metadata = {
+            "allowed_tools": allowed_tools,
+            "tool_errors": tool_errors,
+            "llm_error": llm_error,
+            "max_steps": config.max_steps,
+            "timeout_seconds": config.timeout_seconds,
+        }
 
         handle.result = AgentResult(
-            ok=True,
+            ok=ok,
             agent_name=config.specialty,
-            conclusion=f"Analysis of '{config.task[:50]}' complete with {len(findings)} findings",
+            conclusion=_build_conclusion(config.task, findings, error_kind),
             findings=findings,
+            tool_calls=tool_calls,
             reasoning_trace=reasoning,
             elapsed_seconds=time.time() - start,
+            error_kind=error_kind,
+            metadata=metadata,
         )
-        handle.status = "completed"
+        handle.status = "completed" if ok else "failed"
+        handle.error_kind = error_kind
 
     except Exception as exc:
         _logger.exception("Subagent %s failed", handle.id)
@@ -204,8 +247,10 @@ def _run_subagent(
             agent_name=config.specialty,
             conclusion=f"Error: {type(exc).__name__}: {exc}",
             elapsed_seconds=time.time() - start,
+            error_kind="runtime_error",
         )
         handle.status = "failed"
+        handle.error_kind = "runtime_error"
 
     finally:
         handle.completed_at = time.time()
@@ -229,6 +274,44 @@ def _resolve_agent(
         return RUNTIME.get_agent(specialty)
     except ImportError:
         return None
+
+
+def _resolve_allowed_tools(
+    config: SubagentConfig,
+    spec: SOCAgentSpec | None,
+) -> list[str]:
+    requested = list(dict.fromkeys(config.tools))
+    if spec is None:
+        return requested
+
+    if spec.tools_whitelist:
+        allowed = set(spec.tools_whitelist)
+        if requested:
+            allowed &= set(requested)
+    else:
+        allowed = set(requested)
+
+    allowed -= set(spec.tools_blacklist)
+    return sorted(allowed)
+
+
+def _invoke_allowed_tool(
+    name: str,
+    arguments: dict[str, Any],
+    *,
+    allowed_tools: list[str],
+    tool_calls: list[ToolResult],
+) -> ToolResult:
+    if name not in allowed_tools:
+        return ToolResult(
+            ok=False,
+            error=f"Tool '{name}' is not allowed for this subagent",
+            arguments=arguments,
+        )
+
+    result = invoke_tool(name, arguments)
+    tool_calls.append(result)
+    return result
 
 
 def _build_prompt(config: SubagentConfig, spec: SOCAgentSpec | None) -> str:
@@ -255,6 +338,28 @@ def _build_prompt(config: SubagentConfig, spec: SOCAgentSpec | None) -> str:
         parts.append(f"## Available Tools: {', '.join(config.tools)}")
 
     return "\n".join(parts)
+
+
+def _extract_findings(content: str) -> list[str]:
+    cleaned = content.strip()
+    if not cleaned:
+        return []
+    import re as _re
+
+    bullet_findings = _re.findall(r"^[\s]*[-*\u2022]\s+(.+)$", cleaned, _re.MULTILINE)
+    if bullet_findings:
+        return bullet_findings
+    return [cleaned[:200]]
+
+
+def _build_conclusion(task: str, findings: list[str], error_kind: str) -> str:
+    if findings:
+        return f"Analysis of '{task[:50]}' completed with {len(findings)} findings"
+    if error_kind == "tool_error":
+        return f"Analysis of '{task[:50]}' failed during deterministic tool execution"
+    if error_kind == "llm_error":
+        return f"Analysis of '{task[:50]}' produced no findings after LLM fallback"
+    return f"Analysis of '{task[:50]}' completed"
 
 
 # ── Queries ───────────────────────────────────────────────────────────────

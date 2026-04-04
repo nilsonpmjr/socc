@@ -185,6 +185,168 @@ def _print_doctor(payload: dict[str, object]) -> None:
         print(f"- error: {probe.get('error') or '-'}")
 
 
+def _ensure_harness_ready(*, verbose: bool = False) -> None:
+    from socc.cli.startup import startup
+
+    startup(block=True, verbose=verbose)
+
+
+def _inventory_payload(kind: str, args: argparse.Namespace) -> list[dict[str, object]]:
+    from socc.core.harness.runtime import RUNTIME
+
+    _ensure_harness_ready()
+    if kind == "commands":
+        records = RUNTIME.list_command_inventory(
+            query=getattr(args, "query", ""),
+            limit=getattr(args, "limit", 20),
+            include_hidden=False,
+        )
+    elif kind == "tools":
+        records = RUNTIME.list_tool_inventory(
+            query=getattr(args, "query", ""),
+            limit=getattr(args, "limit", 20),
+        )
+    else:
+        records = RUNTIME.list_agent_inventory(
+            query=getattr(args, "query", ""),
+            limit=getattr(args, "limit", 20),
+        )
+    return [record.to_dict() for record in records]
+
+
+def _print_inventory(
+    title: str,
+    records: list[dict[str, object]],
+    *,
+    verbose: bool = False,
+) -> None:
+    print(title)
+    for record in records:
+        kind_meta = record.get("category") or record.get("specialty") or "-"
+        line = (
+            f"- {record.get('name')} [{record.get('status')}] "
+            f"({kind_meta}) {record.get('description')}"
+        )
+        if verbose:
+            details: list[str] = [f"source={record.get('source')}"]
+            if record.get("kind") == "agent":
+                metadata = record.get("metadata") or {}
+                details.append(
+                    "tools="
+                    + ",".join(metadata.get("tools_whitelist") or [])
+                    if metadata.get("tools_whitelist")
+                    else "tools=*"
+                )
+                if metadata.get("tools_blacklist"):
+                    details.append(
+                        "blocked=" + ",".join(metadata.get("tools_blacklist") or [])
+                    )
+            line += f" | {' '.join(details)}"
+        print(line)
+
+
+def _print_command_detail(payload: dict[str, object]) -> None:
+    print(f"Command: /{payload.get('name')}")
+    print(f"- status: {payload.get('status')}")
+    print(f"- source: {payload.get('source')}")
+    print(f"- hidden: {bool((payload.get('metadata') or {}).get('hidden', False))}")
+    print(f"- description: {payload.get('description')}")
+    aliases = payload.get("aliases") or []
+    print(f"- aliases: {', '.join('/' + alias for alias in aliases) if aliases else '-'}")
+    arguments = payload.get("arguments") or []
+    if arguments:
+        print("- arguments:")
+        for argument in arguments:
+            print(
+                f"  - {argument.get('name')} ({argument.get('type')}) "
+                f"required={argument.get('required')} default={argument.get('default')}"
+            )
+
+
+def _print_tool_detail(payload: dict[str, object]) -> None:
+    metadata = payload.get("metadata") or {}
+    print(f"Tool: {payload.get('name')}")
+    print(f"- status: {payload.get('status')}")
+    print(f"- source: {payload.get('source')}")
+    print(f"- category: {payload.get('category') or '-'}")
+    print(f"- risk_level: {payload.get('risk_level') or '-'}")
+    print(f"- requires_auth: {bool(metadata.get('requires_auth', False))}")
+    print(f"- timeout_seconds: {metadata.get('timeout_seconds') or '-'}")
+    print(f"- description: {payload.get('description')}")
+    tags = payload.get("tags") or []
+    print(f"- tags: {', '.join(tags) if tags else '-'}")
+    if metadata.get("example"):
+        print(f"- example: {metadata.get('example')}")
+
+
+def _print_route_matches(matches: list[dict[str, object]]) -> None:
+    print("Route Matches:")
+    for match in matches:
+        print(
+            f"- {match.get('kind')} {match.get('name')} "
+            f"score={match.get('score')} status={match.get('status')}"
+        )
+
+
+def _subagent_payload(args: argparse.Namespace) -> list[dict[str, object]]:
+    from socc.agents.fork import list_active_subagents, list_all_subagents
+
+    handles = list_active_subagents() if getattr(args, "active", False) else list_all_subagents(
+        limit=getattr(args, "limit", 20)
+    )
+    if getattr(args, "active", False):
+        handles = handles[: getattr(args, "limit", 20)]
+    return [handle.to_dict() for handle in handles]
+
+
+def _print_subagents(records: list[dict[str, object]]) -> None:
+    print("Subagents:")
+    for record in records:
+        resolved_tools = ", ".join(record.get("resolved_tools") or []) or "-"
+        print(
+            f"- {record.get('id')} {record.get('name')} [{record.get('status')}] "
+            f"elapsed={record.get('elapsed_seconds')}s "
+            f"error_kind={record.get('error_kind') or '-'} "
+            f"tools={resolved_tools}"
+        )
+        if record.get("summary"):
+            print(f"  summary: {record.get('summary')}")
+
+
+def _print_session_list(payload: dict[str, object]) -> None:
+    sessions = payload.get("sessions") or []
+    print("Sessions:")
+    for session in sessions:
+        print(
+            f"- {session.get('session_id') or session.get('id')}: "
+            f"{session.get('titulo') or session.get('title') or '-'}"
+        )
+
+
+def _print_session_detail(payload: dict[str, object]) -> None:
+    session = payload.get("session") or {}
+    usage = session.get("usage") if isinstance(session, dict) else {}
+    print(f"Session: {payload.get('session_id')}")
+    print(f"- found: {payload.get('found', bool(session))}")
+    if isinstance(session, dict) and session:
+        print(f"- title: {session.get('titulo') or '-'}")
+        print(f"- cliente: {session.get('cliente') or '-'}")
+        print(f"- created_at: {session.get('created_at') or '-'}")
+        print(f"- updated_at: {session.get('updated_at') or '-'}")
+        print(f"- preview: {session.get('preview') or '-'}")
+        if isinstance(usage, dict):
+            print(
+                f"- usage: messages={usage.get('messages', 0)} "
+                f"tokens_in={usage.get('tokens_in', 0)} "
+                f"tokens_out={usage.get('tokens_out', 0)}"
+            )
+    print(f"- transcript_messages: {len(payload.get('messages') or [])}")
+    for message in payload.get("messages") or []:
+        role = message.get("role") or "-"
+        content = str(message.get("content") or "").replace("\n", " ")
+        print(f"  - {role}: {content[:120]}")
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="socc", description="SOCC local runtime CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -250,6 +412,66 @@ def _build_parser() -> argparse.ArgumentParser:
     runtime_parser.add_argument("--probe", action="store_true", help="Probe the configured inference backend")
     runtime_parser.add_argument("--concurrency", type=int, default=4, help="Worker count for runtime benchmark")
     runtime_parser.add_argument("--hold-ms", type=int, default=150, help="How long each synthetic worker holds the runtime guard")
+
+    commands_inventory_parser = subparsers.add_parser("commands", help="List harness command inventory")
+    commands_inventory_parser.add_argument("--limit", type=int, default=20, help="Maximum number of rows")
+    commands_inventory_parser.add_argument("--query", default="", help="Filter by name, alias, or description")
+    commands_inventory_parser.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    tools_inventory_parser = subparsers.add_parser("tools", help="List harness tool inventory")
+    tools_inventory_parser.add_argument("--limit", type=int, default=20, help="Maximum number of rows")
+    tools_inventory_parser.add_argument("--query", default="", help="Filter by name, tag, or description")
+    tools_inventory_parser.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    agents_inventory_parser = subparsers.add_parser("agents", help="List harness agent inventory")
+    agents_inventory_parser.add_argument("--limit", type=int, default=20, help="Maximum number of rows")
+    agents_inventory_parser.add_argument("--query", default="", help="Filter by name, specialty, or description")
+    agents_inventory_parser.add_argument("--verbose", action="store_true", help="Show source and tool policy details")
+    agents_inventory_parser.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    route_parser = subparsers.add_parser("route", help="Route a prompt against the harness inventory")
+    route_parser.add_argument("prompt", nargs="+", help="Prompt to classify")
+    route_parser.add_argument("--limit", type=int, default=5, help="Maximum number of matches")
+    route_parser.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    show_command_parser = subparsers.add_parser("show-command", help="Show detailed metadata for one command")
+    show_command_parser.add_argument("name", help="Command name or alias")
+    show_command_parser.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    show_tool_parser = subparsers.add_parser("show-tool", help="Show detailed metadata for one tool")
+    show_tool_parser.add_argument("name", help="Tool name")
+    show_tool_parser.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    subagents_parser = subparsers.add_parser("subagents", help="List active or recent subagent executions")
+    subagents_parser.add_argument("--limit", type=int, default=20, help="Maximum number of subagents")
+    subagents_parser.add_argument("--active", action="store_true", help="Show only active subagents")
+    subagents_parser.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    session_parser = subparsers.add_parser("session", help="Inspect persisted chat sessions")
+    session_subparsers = session_parser.add_subparsers(dest="session_command", required=True)
+
+    session_list = session_subparsers.add_parser("list", help="List recent chat sessions")
+    session_list.add_argument("--limit", type=int, default=10, help="Maximum number of sessions")
+    session_list.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    session_show = session_subparsers.add_parser("show", help="Show messages for one session")
+    session_show.add_argument("session_id", help="Session identifier")
+    session_show.add_argument("--limit", type=int, default=20, help="Maximum number of messages")
+    session_show.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    session_resume = session_subparsers.add_parser("resume", help="Resume one persisted session")
+    session_resume.add_argument("session_id", help="Session identifier")
+    session_resume.add_argument("--limit", type=int, default=20, help="Maximum number of messages in summary output")
+    session_resume.add_argument("--json", action="store_true", help="Emit JSON output instead of opening chat")
+    session_resume.add_argument("--cliente", default="", help="Optional client context override")
+    session_resume.add_argument("--backend", default="", help="Backend LLM override")
+    session_resume.add_argument("--model", default="", help="Model override")
+    session_resume.add_argument(
+        "--response-mode",
+        default="balanced",
+        choices=["fast", "balanced", "deep"],
+        help="Response profile tuned for speed vs depth",
+    )
 
     analyze_parser = subparsers.add_parser("analyze", help="Parse a payload and optionally draft an output")
     analyze_parser.add_argument("--file", help="Payload file to analyze")
@@ -421,9 +643,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _run_interactive_chat(args: argparse.Namespace) -> int:
-    # Bootstrap runtime (non-blocking daemon thread)
-    from socc.cli.startup import startup
-    startup(verbose=getattr(args, "verbose", False))
+    _ensure_harness_ready(verbose=getattr(args, "verbose", False))
 
     try:
         from socc.cli.chat_interactive import run_chat_tui
@@ -716,6 +936,117 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"- {name}: {features.get(name)}")
         return 0
 
+    if args.command in {"commands", "tools", "agents"}:
+        records = _inventory_payload(args.command, args)
+        if args.json:
+            print(json.dumps(records, indent=2, ensure_ascii=False))
+        else:
+            _print_inventory(
+                args.command.title(),
+                records,
+                verbose=bool(getattr(args, "verbose", False)),
+            )
+        return 0
+
+    if args.command == "route":
+        from socc.core.harness.runtime import RUNTIME
+
+        _ensure_harness_ready()
+        prompt = " ".join(args.prompt)
+        matches = [
+            {
+                "kind": match.kind,
+                "name": match.name,
+                "score": match.score,
+                "source_hint": match.source_hint,
+                "available": match.available,
+                "status": match.status,
+            }
+            for match in RUNTIME.route_prompt(prompt, limit=args.limit)
+        ]
+        if args.json:
+            print(json.dumps(matches, indent=2, ensure_ascii=False))
+        else:
+            _print_route_matches(matches)
+        return 0
+
+    if args.command == "show-command":
+        from socc.core.harness.runtime import RUNTIME
+
+        _ensure_harness_ready()
+        record = RUNTIME.get_command_record(args.name)
+        if record is None:
+            print(f"Command not found: {args.name}")
+            return 1
+        payload = record.to_dict()
+        if args.json:
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+        else:
+            _print_command_detail(payload)
+        return 0
+
+    if args.command == "show-tool":
+        from socc.core.harness.runtime import RUNTIME
+
+        _ensure_harness_ready()
+        record = RUNTIME.get_tool_record(args.name)
+        if record is None:
+            print(f"Tool not found: {args.name}")
+            return 1
+        payload = record.to_dict()
+        if args.json:
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+        else:
+            _print_tool_detail(payload)
+        return 0
+
+    if args.command == "subagents":
+        payload = _subagent_payload(args)
+        if args.json:
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+        else:
+            _print_subagents(payload)
+        return 0
+
+    if args.command == "session":
+        from socc.core.engine import get_chat_session_payload
+        from socc.core import storage
+
+        if args.session_command == "list":
+            payload = {"sessions": storage.list_chat_sessions(limit=args.limit)}
+            if args.json:
+                print(json.dumps(payload, indent=2, ensure_ascii=False))
+            else:
+                _print_session_list(payload)
+            return 0
+
+        payload = get_chat_session_payload(args.session_id, limit=args.limit)
+        if args.session_command == "show":
+            if args.json:
+                print(json.dumps(payload, indent=2, ensure_ascii=False))
+            else:
+                _print_session_detail(payload)
+            return 0
+
+        if not payload.get("found"):
+            print(f"Session not found: {args.session_id}")
+            return 1
+        if args.json:
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+            return 0
+
+        _ensure_harness_ready()
+        from socc.cli.chat_interactive import run_chat_tui
+
+        return run_chat_tui(
+            session_id=args.session_id,
+            cliente=args.cliente or str(((payload.get("session") or {}).get("cliente") or "")),
+            response_mode=args.response_mode,
+            selected_backend=args.backend or "",
+            selected_model=args.model or "",
+            stream=True,
+        )
+
     if args.command == "configure":
         from socc.cli.installer import runtime_home
         from socc.utils.config_loader import (
@@ -974,6 +1305,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "tui":
+        _ensure_harness_ready()
         from socc.cli.chat_interactive import run_chat_tui
         return run_chat_tui(
             session_id=getattr(args, "session_id", "") or "",

@@ -90,6 +90,25 @@ def list_chat_sessions(limit: int = 50) -> list[dict[str, Any]]:
     return persistence.list_chat_sessions(limit=limit)
 
 
+def get_chat_session(session_id: str) -> dict[str, Any] | None:
+    return persistence.get_chat_session(session_id)
+
+
+def get_chat_session_usage(session_id: str) -> dict[str, Any]:
+    return persistence.get_session_usage(session_id)
+
+
+def get_chat_session_summary(session_id: str, limit: int = 20) -> dict[str, Any] | None:
+    session = get_chat_session(session_id)
+    if session is None:
+        return None
+    return {
+        **session,
+        "usage": get_chat_session_usage(session_id),
+        "messages": list_chat_messages(session_id, limit=limit),
+    }
+
+
 def save_feedback(
     feedback_type: str,
     run_id: int | None = None,

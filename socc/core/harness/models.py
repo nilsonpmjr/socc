@@ -1,13 +1,4 @@
-"""
-SOCC Harness data models.
-
-Extends ``socc.core.tools_registry`` with agent specs, command specs,
-and SOC-specific enums.  The existing ``ToolSpec`` / ``ParamSpec`` from
-tools_registry remain the canonical way to *register* tools; the classes
-here add the *harness layer* on top (routing, agents, commands).
-
-Attribution: Architecture inspired by instructkr/claude-code (Sigrid Jin).
-"""
+"""Data models used by the SOCC harness runtime."""
 
 from __future__ import annotations
 
@@ -26,6 +17,8 @@ from socc.core.tools_registry import (
 
 __all__ = [
     # Re-exports
+    "InventoryRecord",
+    "InventoryStatus",
     "ParamSpec",
     "RiskLevel",
     "ToolCategory",
@@ -56,6 +49,14 @@ class AgentSpecialty(str, Enum):
     HUNT = "threat_hunt"
     MALWARE = "malware_analysis"
     FORENSICS = "forensics"
+
+
+class InventoryStatus(str, Enum):
+    """Availability state for a catalog item."""
+
+    IMPLEMENTED = "implemented"
+    PLANNED = "planned"
+    UNAVAILABLE = "unavailable"
 
 
 # ============================================================================
@@ -140,6 +141,7 @@ class AgentResult:
     tool_calls: list[ToolResult] = field(default_factory=list)
     reasoning_trace: list[str] = field(default_factory=list)
     elapsed_seconds: float = 0.0
+    error_kind: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -148,8 +150,11 @@ class AgentResult:
             "agent_name": self.agent_name,
             "conclusion": self.conclusion,
             "findings": self.findings,
+            "tool_calls": [call.to_dict() for call in self.tool_calls],
             "reasoning_trace": self.reasoning_trace,
             "elapsed_seconds": self.elapsed_seconds,
+            "error_kind": self.error_kind,
+            "metadata": self.metadata,
         }
 
 
@@ -201,3 +206,48 @@ class CommandResult:
     output: str = ""
     error: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class InventoryRecord:
+    """Merged view of snapshot metadata and live runtime availability."""
+
+    kind: str
+    name: str
+    description: str
+    available: bool
+    status: InventoryStatus
+    source: str
+    aliases: list[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
+    category: str = ""
+    risk_level: str = ""
+    specialty: str = ""
+    arguments: list[CommandArg] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "kind": self.kind,
+            "name": self.name,
+            "description": self.description,
+            "available": self.available,
+            "status": self.status.value,
+            "source": self.source,
+            "aliases": self.aliases,
+            "tags": self.tags,
+            "category": self.category,
+            "risk_level": self.risk_level,
+            "specialty": self.specialty,
+            "arguments": [
+                {
+                    "name": argument.name,
+                    "type": argument.type,
+                    "required": argument.required,
+                    "default": argument.default,
+                    "help": argument.help,
+                }
+                for argument in self.arguments
+            ],
+            "metadata": self.metadata,
+        }
