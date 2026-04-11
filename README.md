@@ -1,324 +1,322 @@
-# socc
+# SOCC
 
-Projeto local de apoio a triagem SOC, parsing de payloads, enriquecimento de IOCs e geração controlada de alertas e notas operacionais.
+SOCC is an open-source security operations copiloto.
 
-Perfil local atual recomendado: `Ollama` com `qwen3.5:9b`, priorizando `GPU`.
+It is designed for SOC workflows first: threat intelligence, suspicious artifact triage, investigation support, and incident response. The current runtime keeps the existing multi-provider agentic foundation so the same terminal-first workflow can still use prompts, tools, agents, MCP, slash commands, and streaming output when those capabilities help the analyst.
 
-## Escopo atual
+[![Security Policy](https://img.shields.io/badge/security-policy-0f766e)](SECURITY.md)
+[![License](https://img.shields.io/badge/license-MIT-2563eb)](LICENSE)
 
-- parsing de entradas em texto, JSON e CSV
-- normalização de campos e IOCs
-- integração local de Threat Intelligence
-- análise estruturada pré-draft
-- geração controlada de saídas operacionais
-- interface local para análise, revisão, cópia e salvamento
-- base inicial para runtime instalável com CLI, gateway e MCP
+[Quick Start](#quick-start) | [Setup Guides](#setup-guides) | [Providers](#supported-providers) | [Source Build](#source-build-and-local-development) | [VS Code Extension](#vs-code-extension) | [Community](#community)
 
-## Estrutura principal
+## Why SOCC
 
-- `soc_copilot/`: aplicação web atual e módulos do MVP
-- `socc/`: pacote instalável com `cli`, `core`, `gateway` e `utils`
-- `tests/`: suíte de regressão e casos extremos
-- `run.py`: entrypoint compatível com o MVP atual
-- `pyproject.toml`: configuração do pacote instalável e do binário `socc`
+- Start from a security-first CLI for SOC, threat intel, and incident response work
+- Use one runtime across cloud APIs and local model backends
+- Keep agentic workflows available for investigation support: prompts, tools, agents, tasks, MCP, and streaming output
+- Work with OpenAI-compatible services, Gemini, GitHub Models, Codex, Ollama, Atomic Chat, and other supported providers
+- Preserve the productivity of the current terminal workflow while shifting the product identity toward security operations
 
-## Instalação em modo editável
+## Quick Start
+
+### Install
 
 ```bash
-pip install -e .
+npm install -g @vantagesec/socc
 ```
 
-## Instalação e execução via npm
+If the install later reports `ripgrep not found`, install ripgrep system-wide and confirm `rg --version` works in the same terminal before starting SOCC.
 
-Para usar o SOCC em fluxo npm-first, no estilo do OpenClaw:
+### Start
 
 ```bash
-npm install -g .
-socc setup
-socc doctor --probe
-socc serve
+socc
 ```
 
-No checkout local, você também pode usar scripts npm sem instalar globalmente:
+Inside SOCC:
+
+- run `/provider` for guided provider setup and saved profiles
+- run `/onboard-github` for GitHub Models onboarding
+- start with a payload, alert, URL, log excerpt, or investigative question when using SOCC as a security analyst copiloto
+
+### Fastest OpenAI setup
+
+macOS / Linux:
 
 ```bash
-npm run setup
-npm run doctor
-npm run serve
+export CLAUDE_CODE_USE_OPENAI=1
+export OPENAI_API_KEY=sk-your-key-here
+export OPENAI_MODEL=gpt-4o
+
+socc
 ```
 
-O wrapper npm delega para a CLI Python existente, prepara `~/.socc/venv` quando necessário e preserva os mesmos comandos operacionais (`socc dashboard`, `socc gateway restart`, `socc runtime`, etc.).
+Windows PowerShell:
 
-No layout npm/global, o modelo agora fica mais próximo do OpenClaw:
+```powershell
+$env:CLAUDE_CODE_USE_OPENAI="1"
+$env:OPENAI_API_KEY="sk-your-key-here"
+$env:OPENAI_MODEL="gpt-4o"
 
-- `~/.socc/` guarda apenas estado do usuário: `.env`, `workspace/`, sessões, logs, cache, MCP e base local de conhecimento
-- a alma do agente é seedada em `~/.socc/workspace/soc-copilot`
-- código Python, templates HTML e assets continuam no pacote instalado
-- o manifesto `~/.socc/socc.json` registra `installation_layout=package` e o `package_root`
+socc
+```
 
-No fluxo de desenvolvimento via checkout, o layout continua `checkout`, com links locais para o repositório quando isso fizer sentido.
+### Fastest local Ollama setup
 
-Para respostas mais rápidas no chat, o runtime agora suporta perfis de resposta:
+macOS / Linux:
 
 ```bash
-socc chat --response-mode fast --message "Resuma este alerta"
-socc chat --response-mode balanced --message "Analise este log"
-socc chat --response-mode deep --message "Aprofunde hipóteses e próximos passos"
+export CLAUDE_CODE_USE_OPENAI=1
+export OPENAI_BASE_URL=http://localhost:11434/v1
+export OPENAI_MODEL=qwen2.5-coder:7b
+
+socc
 ```
 
-Na UI, o mesmo controle aparece como `Fast | Balanced | Deep`.
-No perfil atual recomendado:
+Windows PowerShell:
 
-- `Fast` usa `llama3.2:3b`
-- `Balanced` usa `qwen3.5:9b`
-- `Deep` usa `qwen3.5:9b`
+```powershell
+$env:CLAUDE_CODE_USE_OPENAI="1"
+$env:OPENAI_BASE_URL="http://localhost:11434/v1"
+$env:OPENAI_MODEL="qwen2.5-coder:7b"
 
-Se quiser trocar isso, ajuste `SOCC_OLLAMA_FAST_MODEL`, `SOCC_OLLAMA_BALANCED_MODEL` e `SOCC_OLLAMA_DEEP_MODEL` em `~/.socc/.env`.
+socc
+```
 
-## Instalação one-shot local
+## Setup Guides
+
+Beginner-friendly guides:
+
+- [Non-Technical Setup](docs/non-technical-setup.md)
+- [Windows Quick Start](docs/quick-start-windows.md)
+- [macOS / Linux Quick Start](docs/quick-start-mac-linux.md)
+
+Advanced and source-build guides:
+
+- [Advanced Setup](docs/advanced-setup.md)
+
+## Supported Providers
+
+| Provider | Setup Path | Notes |
+| --- | --- | --- |
+| OpenAI-compatible | `/provider` or env vars | Works with OpenAI, OpenRouter, DeepSeek, Groq, Mistral, LM Studio, and other compatible `/v1` servers |
+| Gemini | `/provider` or env vars | Supports API key, access token, or local ADC workflow on current `main` |
+| GitHub Models | `/onboard-github` | Interactive onboarding with saved credentials |
+| Codex | `/provider` | Uses existing Codex credentials when available |
+| Ollama | `/provider` or env vars | Local inference with no API key |
+| Atomic Chat | advanced setup | Local Apple Silicon backend |
+| Bedrock / Vertex / Foundry | env vars | Additional provider integrations for supported environments |
+
+## What Works
+
+- **Tool-driven coding workflows**: Bash, file read/write/edit, grep, glob, agents, tasks, MCP, and slash commands
+- **Streaming responses**: Real-time token output and tool progress
+- **Tool calling**: Multi-step tool loops with model calls, tool execution, and follow-up responses
+- **Images**: URL and base64 image inputs for providers that support vision
+- **Provider profiles**: Guided setup plus persisted profile support (legacy filename still appears in some runtime paths)
+- **Local and remote model backends**: Cloud APIs, local servers, and Apple Silicon local inference
+
+## Provider Notes
+
+SOCC supports multiple providers, but behavior is not identical across all of them.
+
+- Anthropic-specific features may not exist on other providers
+- Tool quality depends heavily on the selected model
+- Smaller local models can struggle with long multi-step tool flows
+- Some providers impose lower output caps than the CLI defaults, and SOCC adapts where possible
+
+For best results, use models with strong tool/function calling support.
+
+## Agent Routing
+
+SOCC can route different agents to different models through settings-based routing. This is useful for cost optimization or splitting work by model strength.
+
+Add to `~/.claude/settings.json`:
+
+```json
+{
+  "agentModels": {
+    "deepseek-chat": {
+      "base_url": "https://api.deepseek.com/v1",
+      "api_key": "sk-your-key"
+    },
+    "gpt-4o": {
+      "base_url": "https://api.openai.com/v1",
+      "api_key": "sk-your-key"
+    }
+  },
+  "agentRouting": {
+    "Explore": "deepseek-chat",
+    "Plan": "gpt-4o",
+    "general-purpose": "gpt-4o",
+    "frontend-dev": "deepseek-chat",
+    "default": "gpt-4o"
+  }
+}
+```
+
+When no routing match is found, the global provider remains the fallback.
+
+> **Note:** `api_key` values in `settings.json` are stored in plaintext. Keep this file private and do not commit it to version control.
+
+## Web Search and Fetch
+
+By default, `WebSearch` works on non-Anthropic models using DuckDuckGo. This gives GPT-4o, DeepSeek, Gemini, Ollama, and other OpenAI-compatible providers a free web search path out of the box.
+
+> **Note:** DuckDuckGo fallback works by scraping search results and may be rate-limited, blocked, or subject to DuckDuckGo's Terms of Service. If you want a more reliable supported option, configure Firecrawl.
+
+For Anthropic-native backends and Codex responses, SOCC keeps the native provider web search behavior.
+
+`WebFetch` works, but its basic HTTP plus HTML-to-markdown path can still fail on JavaScript-rendered sites or sites that block plain HTTP requests.
+
+Set a [Firecrawl](https://firecrawl.dev) API key if you want Firecrawl-powered search/fetch behavior:
 
 ```bash
-./install.sh
+export FIRECRAWL_API_KEY=your-key-here
 ```
 
-Ou, se quiser o nome mais próximo do fluxo do OpenClaw:
+With Firecrawl enabled:
+
+- `WebSearch` can use Firecrawl's search API while DuckDuckGo remains the default free path for non-Claude models
+- `WebFetch` uses Firecrawl's scrape endpoint instead of raw HTTP, handling JS-rendered pages correctly
+
+Free tier at [firecrawl.dev](https://firecrawl.dev) includes 500 credits. The key is optional.
+
+---
+
+## Headless gRPC Server
+
+SOCC can be run as a headless gRPC service, allowing you to integrate its capabilities into other applications, CI/CD pipelines, or custom user interfaces. The server uses bidirectional streaming to send real-time text chunks, tool calls, and request permissions for sensitive commands.
+
+### 1. Start the gRPC Server
+
+Start the core engine as a gRPC service on `localhost:50051`:
 
 ```bash
-./install-cli.sh
+npm run dev:grpc
 ```
 
-Esse fluxo cria `~/.socc/venv`, instala o pacote, escreve o launcher em `~/.socc/bin/socc`, expõe o checkout atual em `~/.socc/project` e executa `socc onboard`.
-O launcher e o runtime agora também respeitam `SOCC_HOME`, para isolar a instalação em outro diretório quando necessário.
-Se o shim em `~/.local/bin/socc` não puder ser criado, use diretamente `~/.socc/bin/socc`.
+#### Configuration
 
-## Comandos principais
+| Variable | Default | Description |
+|-----------|-------------|------------------------------------------------|
+| `GRPC_PORT` | `50051` | Port the gRPC server listens on |
+| `GRPC_HOST` | `localhost` | Bind address. Use `0.0.0.0` to expose on all interfaces (not recommended without authentication) |
+
+### 2. Run the Test CLI Client
+
+We provide a lightweight CLI client that communicates exclusively over gRPC. It acts just like the main interactive CLI, rendering colors, streaming tokens, and prompting you for tool permissions (y/n) via the gRPC `action_required` event.
+
+In a separate terminal, run:
 
 ```bash
-socc onboard
-socc doctor --probe
-socc service start
-socc gateway restart
-socc service restart
-socc dashboard --open
-socc init
-socc chat --message "Resumo técnico do caso"
-socc runtime
-socc vantage status
-socc vantage modules
-socc serve
-socc analyze --file caminho/do/payload.txt --json
+npm run dev:grpc:cli
 ```
 
-Compatibilidade com o fluxo atual:
+*Note: The active gRPC definitions now live in `src/proto/socc.proto`.*
+
+---
+
+## Source Build And Local Development
 
 ```bash
-python run.py
+bun install
+bun run build
+node dist/cli.mjs
 ```
 
-Ao subir a aplicação web, a rota `/` agora abre a interface de chat por padrão. A interface antiga de análise continua disponível em `/legacy`.
+Helpful commands:
 
-## Direção arquitetural
+- `bun run dev`
+- `bun test`
+- `bun run test:coverage`
+- `bun run security:pr-scan -- --base origin/main`
+- `bun run smoke`
+- `bun run doctor:runtime`
+- `bun run verify:privacy`
+- focused `bun test ...` runs for the areas you touch
 
-O pacote `socc` foi adicionado como camada de runtime para aproximar o projeto de um modelo instalável estilo agent/runtime:
+## Testing And Coverage
 
-- `socc.cli`: comandos locais como `init`, `serve` e `analyze`
-- `socc.core`: wrappers para engine, memória, prompts, contratos e ferramentas
-- `socc.gateway`: preparação para execução LLM local/remota e integração MCP
-- `socc.utils`: carregamento de configuração e parsing utilitário
+SOCC uses Bun's built-in test runner for unit tests.
 
-O projeto continua usando variáveis locais definidas em `.env`, com possibilidade de bootstrap de `~/.socc/.env` via `socc init`.
+Run the full unit suite:
 
-## Migração gradual
+```bash
+bun test
+```
 
-O caminho de migração agora está formalizado em [migracao-runtime-socc.md](/home/nilsonpmjr/.gemini/antigravity/scratch/socc/docs/migracao-runtime-socc.md). A regra prática passa a ser:
+Generate unit test coverage:
 
-- código novo deve importar `socc.core.*` e `socc.gateway.*`
-- `soc_copilot.modules.*` permanece como implementação legada por trás dessas fachadas
-- `soc_copilot.main` segue como cliente web do runtime até a extração completa
-- a maior parte dos fluxos web de análise/chat já foi redirecionada para essas fachadas
-- a preparação inicial do payload também já passa por `socc.core.engine`
-- `analyze` e `draft` da camada web já delegam sua orquestração principal ao `engine`
-- a validação e preparação de entrada de `analyze` e `draft` também já passam por helpers do `engine`
-- o payload do chat também já fecha sua análise estruturada pelo `engine`
-- o chat síncrono, o stream SSE e os payloads de runtime/benchmark também já passam pelo `engine`
-- `feedback`, `export` e `chat` também já normalizam seus corpos JSON via helpers do `engine`
-- export, feedback, save e histórico também já passam por helpers do runtime
-- os helpers residuais de SSE/detecção também já foram extraídos do `main.py`
-- o parser agora também usa um catálogo ampliado de aliases de telemetria de segurança para JSONs de EDR/NDR/plataformas de eventos/IAM/cloud/Kubernetes, incluindo IPv4/IPv6, hostname, server, arquivo, hash, e-mail/auth, DNS/HTTP/TLS, processo, cloud e container
-- a extração de IOCs agora também normaliza artefatos defangados (`hxxp`, `[.]`), estabiliza caixa de domínio/hash/URL e reduz duplicidade entre parser, TI e contrato estruturado
-- o runtime agora também deriva contextos investigativos por família de telemetria, como phishing, pressão de autenticação, canal web/TLS, persistência, exfiltração, cloud e Kubernetes
-- o draft final agora usa esses contextos para destacar prioridade operacional e recomendações mais específicas por caso
-- o draft também passou a variar o recorte analítico e os detalhes exibidos por vertical, diferenciando melhor casos de e-mail, endpoint, rede, cloud e Kubernetes
-- a análise agora também expõe priorização estruturada (`score`, `level`, `rank`, `primary_family`, `reasons`) no runtime, export e UI
+```bash
+bun run test:coverage
+```
 
-O mapa atual do backend/templates do chat está documentado em [chat-arquitetura-atual.md](/home/nilsonpmjr/.gemini/antigravity/scratch/socc/docs/chat-arquitetura-atual.md). Esse documento também registra que o fluxo principal do chat web já não depende do gateway MCP externo; o uso atual de MCP ficou restrito à análise semi-LLM com ferramentas locais em estilo tool-calling.
+Open the visual coverage report:
 
-## Runtime autocontido
+```bash
+open coverage/index.html
+```
 
-O `socc init` agora prepara um runtime mais próximo do modelo do OpenClaw:
+If you already have `coverage/lcov.info` and only want to rebuild the UI:
 
-- cria `~/.socc/workspace/soc-copilot` com uma cópia inicial da camada declarativa do agente
-- grava `~/.socc/socc.json` com caminhos e variáveis-chave do runtime
-- mantém `~/.socc/.env` como ponto principal de override local
-- permite apontar outro workspace com `SOCC_AGENT_HOME=/caminho/do/agente`
+```bash
+bun run test:coverage:ui
+```
 
-Na ausência de override, o loader tenta esta ordem:
+Use focused test runs when you only touch one area:
 
-1. `SOCC_AGENT_HOME`
-2. `~/.socc/workspace/soc-copilot`
-3. `.agents/soc-copilot` no repositório
+- `bun run test:provider`
+- `bun run test:provider-recommendation`
+- `bun test path/to/file.test.ts`
 
-O fluxo local agora também pode começar por:
+Recommended contributor validation before opening a PR:
 
-- `socc onboard`: bootstrap + validação inicial do runtime
-- `socc doctor`: diagnóstico local de paths, manifesto, knowledge base e backend de inferência
-- `socc service start|stop|restart|status`: controle do servidor web em background com PID/log local
-  Alias compatível: `socc gateway ...`
-- `socc dashboard` e `socc dashboard --open`: devolvem ou tentam abrir a URL local da interface com base no serviço atual
-- a base local de conhecimento já suporta retrieval lexical inicial, anexando trechos recuperados ao contexto do chat e da análise estruturada
-- a integração com Vantage API já possui catálogo inicial de módulos, contrato de autenticação por ambiente, comandos de inspeção via `socc vantage` e enriquecimento automático orientado a IOC/artefato
-- a análise e o export agora também podem carregar `operational_payload` estruturado, pronto para reaproveito operacional em alerta, encerramento e documentação técnica
-- a exportação operacional agora suporta `JSON`, `Markdown` e `Ticket`, tanto no chat quanto na interface legada
-- o chat e a interface legada agora também mostram esse `operational_payload`, incluindo ação de cópia direta do bloco estruturado
-- os drafts e o `operational_payload` agora diferenciam a rota operacional por classificação, destacando abertura de alerta, encerramento administrativo, correção de detecção, encerramento benigno e tratativa de telemetria
-- o chat agora preserva melhor o último artefato estruturado da sessão em mensagens referenciais e evita cair em triagem binária só por menção solta a `payload`
-- eventos M365 `HygieneTenantEvents` agora recebem leitura determinística inicial, reduzindo explicações inventadas quando faltam fontes de grounding
+- `bun run build`
+- `bun run smoke`
+- `bun run test:coverage` for broader unit coverage when your change affects shared runtime or provider logic
+- focused `bun test ...` runs for the files and flows you changed
 
-## Contrato interno do runtime
+Coverage output is written to `coverage/lcov.info`, and SOCC also generates a git-activity-style heatmap at `coverage/index.html`.
+## Repository Structure
 
-O pacote `socc.core` agora expõe um contrato interno explícito para desacoplar motor, gateway e tools:
+- `src/` - core CLI/runtime
+- `scripts/` - build, verification, and maintenance scripts
+- `docs/` - setup, contributor, and project documentation
+- `vscode-extension/openclaude-vscode/` - VS Code extension
+- `.github/` - repo automation, templates, and CI configuration
+- `bin/` - CLI launcher entrypoints
 
-- `AnalysisEnvelope`: retorno canônico de `socc analyze` e do engine analítico
-- `ChatResponseEnvelope`: retorno canônico de `socc chat`
-- `GatewayRequestContract` e `GatewayResponseContract`: metadados mínimos do backend de inferência
-- `ToolExecutionContract`: resultado padronizado para ferramentas locais e futuras integrações MCP
+## VS Code Extension
 
-Todos esses envelopes carregam `contract_version`, o que facilita evolução gradual sem acoplar a web ao formato interno exato.
+The repo includes a VS Code extension in [`vscode-extension/openclaude-vscode`](vscode-extension/openclaude-vscode) for SOCC launch integration, provider-aware control-center UI, and theme support.
 
-## CLI de chat
+## Security
 
-- `socc chat --message "..."` envia uma mensagem única ao runtime
-- `socc chat --stream --message "..."` mostra deltas incrementais quando o backend suportar streaming
-- `socc chat` sem argumentos abre um REPL simples e reaproveita a mesma sessão ao longo da conversa
-- `socc chat --json` retorna o envelope canônico com `runtime`, `gateway`, `skill` e `session_id`
+If you believe you found a security issue, see [SECURITY.md](SECURITY.md).
 
-## Variáveis de ambiente
+## Community
 
-Principais grupos documentados em `.env.example`:
+- Use [GitHub Discussions](https://github.com/nilsonpmjr/socc/discussions) for Q&A, ideas, and community conversation
+- Use [GitHub Issues](https://github.com/nilsonpmjr/socc/issues) for confirmed bugs and actionable feature work
 
-- runtime: `SOCC_AGENT_HOME`
-- base local de conhecimento: `SOCC_RAG_CHUNK_CHARS`, `SOCC_RAG_CHUNK_OVERLAP`, `SOCC_RAG_MAX_FILE_BYTES`
-- aplicação: `SOC_PORT`, `OUTPUT_DIR`, `ALERTAS_ROOT`, `MAX_TI_IOCS`
-- TI: `TI_API_BASE_URL`, `TI_API_USER`, `TI_API_PASS`, `THREAT_INTEL_API_KEY`, `THREAT_CHECK_SCRIPT`
-- LLM: `LLM_ENABLED`, `LLM_PROVIDER`, `LLM_TIMEOUT`, `OLLAMA_URL`, `OLLAMA_MODEL`, `ANTHROPIC_API_KEY`, `LLM_MODEL`
-- runtime local: `SOCC_INFERENCE_BACKEND`, `SOCC_BACKEND_PRIORITY`, `SOCC_INFERENCE_DEVICE`, `SOCC_LLM_FALLBACK_PROVIDER`, `SOCC_CPU_GUARD_ENABLED`, `SOCC_CPU_GUARD_LOAD`, `SOCC_MAX_CONCURRENT_LLM`, `SOCC_LMSTUDIO_URL`, `SOCC_LMSTUDIO_MODEL`, `SOCC_VLLM_URL`, `SOCC_VLLM_MODEL`, `SOCC_OPENAI_COMPAT_URL`, `SOCC_OPENAI_COMPAT_MODEL`, `SOCC_LOCAL_MODEL_DEFAULT`
-- ollama tuning: `SOCC_OLLAMA_KEEP_ALIVE`, `SOCC_OLLAMA_FAST_MODEL`, `SOCC_OLLAMA_BALANCED_MODEL`, `SOCC_OLLAMA_DEEP_MODEL`
-- feature flags: `SOCC_FEATURE_ANALYZE_API`, `SOCC_FEATURE_DRAFT_API`, `SOCC_FEATURE_CHAT_API`, `SOCC_FEATURE_CHAT_STREAMING`, `SOCC_FEATURE_FEEDBACK_API`, `SOCC_FEATURE_EXPORT_API`, `SOCC_FEATURE_THREAT_INTEL`, `SOCC_FEATURE_RUNTIME_API`
-- segurança/observabilidade: `SOCC_LOG_REDACTION_ENABLED`, `SOCC_PROMPT_AUDIT_ENABLED`, `SOCC_PROMPT_PREVIEW_CHARS`
-- Vantage API: `SOCC_VANTAGE_ENABLED`, `SOCC_VANTAGE_BASE_URL`, `SOCC_VANTAGE_BEARER_TOKEN`, `SOCC_VANTAGE_API_KEY`, `SOCC_VANTAGE_TIMEOUT`, `SOCC_VANTAGE_VERIFY_TLS`, `SOCC_VANTAGE_ENABLED_MODULES`
-  Ajustes de contexto automático: `SOCC_VANTAGE_CONTEXT_MAX_MODULES`, `SOCC_VANTAGE_CONTEXT_CHARS`, `SOCC_VANTAGE_QUERY_LIMIT`
+## Contributing
 
-As feature flags permitem rollout controlado do runtime/plugin sem remover código:
+Contributions are welcome.
 
-- desligar `SOCC_FEATURE_CHAT_STREAMING` faz a UI cair para `POST /api/chat`
-- desligar `SOCC_FEATURE_THREAT_INTEL` mantém a análise ativa, mas sem enriquecimento TI
-- desligar endpoints específicos retorna `503` com o nome da feature bloqueada
+For larger changes, open an issue first so the scope is clear before implementation. Helpful validation commands include:
 
-Backends atualmente mapeados no runtime:
+- `bun run build`
+- `bun run test:coverage`
+- `bun run smoke`
+- focused `bun test ...` runs for touched areas
 
-- `ollama`: padrão local atual, bom para workstation e streaming
-- `lmstudio`: opção desktop OpenAI-compatible para testes e comparação de modelos
-- `vllm`: opção local orientada a throughput/GPU
-- `openai-compatible`: gateway genérico para endpoints compatíveis com OpenAI
-- `anthropic`: fallback remoto
+## Disclaimer
 
-`socc runtime` e `socc doctor` agora mostram o backend selecionado, a origem da decisão, capacidades do backend e o catálogo compatível conhecido pelo runtime.
+SOCC is an independent community project and is not affiliated with, endorsed by, or sponsored by Anthropic.
 
-## Vantage API
+SOCC is based on the OpenClaude codebase, which originated from the Claude Code codebase and was later extended for broader provider support and open use. "Claude" and "Claude Code" are trademarks of Anthropic PBC. See [LICENSE](LICENSE) for details.
 
-O runtime agora possui uma camada inicial para integração com a API do Vantage em [vantage_api.py](/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc/gateway/vantage_api.py), com catálogo inicial de módulos úteis ao SOC:
+## License
 
-- `dashboard`
-- `feed`
-- `recon`
-- `watchlist`
-- `hunting`
-- `exposure`
-- `users`
-- `admin`
-
-Comandos iniciais:
-
-- `socc vantage status`
-- `socc vantage modules`
-- `socc vantage probe --module feed`
-
-O runtime agora já tenta enriquecer automaticamente chat e análise com contexto do Vantage quando a integração estiver habilitada. Esse enriquecimento é fail-open: se a API falhar, o SOCC continua respondendo sem interromper o fluxo principal.
-Quando houver artefatos claros no caso, como `CVE`, `hash`, `IP`, `domínio`, `URL`, `hostname` ou `usuário`, o cliente do Vantage também monta consultas mais direcionadas por módulo para trazer contexto mais útil ao analista.
-
-No webchat, esse uso agora também fica visível:
-
-- o `Control Center` mostra o estado da integração e os módulos do Vantage mapeados
-- respostas e cards analíticos exibem quando módulos do Vantage contribuíram para o contexto
-- o `Control Center` também permite ligar/desligar o enriquecimento automático e escolher quais módulos entram no contexto
-
-## Saída operacional estruturada
-
-O runtime agora gera um bloco `operational_payload` junto da análise estruturada, com:
-
-- `title`, `classification`, `disposition`, `summary` e `verdict`
-- `priority` com `level`, `score`, `rank` e família principal
-- `recommended_actions`, `risk_reasons`, `iocs` e `evidence`
-- `sources` e resumo do contexto vindo do Vantage
-
-Esse bloco já entra no export `JSON` e também aparece no export `Markdown`, facilitando reaproveito em nota de encerramento, alerta ou integração futura com outras ferramentas.
-
-## Segurança operacional
-
-- logs técnicos do runtime passam por redação por padrão, mascarando IPs, emails, URLs, hashes e segredos
-- a auditoria de prompts é opcional e desligada por padrão; quando ligada, grava apenas fingerprint, tamanho e preview redigido
-- `GET /api/runtime/status` e `socc runtime` agora mostram também métricas da pipeline analítica, taxa de schema válido e estado dos controles de segurança
-
-## Observabilidade de runtime
-
-- `socc runtime` mostra provider, modelo, device preferido, fallback configurado e métricas recentes
-- `socc runtime --probe` testa conectividade com o backend configurado
-- `socc runtime --benchmark --probe` executa benchmark leve de concorrência e inclui a sonda do backend
-- `GET /api/runtime/status` expõe status do runtime, snapshot básico de CPU/GPU e métricas agregadas
-- `GET /api/runtime/benchmark` expõe benchmark leve de concorrência e o status do streaming SSE do chat
-- o runtime tenta priorizar GPU automaticamente quando disponível e aplica guarda simples de CPU/concorrência para evitar sobrecarga local
-
-## Distribuição e upgrade
-
-- `pip install -e .` mantém o runtime instalável localmente durante a evolução do projeto
-- `./install.sh` e `./install-cli.sh` funcionam como instaladores one-shot locais em estilo próximo ao OpenClaw
-- `socc init` prepara `~/.socc` com `.env`, manifesto e workspace seedado
-- `socc init --force` regrava manifesto, `.env.example` e arquivos seedados do runtime quando for preciso atualizar a base local
-- o seed do workspace preserva customizações existentes e só adiciona arquivos ausentes quando não há `--force`
-- o runtime agora também grava arquivos de serviço em `~/.socc/logs`, incluindo PID, metadata e logs stdout/stderr do `serve`
-- o seed atual de `.env` já sai alinhado para `SOCC_INFERENCE_BACKEND=ollama`, `SOCC_INFERENCE_DEVICE=gpu` e `OLLAMA_MODEL=qwen3.5:9b`
-- no layout npm, o runtime home não recebe cópia do projeto; ele recebe só o estado local e o workspace do agente, enquanto o pacote instalado continua sendo a origem de código/templates/assets
-
-## Streaming do chat
-
-- `POST /api/chat/stream` expõe SSE para a interface de chat
-- perguntas livres recebem deltas incrementais quando o backend Ollama está ativo
-- payloads enviam eventos de fase (`detect`, `parse`, `ti`, `analysis`, `draft`) antes do card final
-
-## Preferências da UI
-
-- o `chat.html` agora expõe um painel local de configurações inspirado no fluxo configurável do ClawDBot
-- o webchat agora também possui um `Control Center` inspirado no OpenClaw para runtime, agente ativo, base local de conhecimento, sessões e diagnóstico
-- a interface permite alternar manualmente entre agentes disponíveis do workspace/runtime sem editar variáveis de ambiente à mão
-- o chat agora também oferece perfis `Fast`, `Balanced` e `Deep`, que ajustam tamanho de contexto, profundidade de resposta e parâmetros do Ollama para equilibrar latência e qualidade
-- o `Control Center` agora também lista modelos detectados no backend, permite escolher os modelos de `Fast`, `Balanced` e `Deep` pela UI e executar warm-up manual do perfil selecionado
-- as preferências ficam em `localStorage` e cobrem tema, densidade dos cards, visibilidade de contexto/trilha/contrato oficial, preferência por SSE, classificação e cliente padrão, ordenação de sessões e formato padrão de exportação
-- o painel também consulta `GET /api/runtime/status` para mostrar provider, modelo, device e features ativas diretamente na interface
-
-## Base local de conhecimento
-
-- o runtime agora possui uma fundação inicial de RAG em `~/.socc/intel`, com registry de fontes, pasta de documentos normalizados e índice local em `JSONL`
-- o comando `socc intel add-source` registra acervos internos ou curados para ingestão futura
-- o comando `socc intel ingest` normaliza texto, aplica chunking por parágrafo e grava um índice auditável sem depender ainda de vetor store
-- a política inicial de limpeza/normalização e o modelo mínimo de fonte ficam seedados no workspace do agente em `references/knowledge-ingestion-policy.md` e `references/intelligence-source-registry.md`
-- nesta etapa o índice ainda é textual; embeddings e busca semântica entram no próximo corte de P3
+See [LICENSE](LICENSE).

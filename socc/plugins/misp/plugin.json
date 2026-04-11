@@ -1,9 +1,0 @@
-{
-  "name": "misp",
-  "version": "0.1.0",
-  "description": "MISP threat intelligence platform integration",
-  "author": "SOCC Team",
-  "tools": ["misp_search", "misp_add_event", "misp_add_ioc"],
-  "requires_env": ["MISP_URL", "MISP_API_KEY"],
-  "enabled": true
-}

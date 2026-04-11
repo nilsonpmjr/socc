@@ -1,39 +1,14 @@
-.env
-.env.local
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-
-# Build artifacts
-socc.egg-info/
-
-# Databases
-soc_copilot/soc_copilot.db*
-*.db
-*.db-wal
-*.db-shm
-soc_copilot.db.corrupted
-
-# Logs
-Notas_Geradas/
-Alertas_Gerados/
-Pensamento_Ofensa_*.md
-Nota_Encerramento_*.txt
-
-.venv/
-venv/
-env/
-
-# IDE / tool caches
-.cline/
-.pytest_cache/
-.ruff_cache/
-.mypy_cache/
-socc.egg-info/
-
-# Node
 node_modules/
+dist/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.openclaude-profile.json
+reports/
+GEMINI.md
+package-lock.json
+/.claude/*
+!/.claude/agents/
+!/.claude/agents/**
+coverage/

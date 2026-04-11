@@ -1,0 +1,16 @@
+{
+  "generatedAt": "2026-04-11T18:32:50.449Z",
+  "sourceRoot": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot",
+  "generatedAgentPath": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/generated/socc-agent.md",
+  "runtimeAgentPath": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/.claude/agents/socc.md",
+  "sourceFiles": {
+    "identity": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/identity.md",
+    "soul": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/SOUL.md",
+    "user": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/USER.md",
+    "agents": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/AGENTS.md",
+    "tools": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/TOOLS.md",
+    "memory": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/MEMORY.md",
+    "skills": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/skills.md",
+    "skill": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/SKILL.md"
+  }
+}

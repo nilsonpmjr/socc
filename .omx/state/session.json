@@ -1,9 +1,0 @@
-{
-  "session_id": "omx-1775245534599-fbnb8z",
-  "started_at": "2026-04-03T19:45:34.791Z",
-  "cwd": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc",
-  "pid": 197957,
-  "platform": "linux",
-  "pid_start_ticks": 1273046,
-  "pid_cmdline": "node /home/nilsonpmjr/.npm-global/bin/omx"
-}
