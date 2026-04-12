@@ -60,12 +60,12 @@ const BORDER: RGB = [59, 89, 138]
 // ─── Filled Block Text Logo ───────────────────────────────────────────────────
 
 const LOGO_SOCC = [
-  `  \u2588\u2588\u2588\u2588\u2588\u2588\u2557   \u2588\u2588\u2588\u2588\u2588\u2557   \u2588\u2588\u2588\u2588\u2588\u2557   \u2588\u2588\u2588\u2588\u2588\u2557 `,
-  ` \u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d  \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557 \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557 \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557`,
-  ` \u2588\u2588\u2551       \u2588\u2588\u2551  \u255a\u2550\u255d \u2588\u2588\u2551  \u255a\u2550\u255d \u2588\u2588\u2551  \u255a\u2550\u255d`,
-  ` \u2588\u2588\u2551       \u2588\u2588\u2551       \u2588\u2588\u2551       \u2588\u2588\u2551       `,
-  ` \u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2557  \u255a\u2588\u2588\u2588\u2588\u2588\u2554\u255d \u255a\u2588\u2588\u2588\u2588\u2588\u2554\u255d \u255a\u2588\u2588\u2588\u2588\u2588\u2554\u255d`,
-  `  \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u255d   \u255a\u2550\u2550\u2550\u2550\u255d   \u255a\u2550\u2550\u2550\u2550\u255d   \u255a\u2550\u2550\u2550\u2550\u255d `,
+  ' ███████╗  ██████═╗  ███████╗  ███████╗',
+  '██ ╔════╝ ██╔═══██║ ██╔═════╝ ██╔═════╝',
+  ' ██████═╗ ██║   ██║ ██║       ██║      ',
+  ' ╚════██║ ██║   ██║ ██║       ██║      ',
+  '███████ ║  ██████ ║  ███████╗  ███████╗',
+  ' ╚══════╝  ╚══════╝  ╚══════╝  ╚══════╝',
 ]
 
 // ─── Provider detection ───────────────────────────────────────────────────────
@@ -93,15 +93,15 @@ function detectProvider(): { name: string; model: string; baseUrl: string; isLoc
     const baseUrl = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'
     const isLocal = isLocalProviderUrl(baseUrl)
     let name = 'OpenAI'
-    if (/deepseek/i.test(baseUrl) || /deepseek/i.test(rawModel))       name = 'DeepSeek'
-    else if (/openrouter/i.test(baseUrl))                             name = 'OpenRouter'
-    else if (/together/i.test(baseUrl))                               name = 'Together AI'
-    else if (/groq/i.test(baseUrl))                                   name = 'Groq'
-    else if (/mistral/i.test(baseUrl) || /mistral/i.test(rawModel))     name = 'Mistral'
-    else if (/azure/i.test(baseUrl))                                  name = 'Azure OpenAI'
-    else if (/llama/i.test(rawModel))                                    name = 'Meta Llama'
-    else if (isLocal)                                                  name = getLocalOpenAICompatibleProviderLabel(baseUrl)
-    
+    if (/deepseek/i.test(baseUrl) || /deepseek/i.test(rawModel)) name = 'DeepSeek'
+    else if (/openrouter/i.test(baseUrl)) name = 'OpenRouter'
+    else if (/together/i.test(baseUrl)) name = 'Together AI'
+    else if (/groq/i.test(baseUrl)) name = 'Groq'
+    else if (/mistral/i.test(baseUrl) || /mistral/i.test(rawModel)) name = 'Mistral'
+    else if (/azure/i.test(baseUrl)) name = 'Azure OpenAI'
+    else if (/llama/i.test(rawModel)) name = 'Meta Llama'
+    else if (isLocal) name = getLocalOpenAICompatibleProviderLabel(baseUrl)
+
     // Resolve model alias to actual model name + reasoning effort
     let displayModel = rawModel
     const codexAliases: Record<string, { model: string; reasoningEffort?: string }> = {
@@ -124,7 +124,7 @@ function detectProvider(): { name: string; model: string; baseUrl: string; isLoc
         displayModel = `${displayModel} (${resolved.reasoningEffort})`
       }
     }
-    
+
     return { name, model: displayModel, baseUrl, isLocal }
   }
 
@@ -176,10 +176,10 @@ export function printStartupScreen(): void {
   const provC: RGB = p.isLocal ? [130, 175, 130] : ACCENT
   let [r, l] = lbl('Provider', p.name, provC)
   out.push(boxRow(r, W, l))
-  ;[r, l] = lbl('Model', p.model)
+    ;[r, l] = lbl('Model', p.model)
   out.push(boxRow(r, W, l))
   const ep = p.baseUrl.length > 38 ? p.baseUrl.slice(0, 35) + '...' : p.baseUrl
-  ;[r, l] = lbl('Endpoint', ep)
+    ;[r, l] = lbl('Endpoint', ep)
   out.push(boxRow(r, W, l))
 
   out.push(`${rgb(...BORDER)}\u2560${'\u2550'.repeat(W - 2)}\u2563${RESET}`)

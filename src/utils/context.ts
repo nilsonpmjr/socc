@@ -1,5 +1,6 @@
 // biome-ignore-all assist/source/organizeImports: internal-only import markers must not be reordered
 import { CONTEXT_1M_BETA_HEADER } from '../constants/betas.js'
+import { isLocalProviderUrl } from '../services/api/providerConfig.js'
 import { getGlobalConfig } from './config.js'
 import { isEnvTruthy } from './envUtils.js'
 import { getCanonicalName } from './model/model.js'
@@ -83,6 +84,13 @@ export function getContextWindowForModel(
     const openaiWindow = getOpenAIContextWindow(model)
     if (openaiWindow !== undefined) {
       return openaiWindow
+    }
+    if (isLocalProviderUrl(process.env.OPENAI_BASE_URL)) {
+      console.warn(
+        `[context] Warning: local OpenAI-compatible model "${model}" not in context window table — using 128k fallback. ` +
+        'Add it to src/utils/model/openaiContextWindows.ts for more accurate compaction.',
+      )
+      return 128_000
     }
     console.error(
       `[context] Warning: model "${model}" not in context window table — using conservative 8k default. ` +
@@ -191,6 +199,9 @@ export function getModelMaxOutputTokens(model: string): {
     const openaiMax = getOpenAIMaxOutputTokens(model)
     if (openaiMax !== undefined) {
       return { default: openaiMax, upperLimit: openaiMax }
+    }
+    if (isLocalProviderUrl(process.env.OPENAI_BASE_URL)) {
+      return { default: 8_192, upperLimit: 8_192 }
     }
   }
 

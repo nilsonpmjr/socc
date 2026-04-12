@@ -138,7 +138,7 @@
 
 ### SI-503: publicar `@vantagesec/socc` no npm como passo final da SOCCsização
 **Prioridade:** P0  
-**Status:** 🔄 WIP
+**Status:** ✅ DONE
 
 **Acceptance Criteria**
 
@@ -146,5 +146,5 @@
 - [x] `npm view @vantagesec/socc version` confirma que o nome público está livre
 - [x] `npm publish --dry-run` passa com o pacote atual
 - [x] diretório do projeto foi limpo antes da publicação, mantendo só runtime, docs úteis e fonte canônica mínima da alma
-- [ ] `npm publish` executado com sucesso
-- [ ] `npm install -g @vantagesec/socc` funciona a partir do registry público
+- [x] `npm publish` executado com sucesso
+- [x] `npm install -g @vantagesec/socc` funciona a partir do registry público

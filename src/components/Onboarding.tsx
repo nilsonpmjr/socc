@@ -71,9 +71,9 @@ export function Onboarding({
          */}
         <OrderedList>
           <OrderedList.Item>
-            <Text>Claude can make mistakes</Text>
+            <Text>SOCC can make mistakes</Text>
             <Text dimColor wrap="wrap">
-              You should always review Claude&apos;s responses, especially when
+              You should always review SOCC&apos;s responses, especially when
               <Newline />
               running code.
               <Newline />
