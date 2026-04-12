@@ -61,7 +61,7 @@ const result = await Bun.build({
     'MACRO.DISPLAY_VERSION': JSON.stringify(version),
     'MACRO.BUILD_TIME': JSON.stringify(new Date().toISOString()),
     'MACRO.ISSUES_EXPLAINER':
-      JSON.stringify('report the issue at https://github.com/anthropics/claude-code/issues'),
+      JSON.stringify('report the issue at https://github.com/nilsonpmjr/socc/issues'),
     'MACRO.PACKAGE_URL': JSON.stringify('@vantagesec/socc'),
     'MACRO.NATIVE_PACKAGE_URL': 'undefined',
   },

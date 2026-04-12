@@ -1,12 +1,36 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import {
+  cp,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const SOC_COPILOT_DIR = ['socc-canonical', '.agents', 'soc-copilot']
-const GENERATED_DIR = ['socc-canonical', '.agents', 'generated']
-const RUNTIME_AGENT_PATH = ['.claude', 'agents', 'socc.md']
+const SOC_CANONICAL_ROOT = ['socc-canonical', '.agents']
+const SOC_COPILOT_DIR = [...SOC_CANONICAL_ROOT, 'soc-copilot']
+const RULES_DIR = [...SOC_CANONICAL_ROOT, 'rules']
+const WORKFLOWS_DIR = [...SOC_CANONICAL_ROOT, 'workflows']
+const GENERATED_DIR = [...SOC_CANONICAL_ROOT, 'generated']
+
+const RUNTIME_ROOT = ['.claude']
+const RUNTIME_AGENT_PATH = [...RUNTIME_ROOT, 'agents', 'socc.md']
+const RUNTIME_RULES_DIR = [...RUNTIME_ROOT, 'rules']
+const RUNTIME_SKILLS_DIR = [...RUNTIME_ROOT, 'skills']
+const RUNTIME_REFERENCES_DIR = [...RUNTIME_ROOT, 'references']
+
+const RULE_RUNTIME_FILES = [
+  { source: RULES_DIR, file: 'AGENT.md', title: 'Global Behavior Rules' },
+  { source: RULES_DIR, file: 'TOOLS.md', title: 'Global Tooling Rules' },
+  { source: RULES_DIR, file: 'MEMORY.md', title: 'Persistent Conventions' },
+  { source: WORKFLOWS_DIR, file: 'SOP.md', title: 'IOC Handling SOP' },
+]
 
 function findPackageRoot(startDir) {
   let current = resolve(startDir)
@@ -26,6 +50,77 @@ function findPackageRoot(startDir) {
 
 async function readRequiredFile(path) {
   return readFile(path, 'utf8')
+}
+
+async function readOptionalFile(path) {
+  if (!existsSync(path)) {
+    return ''
+  }
+  return readFile(path, 'utf8')
+}
+
+function sha256(content) {
+  return createHash('sha256').update(content).digest('hex')
+}
+
+async function fileMetadata(path) {
+  const content = await readFile(path, 'utf8')
+  const stats = await stat(path)
+  return {
+    path,
+    sha256: sha256(content),
+    mtimeMs: stats.mtimeMs,
+  }
+}
+
+async function collectFileList(rootDir) {
+  if (!existsSync(rootDir)) {
+    return []
+  }
+
+  const results = []
+
+  async function walk(currentDir) {
+    const entries = await readdir(currentDir, { withFileTypes: true })
+    entries.sort((a, b) => a.name.localeCompare(b.name))
+
+    for (const entry of entries) {
+      const fullPath = join(currentDir, entry.name)
+      if (entry.isDirectory()) {
+        await walk(fullPath)
+      } else if (entry.isFile()) {
+        results.push(fullPath)
+      }
+    }
+  }
+
+  await walk(rootDir)
+  return results
+}
+
+async function replaceDirectory(sourceDir, targetDir) {
+  if (!existsSync(sourceDir)) {
+    throw new Error(`Required source directory not found: ${sourceDir}`)
+  }
+
+  await rm(targetDir, { recursive: true, force: true })
+  await mkdir(dirname(targetDir), { recursive: true })
+  await cp(sourceDir, targetDir, { recursive: true })
+}
+
+function composeRuleBundle(sections) {
+  return [
+    '# SOCC Business Rules',
+    '',
+    '<!-- Generated from socc-canonical/.agents/rules and workflows. -->',
+    '',
+    ...sections.flatMap(section => [
+      `## ${section.title}`,
+      '',
+      section.content.trim(),
+      '',
+    ]),
+  ].join('\n')
 }
 
 export function composeSoccAgentPrompt(parts) {
@@ -74,7 +169,200 @@ ${parts.skill.trim()}
 `
 }
 
-export async function syncSoccSoul(packageRoot) {
+async function buildRuntimeRules(packageRoot) {
+  const sections = []
+  for (const section of RULE_RUNTIME_FILES) {
+    const sourcePath = join(packageRoot, ...section.source, section.file)
+    const content = await readOptionalFile(sourcePath)
+    if (!content.trim()) {
+      continue
+    }
+    sections.push({
+      title: section.title,
+      sourcePath,
+      content,
+    })
+  }
+
+  const runtimeRulesDir = join(packageRoot, ...RUNTIME_RULES_DIR)
+  const runtimeRulesPath = join(runtimeRulesDir, 'socc-business-rules.md')
+
+  await rm(runtimeRulesDir, { recursive: true, force: true })
+  await mkdir(runtimeRulesDir, { recursive: true })
+  await writeFile(runtimeRulesPath, composeRuleBundle(sections), 'utf8')
+
+  return {
+    runtimeRulesDir,
+    runtimeRulesPath,
+    sections: await Promise.all(
+      sections.map(async section => ({
+        title: section.title,
+        ...(await fileMetadata(section.sourcePath)),
+      })),
+    ),
+  }
+}
+
+async function buildRuntimeReferences(packageRoot) {
+  const sourceDir = join(packageRoot, ...SOC_COPILOT_DIR, 'references')
+  const targetDir = join(packageRoot, ...RUNTIME_REFERENCES_DIR)
+
+  await rm(targetDir, { recursive: true, force: true })
+  if (existsSync(sourceDir)) {
+    await mkdir(dirname(targetDir), { recursive: true })
+    await cp(sourceDir, targetDir, { recursive: true })
+  }
+
+  return {
+    runtimeReferencesDir: targetDir,
+    referenceFiles: await Promise.all(
+      (await collectFileList(targetDir)).map(fileMetadata),
+    ),
+  }
+}
+
+async function discoverSkillNames(skillsRoot) {
+  if (!existsSync(skillsRoot)) {
+    return []
+  }
+
+  const entries = await readdir(skillsRoot, { withFileTypes: true })
+  const names = []
+
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (!entry.isDirectory()) {
+      continue
+    }
+    if (existsSync(join(skillsRoot, entry.name, 'SKILL.md'))) {
+      names.push(entry.name)
+    }
+  }
+
+  return names
+}
+
+async function buildRuntimeSkills(packageRoot, skillNames = null) {
+  const sourceSkillsRoot = join(packageRoot, ...SOC_COPILOT_DIR, 'skills')
+  const runtimeSkillsDir = join(packageRoot, ...RUNTIME_SKILLS_DIR)
+  const namesToSync = skillNames ?? (await discoverSkillNames(sourceSkillsRoot))
+
+  await rm(runtimeSkillsDir, { recursive: true, force: true })
+  await mkdir(runtimeSkillsDir, { recursive: true })
+
+  const copied = []
+  for (const skillName of namesToSync) {
+    const sourceDir = join(sourceSkillsRoot, skillName)
+    if (!existsSync(sourceDir)) {
+      throw new Error(`Skill not found in canonical source: ${skillName}`)
+    }
+    const targetDir = join(runtimeSkillsDir, skillName)
+    await cp(sourceDir, targetDir, { recursive: true })
+    copied.push({
+      name: skillName,
+      path: targetDir,
+      ...(await fileMetadata(join(sourceDir, 'SKILL.md'))),
+    })
+  }
+
+  return {
+    runtimeSkillsDir,
+    runtimeSkills: copied,
+  }
+}
+
+async function buildManifest({
+  packageRoot,
+  upstreamRoot,
+  generatedAgentPath,
+  generatedManifestPath,
+  runtimeAgentPath,
+  runtimeRulesPath,
+  runtimeSkillsDir,
+  runtimeReferencesDir,
+  runtimeSkills,
+}) {
+  const canonicalRoot = join(packageRoot, ...SOC_COPILOT_DIR)
+  const sourceFiles = {
+    identity: join(canonicalRoot, 'identity.md'),
+    soul: join(canonicalRoot, 'SOUL.md'),
+    user: join(canonicalRoot, 'USER.md'),
+    agents: join(canonicalRoot, 'AGENTS.md'),
+    tools: join(canonicalRoot, 'TOOLS.md'),
+    memory: join(canonicalRoot, 'MEMORY.md'),
+    skills: join(canonicalRoot, 'skills.md'),
+    skill: join(canonicalRoot, 'SKILL.md'),
+    rulesAgent: join(packageRoot, ...RULES_DIR, 'AGENT.md'),
+    rulesTools: join(packageRoot, ...RULES_DIR, 'TOOLS.md'),
+    rulesMemory: join(packageRoot, ...RULES_DIR, 'MEMORY.md'),
+    workflowSop: join(packageRoot, ...WORKFLOWS_DIR, 'SOP.md'),
+  }
+
+  const sourceBlocks = {}
+  for (const [name, path] of Object.entries(sourceFiles)) {
+    if (existsSync(path)) {
+      sourceBlocks[name] = await fileMetadata(path)
+    }
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    sourceRoot: canonicalRoot,
+    upstreamRoot: upstreamRoot || null,
+    generatedAgentPath,
+    generatedManifestPath,
+    runtimeAgentPath,
+    runtimeRulesPath,
+    runtimeSkillsDir,
+    runtimeReferencesDir,
+    runtimeSkillNames: runtimeSkills.map(skill => skill.name),
+    sourceFiles,
+    sourceBlocks,
+    runtimeSkills,
+  }
+}
+
+export async function syncSoccCanonicalFromUpstream(packageRoot, upstreamRoot) {
+  if (!upstreamRoot) {
+    throw new Error('upstreamRoot is required for canonical sync')
+  }
+
+  const canonicalRoot = join(packageRoot, ...SOC_CANONICAL_ROOT)
+  const syncTargets = [
+    { source: join(upstreamRoot, 'rules'), target: join(canonicalRoot, 'rules') },
+    {
+      source: join(upstreamRoot, 'soc-copilot'),
+      target: join(canonicalRoot, 'soc-copilot'),
+    },
+    {
+      source: join(upstreamRoot, 'workflows'),
+      target: join(canonicalRoot, 'workflows'),
+    },
+  ]
+
+  await mkdir(canonicalRoot, { recursive: true })
+  await Promise.all(syncTargets.map(target => replaceDirectory(target.source, target.target)))
+
+  return {
+    upstreamRoot,
+    canonicalRoot,
+    syncedPaths: syncTargets.map(target => ({
+      source: target.source,
+      target: target.target,
+    })),
+  }
+}
+
+export async function syncSoccSoul(
+  packageRoot,
+  {
+    upstreamRoot = null,
+    skillNames = null,
+  } = {},
+) {
+  if (upstreamRoot) {
+    await syncSoccCanonicalFromUpstream(packageRoot, upstreamRoot)
+  }
+
   const canonicalRoot = join(packageRoot, ...SOC_COPILOT_DIR)
   const generatedDir = join(packageRoot, ...GENERATED_DIR)
   const runtimeAgentPath = join(packageRoot, ...RUNTIME_AGENT_PATH)
@@ -112,52 +400,85 @@ export async function syncSoccSoul(packageRoot) {
     skill,
   })
 
-  const manifest = {
-    generatedAt: new Date().toISOString(),
-    sourceRoot: canonicalRoot,
-    generatedAgentPath,
-    runtimeAgentPath,
-    sourceFiles: {
-      identity: join(canonicalRoot, 'identity.md'),
-      soul: join(canonicalRoot, 'SOUL.md'),
-      user: join(canonicalRoot, 'USER.md'),
-      agents: join(canonicalRoot, 'AGENTS.md'),
-      tools: join(canonicalRoot, 'TOOLS.md'),
-      memory: join(canonicalRoot, 'MEMORY.md'),
-      skills: join(canonicalRoot, 'skills.md'),
-      skill: join(canonicalRoot, 'SKILL.md'),
-    },
-  }
-
   await mkdir(dirname(runtimeAgentPath), { recursive: true })
   await mkdir(generatedDir, { recursive: true })
 
   await Promise.all([
     writeFile(generatedAgentPath, prompt, 'utf8'),
-    writeFile(generatedManifestPath, JSON.stringify(manifest, null, 2), 'utf8'),
     writeFile(runtimeAgentPath, prompt, 'utf8'),
   ])
+
+  const runtimeRules = await buildRuntimeRules(packageRoot)
+  const runtimeReferences = await buildRuntimeReferences(packageRoot)
+  const runtimeSkills = await buildRuntimeSkills(packageRoot, skillNames)
+
+  const manifest = await buildManifest({
+    packageRoot,
+    upstreamRoot,
+    generatedAgentPath,
+    generatedManifestPath,
+    runtimeAgentPath,
+    runtimeRulesPath: runtimeRules.runtimeRulesPath,
+    runtimeSkillsDir: runtimeSkills.runtimeSkillsDir,
+    runtimeReferencesDir: runtimeReferences.runtimeReferencesDir,
+    runtimeSkills: runtimeSkills.runtimeSkills,
+  })
+
+  await writeFile(
+    generatedManifestPath,
+    JSON.stringify(manifest, null, 2),
+    'utf8',
+  )
 
   return {
     generatedAgentPath,
     generatedManifestPath,
     runtimeAgentPath,
+    runtimeRulesPath: runtimeRules.runtimeRulesPath,
+    runtimeSkillsDir: runtimeSkills.runtimeSkillsDir,
+    runtimeReferencesDir: runtimeReferences.runtimeReferencesDir,
+    upstreamRoot,
+    runtimeSkillNames: runtimeSkills.runtimeSkills.map(skill => skill.name),
   }
+}
+
+function parseArgs(argv) {
+  const args = [...argv]
+  let upstreamRoot =
+    process.env.SOCC_AGENTS_UPSTREAM?.trim() || null
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]
+    if (arg === '--upstream') {
+      upstreamRoot = args[index + 1] ? resolve(args[index + 1]) : null
+      index += 1
+    }
+  }
+
+  return { upstreamRoot }
 }
 
 async function main() {
   const scriptDir = dirname(fileURLToPath(import.meta.url))
   const packageRoot = findPackageRoot(scriptDir)
-  const result = await syncSoccSoul(packageRoot)
+  const { upstreamRoot } = parseArgs(process.argv.slice(2))
+  const result = await syncSoccSoul(packageRoot, { upstreamRoot })
 
   assert.ok(result.generatedAgentPath)
   assert.ok(result.generatedManifestPath)
   assert.ok(result.runtimeAgentPath)
+  assert.ok(result.runtimeRulesPath)
+  assert.ok(result.runtimeSkillsDir)
 
-  console.log(`SOCC soul synced from canonical source.`)
-  console.log(`Generated: ${result.generatedAgentPath}`)
+  console.log('SOCC soul synced from canonical source.')
+  if (result.upstreamRoot) {
+    console.log(`Upstream synced: ${result.upstreamRoot}`)
+  }
+  console.log(`Generated agent: ${result.generatedAgentPath}`)
   console.log(`Manifest: ${result.generatedManifestPath}`)
   console.log(`Runtime agent: ${result.runtimeAgentPath}`)
+  console.log(`Runtime rules: ${result.runtimeRulesPath}`)
+  console.log(`Runtime skills: ${result.runtimeSkillsDir}`)
 }
 
 const isDirectExecution =

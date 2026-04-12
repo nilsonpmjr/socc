@@ -11,4 +11,10 @@ package-lock.json
 /.claude/*
 !/.claude/agents/
 !/.claude/agents/**
+!/.claude/references/
+!/.claude/references/**
+!/.claude/rules/
+!/.claude/rules/**
+!/.claude/skills/
+!/.claude/skills/**
 coverage/

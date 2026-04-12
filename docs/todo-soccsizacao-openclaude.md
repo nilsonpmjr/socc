@@ -129,12 +129,22 @@
 
 ### SI-502: validar comportamento base do agente
 **Prioridade:** P1  
-**Status:** ⬜ TODO
+**Status:** 🔄 WIP
 
 **Acceptance Criteria**
 
 - [ ] testes ou checks de prompt cobrem não-fabricação e observed-vs-inferred
 - [ ] riscos remanescentes ficam documentados
+
+### SI-504: validar equivalência da alma do `socc` entre REPL e headless
+**Prioridade:** P1  
+**Status:** 🔄 WIP
+
+**Acceptance Criteria**
+
+- [ ] o agente `socc` carregado do artefato canônico gera o mesmo prompt-base no fluxo interativo e no não interativo
+- [ ] regras geradas em `.claude/rules/` continuam entrando no contexto por `claudemd.ts`
+- [ ] todas as skills de `socc-copilot/skills` continuam visíveis via `loadSkillsDir.ts`
 
 ### SI-503: publicar `@vantagesec/socc` no npm como passo final da SOCCsização
 **Prioridade:** P0  

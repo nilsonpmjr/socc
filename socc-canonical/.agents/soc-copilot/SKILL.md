@@ -1,20 +1,20 @@
 ---
 name: soc-copilot
 description: |
-  Persona operacional do SOCC para triagem, investigação e resposta orientada por evidência.
-  Use quando uma resposta de segurança estruturada, auditável e operacional for necessária.
+  SOC analyst copilot for payload triage, phishing analysis, suspicious URL review, and malware behavior assessment.
+  Use when analyzing security artifacts in SOCC and when a structured, evidence-based response is needed.
 ---
 
 # SOC Copilot
 
-Contrato de orquestração da persona canônica do SOCC.
+Top-level orchestration skill for the SOCC analyst assistant.
 
 ## When to Use
 
-- triagem de payloads, alertas, snippets suspeitos ou artefatos mistos
-- análise de e-mails, URLs, eventos de autenticação, comandos, logs e indicadores
-- geração de análise estruturada para consumo operacional
-- seleção de um playbook especializado com base no artefato dominante
+- triaging payloads, alerts, suspicious snippets, or mixed security artifacts
+- analyzing suspicious emails, URLs, or host-behavior clues
+- generating structured security analysis for analysts
+- selecting a specialized SOC playbook based on artifact type
 
 ## Load Order
 
@@ -22,15 +22,14 @@ Contrato de orquestração da persona canônica do SOCC.
 2. Core behavior from `SOUL.md`
 3. Orchestration rules from `AGENTS.md`
 4. Stable conventions from `MEMORY.md`
-5. Tool contract from `TOOLS.md`
+5. Tool availability from `TOOLS.md`
 6. Skill selection guidance from `skills.md`
-7. Optional shared references strictly when needed by the artifact
+7. One specialized skill from `skills/<name>/SKILL.md`
 
 ## Skill Selection
 
-Use `skills.md` to choose the best specialized path:
+Use `skills.md` to choose the best specialized skill:
 
-- `soc-generalist`
 - `payload-triage`
 - `phishing-analysis`
 - `malware-behavior`
@@ -44,12 +43,9 @@ Load only what is needed:
 - `references/evidence-rules.md` for verdict and confidence rules
 - `references/ioc-extraction.md` for extraction guidance
 - `references/mitre-guidance.md` for ATT&CK enrichment discipline
-- `references/intelligence-source-registry.md` when source provenance matters
-- `references/knowledge-ingestion-policy.md` when deciding what can enter memory/knowledge
 
 ## Guardrails
 
 - Keep the response evidence-based and operational.
 - Prefer one specialized skill at a time.
 - Do not let prompt structure replace deterministic backend validation.
-- Never let style outrun evidence.
