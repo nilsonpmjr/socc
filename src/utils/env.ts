@@ -12,17 +12,31 @@ type Platform = 'win32' | 'darwin' | 'linux'
 
 // Config and data paths
 export const getGlobalClaudeFile = memoize((): string => {
-  // Legacy fallback for backwards compatibility
-  if (
-    getFsImplementation().existsSync(
-      join(getClaudeConfigHomeDir(), '.config.json'),
-    )
-  ) {
-    return join(getClaudeConfigHomeDir(), '.config.json')
+  const configHome = getClaudeConfigHomeDir()
+  const suffix = fileSuffixForOauthConfig()
+  const primaryConfig = join(
+    configHome,
+    suffix ? `.config${suffix}.json` : '.config.json',
+  )
+
+  if (getFsImplementation().existsSync(primaryConfig)) {
+    return primaryConfig
   }
 
-  const filename = `.claude${fileSuffixForOauthConfig()}.json`
-  return join(process.env.CLAUDE_CONFIG_DIR || homedir(), filename)
+  // If SOCC already owns the config home, do not fall back to ~/.claude.json.
+  // That legacy file can carry stale provider profiles and auth state from a
+  // different product lineage, which breaks SOCC startup before the UI loads.
+  if (configHome === join(homedir(), '.socc')) {
+    return primaryConfig
+  }
+
+  const legacyFilename = `.claude${suffix}.json`
+  const legacyConfig = join(process.env.CLAUDE_CONFIG_DIR || homedir(), legacyFilename)
+  if (getFsImplementation().existsSync(legacyConfig)) {
+    return legacyConfig
+  }
+
+  return primaryConfig
 })
 
 const hasInternetAccess = memoize(async (): Promise<boolean> => {

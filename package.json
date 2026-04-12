@@ -1,6 +1,6 @@
 {
   "name": "@vantagesec/socc",
-  "version": "0.1.8",
+  "version": "0.1.12",
   "description": "Security operations copiloto for threat intelligence, incident response, and agentic investigation",
   "type": "module",
   "bin": {

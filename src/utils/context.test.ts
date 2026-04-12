@@ -9,6 +9,7 @@ import {
 const originalEnv = {
   CLAUDE_CODE_USE_OPENAI: process.env.CLAUDE_CODE_USE_OPENAI,
   CLAUDE_CODE_MAX_OUTPUT_TOKENS: process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS,
+  OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
 }
 
 afterEach(() => {
@@ -22,6 +23,11 @@ afterEach(() => {
   } else {
     process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS =
       originalEnv.CLAUDE_CODE_MAX_OUTPUT_TOKENS
+  }
+  if (originalEnv.OPENAI_BASE_URL === undefined) {
+    delete process.env.OPENAI_BASE_URL
+  } else {
+    process.env.OPENAI_BASE_URL = originalEnv.OPENAI_BASE_URL
   }
 })
 
@@ -109,7 +115,21 @@ test('MiniMax-M2.7 uses explicit provider-specific context and output caps', () 
 
 test('unknown openai-compatible models still use the conservative fallback window', () => {
   process.env.CLAUDE_CODE_USE_OPENAI = '1'
+  delete process.env.OPENAI_BASE_URL
   delete process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS
 
   expect(getContextWindowForModel('some-unknown-3p-model')).toBe(8_000)
+})
+
+test('unknown local openai-compatible models use a local-friendly fallback window and output cap', () => {
+  process.env.CLAUDE_CODE_USE_OPENAI = '1'
+  process.env.OPENAI_BASE_URL = 'http://localhost:11434/v1'
+  delete process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS
+
+  expect(getContextWindowForModel('qwen3.5:latest')).toBe(128_000)
+  expect(getModelMaxOutputTokens('qwen3.5:latest')).toEqual({
+    default: 8_192,
+    upperLimit: 8_192,
+  })
+  expect(getMaxOutputTokensForModel('qwen3.5:latest')).toBe(8_192)
 })

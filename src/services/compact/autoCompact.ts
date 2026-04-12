@@ -31,11 +31,11 @@ const MAX_OUTPUT_TOKENS_FOR_SUMMARY = 20_000
 
 // Returns the context window size minus the max output tokens for the model
 export function getEffectiveContextWindowSize(model: string): number {
-  const reservedTokensForSummary = Math.min(
+  let contextWindow = getContextWindowForModel(model, getSdkBetas())
+  const maxOutputTokens = Math.min(
     getMaxOutputTokensForModel(model),
     MAX_OUTPUT_TOKENS_FOR_SUMMARY,
   )
-  let contextWindow = getContextWindowForModel(model, getSdkBetas())
 
   const autoCompactWindow = process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
   if (autoCompactWindow) {
@@ -45,7 +45,15 @@ export function getEffectiveContextWindowSize(model: string): number {
     }
   }
 
-  return contextWindow - reservedTokensForSummary
+  // Never reserve more tokens than the model can realistically spare.
+  // Unknown local models previously fell back to 8k context + 20k reserve,
+  // which produced a negative effective window and forced immediate compact.
+  const reservedTokensForSummary = Math.min(
+    maxOutputTokens,
+    Math.max(1_024, Math.floor(contextWindow * 0.25)),
+  )
+
+  return Math.max(1_024, contextWindow - reservedTokensForSummary)
 }
 
 export type AutoCompactTrackingState = {

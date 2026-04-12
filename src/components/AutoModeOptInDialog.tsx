@@ -6,8 +6,7 @@ import { updateSettingsForSource } from '../utils/settings/settings.js';
 import { Select } from './CustomSelect/index.js';
 import { Dialog } from './design-system/Dialog.js';
 
-// NOTE: This copy is legally reviewed — do not modify without Legal team approval.
-export const AUTO_MODE_DESCRIPTION = "Auto mode lets Claude handle permission prompts automatically — Claude checks each tool call for risky actions and prompt injection before executing. Actions Claude identifies as safe are executed, while actions Claude identifies as risky are blocked and Claude may try a different approach. Ideal for long-running tasks. Sessions are slightly more expensive. Claude can make mistakes that allow harmful commands to run, it's recommended to only use in isolated environments. Shift+Tab to change mode.";
+export const AUTO_MODE_DESCRIPTION = "Auto mode lets SOCC handle permission prompts automatically — SOCC checks each tool call for risky actions and prompt injection before executing. Actions SOCC identifies as safe are executed, while actions SOCC identifies as risky are blocked and SOCC may try a different approach. Ideal for long-running tasks. Sessions are slightly more expensive. SOCC can make mistakes that allow harmful commands to run, so it is recommended to use this mode only in isolated environments. Shift+Tab to change mode.";
 type Props = {
   onAccept(): void;
   onDecline(): void;

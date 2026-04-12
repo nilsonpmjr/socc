@@ -248,10 +248,10 @@ function renderErrorSpecificGuidance(errorType: LoadErrorType): React.ReactNode 
           <Text dimColor>Check your internet connection</Text>
         </Box>;
     case 'auth':
-      return <Box marginY={1} flexDirection="column">
-          <Text dimColor>Teleport requires a Claude account</Text>
+        return <Box marginY={1} flexDirection="column">
+          <Text dimColor>Teleport requires a Claude.ai account</Text>
           <Text dimColor>
-            Run <Text bold>/login</Text> and select &quot;Claude account with
+            Run <Text bold>/login</Text> and select &quot;Claude.ai account with
             subscription&quot;
           </Text>
         </Box>;
