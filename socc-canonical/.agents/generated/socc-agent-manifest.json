@@ -1,13 +1,13 @@
 {
-  "generatedAt": "2026-04-13T17:18:45.377Z",
-  "sourceRoot": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot",
+  "generatedAt": "2026-04-13T20:01:07.996Z",
+  "sourceRoot": "socc-canonical/.agents/soc-copilot",
   "upstreamRoot": null,
-  "generatedAgentPath": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/generated/socc-agent.md",
-  "generatedManifestPath": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/generated/socc-agent-manifest.json",
-  "runtimeAgentPath": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/.socc/agents/socc.md",
-  "runtimeRulesPath": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/.socc/rules/socc-business-rules.md",
-  "runtimeSkillsDir": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/.socc/skills",
-  "runtimeReferencesDir": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/.socc/references",
+  "generatedAgentPath": "socc-canonical/.agents/generated/socc-agent.md",
+  "generatedManifestPath": "socc-canonical/.agents/generated/socc-agent-manifest.json",
+  "runtimeAgentPath": ".socc/agents/socc.md",
+  "runtimeRulesPath": ".socc/rules/socc-business-rules.md",
+  "runtimeSkillsDir": ".socc/skills",
+  "runtimeReferencesDir": ".socc/references",
   "runtimeSkillNames": [
     "code-review-excellence",
     "cybersecurity-analyst",
@@ -31,201 +31,201 @@
     "web-search"
   ],
   "sourceFiles": {
-    "identity": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/identity.md",
-    "soul": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/SOUL.md",
-    "user": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/USER.md",
-    "agents": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/AGENTS.md",
-    "tools": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/TOOLS.md",
-    "memory": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/MEMORY.md",
-    "skills": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/skills.md",
-    "skill": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/SKILL.md",
-    "rulesAgent": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/rules/AGENT.md",
-    "rulesTools": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/rules/TOOLS.md",
-    "rulesMemory": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/rules/MEMORY.md",
-    "workflowSop": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/workflows/SOP.md"
+    "identity": "socc-canonical/.agents/soc-copilot/identity.md",
+    "soul": "socc-canonical/.agents/soc-copilot/SOUL.md",
+    "user": "socc-canonical/.agents/soc-copilot/USER.md",
+    "agents": "socc-canonical/.agents/soc-copilot/AGENTS.md",
+    "tools": "socc-canonical/.agents/soc-copilot/TOOLS.md",
+    "memory": "socc-canonical/.agents/soc-copilot/MEMORY.md",
+    "skills": "socc-canonical/.agents/soc-copilot/skills.md",
+    "skill": "socc-canonical/.agents/soc-copilot/SKILL.md",
+    "rulesAgent": "socc-canonical/.agents/rules/AGENT.md",
+    "rulesTools": "socc-canonical/.agents/rules/TOOLS.md",
+    "rulesMemory": "socc-canonical/.agents/rules/MEMORY.md",
+    "workflowSop": "socc-canonical/.agents/workflows/SOP.md"
   },
   "sourceBlocks": {
     "identity": {
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/identity.md",
-      "sha256": "7f4e655bcab4cf2d3f662d76687b616e9e5da461aed80b669e38233272b6d433",
-      "mtimeMs": 1776028653864.0435
+      "path": "socc-canonical/.agents/soc-copilot/identity.md",
+      "sha256": "edbdef32b8e7717fc77b308ad05af8958dd7cc0a52077a9f6caf226781885dcc",
+      "mtimeMs": 1776107073370.4841
     },
     "soul": {
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/SOUL.md",
-      "sha256": "d337ef58227c7eb3ec4638b4a56edf12283f2521b19e03583ce22e5d3d84afd8",
-      "mtimeMs": 1776028653862.6868
+      "path": "socc-canonical/.agents/soc-copilot/SOUL.md",
+      "sha256": "2170b10722e5a9190e9ed5ecf2cc87115f14549eca565589d228f24a1c0c1b3a",
+      "mtimeMs": 1776107073350.263
     },
     "user": {
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/USER.md",
-      "sha256": "44af3a21476a83abd9a9aed93d201573f4729d63ef2be87d1fa84e2073b47690",
-      "mtimeMs": 1776028653863.221
+      "path": "socc-canonical/.agents/soc-copilot/USER.md",
+      "sha256": "734bd76bd0d929dd2d38e3781b9e9483b746e4fe683688a9eb6bd83cc18d8247",
+      "mtimeMs": 1776107073366.9697
     },
     "agents": {
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/AGENTS.md",
-      "sha256": "055615392fb01fa08118d35ae53dcdace9bc1c2596a7f16678224bf165f664d1",
-      "mtimeMs": 1776028653861.5288
+      "path": "socc-canonical/.agents/soc-copilot/AGENTS.md",
+      "sha256": "26b0540141bf4bacd6e1da3f61ec499846358780e5eb3539b07a31d1571e7466",
+      "mtimeMs": 1776107073338.6194
     },
     "tools": {
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/TOOLS.md",
-      "sha256": "dbbf7bf495c4f23baa0a0fc92bba4635bfb89c3ca53279700c4967ae2d72f0cb",
-      "mtimeMs": 1776028653862.9468
+      "path": "socc-canonical/.agents/soc-copilot/TOOLS.md",
+      "sha256": "b77b0b978c1478152fd72cb5634201c977fa41d4c976a33dfa8d787d5434adce",
+      "mtimeMs": 1776107073362.419
     },
     "memory": {
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/MEMORY.md",
-      "sha256": "1507bbae85098cf81c83b399bff0c4d316d187a1a4e3bb0df3029ed7a22861b2",
-      "mtimeMs": 1776028653861.951
+      "path": "socc-canonical/.agents/soc-copilot/MEMORY.md",
+      "sha256": "11eec6c38306bd820a79dd55c10cdd1e3328859b171dad43233616fed29e925e",
+      "mtimeMs": 1776107073342.6865
     },
     "skills": {
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/skills.md",
-      "sha256": "0f8a8c0fd0af23751c083fe8b84866dba35784b2ea590b94c5b298a35108b6d3",
-      "mtimeMs": 1776028653867.852
+      "path": "socc-canonical/.agents/soc-copilot/skills.md",
+      "sha256": "d8e9caf061b43376f0553dab7793169fd752145cd9086ab37bd74a50ebde6144",
+      "mtimeMs": 1776107073377.0422
     },
     "skill": {
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/SKILL.md",
-      "sha256": "97f59e20347142fb39bcedc1e1455c9755c34cdbc9af08fd1903fc596aeca1f3",
-      "mtimeMs": 1776028653862.231
+      "path": "socc-canonical/.agents/soc-copilot/SKILL.md",
+      "sha256": "ef5b1e716612b9fad7ff83154b41f8758f772d345e303c726981a753271f7c14",
+      "mtimeMs": 1776107073346.7417
     },
     "rulesAgent": {
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/rules/AGENT.md",
-      "sha256": "76b4b210fec68acb2b026959e87f620aa1d30f1fae9cadcfdab7cc8ea2aa994a",
-      "mtimeMs": 1776028653859.247
+      "path": "socc-canonical/.agents/rules/AGENT.md",
+      "sha256": "61c85e0575794f0cb9fa89b0c8234719f379fc37625c016486b076c83d4166e8",
+      "mtimeMs": 1776107073329.4575
     },
     "rulesTools": {
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/rules/TOOLS.md",
-      "sha256": "3f8793720f5419f5864f782c7a8f2b25bc9a99134e6dac0ef8b4e878138b88e3",
-      "mtimeMs": 1776028653861.7615
+      "path": "socc-canonical/.agents/rules/TOOLS.md",
+      "sha256": "fb7c757fd76bde16b4d76260f55d24b00008bd9c8b92e4124394dbe707770f58",
+      "mtimeMs": 1776107073335.0977
     },
     "rulesMemory": {
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/rules/MEMORY.md",
-      "sha256": "08e860acc31384fc720a141193773182793c476af6ff496d516b686b20425c45",
-      "mtimeMs": 1776028653861.2078
+      "path": "socc-canonical/.agents/rules/MEMORY.md",
+      "sha256": "9b9100061550158e0f3aa2795cc3ba398153697689ec429375bbbd0e1cd2d2f8",
+      "mtimeMs": 1776107073333.0637
     },
     "workflowSop": {
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/workflows/SOP.md",
-      "sha256": "e314e638fe1dcb238b503af90c9fdada060db67a2fc3b9319cd88dde99358942",
-      "mtimeMs": 1776028653859.0962
+      "path": "socc-canonical/.agents/workflows/SOP.md",
+      "sha256": "5208ec8d679b0c5151133fb821223da988eb87077f86c06c67c103fd769536d4",
+      "mtimeMs": 1776107074589.7314
     }
   },
   "runtimeSkills": [
     {
       "name": "code-review-excellence",
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/skills/code-review-excellence/SKILL.md",
-      "sha256": "a765bd62c6ee22eab0cb56e96b5a811b49a9b4dfc1f85a86776aa1d3d6e87532",
-      "mtimeMs": 1776028653868.6204
+      "path": "socc-canonical/.agents/soc-copilot/skills/code-review-excellence/SKILL.md",
+      "sha256": "061bac5c24fa70a5f53ef4c8429639b7621bc3be3b779cc4de7280cc28d21aa7",
+      "mtimeMs": 1776107073380.2202
     },
     {
       "name": "cybersecurity-analyst",
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/skills/cybersecurity-analyst/SKILL.md",
-      "sha256": "c15b191bf605c3e8760db5e95950e0abdfcc78017160d6141a6a41856e345a2e",
-      "mtimeMs": 1776028653869.6777
+      "path": "socc-canonical/.agents/soc-copilot/skills/cybersecurity-analyst/SKILL.md",
+      "sha256": "65806863e9caec157923bf6ee5554294f64f511df61dc155b3fb9c208dde9ee1",
+      "mtimeMs": 1776107073398.4026
     },
     {
       "name": "data-visualization",
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/skills/data-visualization/SKILL.md",
-      "sha256": "728d3b95b9ebc744594076a2263c02b2a3f8f16a947437e66c035ef2329a12df",
-      "mtimeMs": 1776028653870.8733
+      "path": "socc-canonical/.agents/soc-copilot/skills/data-visualization/SKILL.md",
+      "sha256": "09239013f8cb544cd2eb1e62598f3fbbb824940d30d9962a114c9b1d4a1cc340",
+      "mtimeMs": 1776107073415.166
     },
     {
       "name": "deep-research",
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/skills/deep-research/SKILL.md",
-      "sha256": "5637feab59dcc091d307fb0881907d9dfae74d3eccdf51b9bc8acf879c28c682",
-      "mtimeMs": 1776028653871.4255
+      "path": "socc-canonical/.agents/soc-copilot/skills/deep-research/SKILL.md",
+      "sha256": "7a722b7233767470d84c85c2d4eb73269b658b0e8e7b35a5c39f61b89a9f6e73",
+      "mtimeMs": 1776107073418.178
     },
     {
       "name": "excel-analysis",
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/skills/excel-analysis/SKILL.md",
-      "sha256": "fb681b860b4d3bc20938cfbe490ebdc39d679d1634f1a6c12727bd4ab7ac91d0",
-      "mtimeMs": 1776028653872.032
+      "path": "socc-canonical/.agents/soc-copilot/skills/excel-analysis/SKILL.md",
+      "sha256": "8b014403323e9099ac2ef3aa7927bcb4f46f7b8b67cb2d968a618823c4af35a2",
+      "mtimeMs": 1776107073433.8713
     },
     {
       "name": "find-skills",
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/skills/find-skills/SKILL.md",
-      "sha256": "54b44dc9539df865fbb060f62fb062e8232e765852a0cf14c38301fe0c1eb264",
-      "mtimeMs": 1776028653872.597
+      "path": "socc-canonical/.agents/soc-copilot/skills/find-skills/SKILL.md",
+      "sha256": "e2f2f737e3795be94573711242341315cd82735b088248ab880fdafbb2010b9a",
+      "mtimeMs": 1776107074426.6816
     },
     {
       "name": "humanizer",
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/skills/humanizer/SKILL.md",
-      "sha256": "6688e4e292ab4f235e2a27f5193a7d048657c74b26ed6000398ee3371c9c3a4b",
-      "mtimeMs": 1776028653873.438
+      "path": "socc-canonical/.agents/soc-copilot/skills/humanizer/SKILL.md",
+      "sha256": "66edb10a60f7f0b1ede6b33d6737faba52689c02deccde71e1a632e56e354bed",
+      "mtimeMs": 1776107074434.0364
     },
     {
       "name": "malware-behavior",
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/skills/malware-behavior/SKILL.md",
-      "sha256": "82a86882c355771571269d63c826ee75b1866201f7e6b45e2a1e6bda8b01c2c0",
-      "mtimeMs": 1776028653874.0781
+      "path": "socc-canonical/.agents/soc-copilot/skills/malware-behavior/SKILL.md",
+      "sha256": "76dd5ad0fe6a03905483928edb172fad8660eb0b2c5406d51b9895729e29a413",
+      "mtimeMs": 1776107074436.5625
     },
     {
       "name": "mitre",
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/skills/mitre/SKILL.md",
-      "sha256": "4e9d3a0f3ecb9cfc89f7518a3a1658d282a2137e4cf76c1f5b443a7570ce9ba7",
-      "mtimeMs": 1776028653874.7422
+      "path": "socc-canonical/.agents/soc-copilot/skills/mitre/SKILL.md",
+      "sha256": "d6a87b59183b0c95d14e877ea76452addb89deb5b27d46b4ee2f1ae3e0663390",
+      "mtimeMs": 1776107074441.6128
     },
     {
       "name": "observability-logs-search",
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/skills/observability-logs-search/SKILL.md",
-      "sha256": "ec434341ea8f420fe35851f3edb4a18bf77ff325e1075fc383f74231834f9277",
-      "mtimeMs": 1776028653878.4207
+      "path": "socc-canonical/.agents/soc-copilot/skills/observability-logs-search/SKILL.md",
+      "sha256": "2dcf08bbd5231b8600a2cfdabe26e9d6e384b59052505749ee205de0a090c7b0",
+      "mtimeMs": 1776107074447.646
     },
     {
       "name": "payload-triage",
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/skills/payload-triage/SKILL.md",
-      "sha256": "a6429e8aabc11a685889c290765dc596f937173488c07866e54ee79db214b20c",
-      "mtimeMs": 1776028653881.3943
+      "path": "socc-canonical/.agents/soc-copilot/skills/payload-triage/SKILL.md",
+      "sha256": "2e8c1be3e1780c35c0b8a1ae88d24012bcb055eb32bd9ff205fe68cc1c4b10af",
+      "mtimeMs": 1776107074454.7207
     },
     {
       "name": "phishing-analysis",
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/skills/phishing-analysis/SKILL.md",
-      "sha256": "41e4e01d06538c1d118a123c8c69747094c4196ed129ed468aff61df57cb1705",
-      "mtimeMs": 1776028653882.1265
+      "path": "socc-canonical/.agents/soc-copilot/skills/phishing-analysis/SKILL.md",
+      "sha256": "ed09b2f156b76376b8c144923277d3aef8dde630fe96fb820e879693323f6162",
+      "mtimeMs": 1776107074466.056
     },
     {
       "name": "prd",
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/skills/prd/SKILL.md",
-      "sha256": "6772e6f0fcc7110d625c7f4595e4990e1910007676c36d217eda4e779041d5e5",
-      "mtimeMs": 1776028653882.7944
+      "path": "socc-canonical/.agents/soc-copilot/skills/prd/SKILL.md",
+      "sha256": "3a075fa3f497478bd89a79db0ca2d823c36fc63eb9134129fcb9634336a0ba4b",
+      "mtimeMs": 1776107074471.1226
     },
     {
       "name": "remembering-conversations",
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/skills/remembering-conversations/SKILL.md",
-      "sha256": "84a2ffa55206e037450bc323e03b121f3742950c95f5838f9b9dec8e5c6d5978",
-      "mtimeMs": 1776028653883.7112
+      "path": "socc-canonical/.agents/soc-copilot/skills/remembering-conversations/SKILL.md",
+      "sha256": "a0814480e386c8252e6bda89bf37ec9d82fab6db1b65c6a371a2c479abe874ae",
+      "mtimeMs": 1776107074478.6936
     },
     {
       "name": "sequential-thinking",
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/skills/sequential-thinking/SKILL.md",
-      "sha256": "c517ae710853ee2ea06111d72888fbe1eb432368b0a7984b9c31391ecbc2ef27",
-      "mtimeMs": 1776028653885.6665
+      "path": "socc-canonical/.agents/soc-copilot/skills/sequential-thinking/SKILL.md",
+      "sha256": "e9339d88de84692096217529d8aa2687f1d0dc2d8831062bfa7cd694bfaaaed4",
+      "mtimeMs": 1776107074503.7285
     },
     {
       "name": "soc-generalist",
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/skills/soc-generalist/SKILL.md",
-      "sha256": "dd15bfda50a4f34394b7d249179db8885d614f671cff57be6fe34dbce876f804",
-      "mtimeMs": 1776028653887.4734
+      "path": "socc-canonical/.agents/soc-copilot/skills/soc-generalist/SKILL.md",
+      "sha256": "9e8370c47831f3ac88511d62edfae6d7f48fc459c32578f5de0e62d27d124a57",
+      "mtimeMs": 1776107074515.079
     },
     {
       "name": "suspicious-url",
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/skills/suspicious-url/SKILL.md",
-      "sha256": "be1854a81f271853dd8fb19f434d01bc314a3ccb373bde6faf796236cd529eb0",
-      "mtimeMs": 1776028653888.1343
+      "path": "socc-canonical/.agents/soc-copilot/skills/suspicious-url/SKILL.md",
+      "sha256": "da6c3bde6138d303a19de6118e3896794152d46cda21db74c3c09c9aa828a029",
+      "mtimeMs": 1776107074517.0764
     },
     {
       "name": "systematic-debugging",
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/skills/systematic-debugging/SKILL.md",
-      "sha256": "4999cb851360485eca5074e727bbdd62ef20549c5d5b01216fcbf5831badb473",
-      "mtimeMs": 1776028653889.5122
+      "path": "socc-canonical/.agents/soc-copilot/skills/systematic-debugging/SKILL.md",
+      "sha256": "530855dfa2b10d5b9f92ac170fe41c5f8fbc4918957a564855b50a896ca625a2",
+      "mtimeMs": 1776107074522.6157
     },
     {
       "name": "translation-expertise",
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/skills/translation-expertise/SKILL.md",
-      "sha256": "246ec0c1751185e5ff30da40c698934e90dff71d2eb6d5fcc1448955567de3b2",
-      "mtimeMs": 1776028653892.3398
+      "path": "socc-canonical/.agents/soc-copilot/skills/translation-expertise/SKILL.md",
+      "sha256": "2d00396c7e13eea6a73f687b66c1a4b049d7cf1d05ec5d4e5db6858943917a98",
+      "mtimeMs": 1776107074554.6812
     },
     {
       "name": "web-search",
-      "path": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/skills/web-search/SKILL.md",
-      "sha256": "8e652d2267c967700bf4ab4b416d0afc571ed05076082e1bc92b98b85ba7fcb4",
-      "mtimeMs": 1776028653894.4841
+      "path": "socc-canonical/.agents/soc-copilot/skills/web-search/SKILL.md",
+      "sha256": "40c6afb5b6a73010e3a220dcd935b2d964bd320dce99db1db7f209c4cdbee572",
+      "mtimeMs": 1776107074570.851
     }
   ]
 }

@@ -21,13 +21,13 @@ Quando houver conflito, siga esta ordem:
 1. Classificação e restrições deste arquivo.
 2. Uso de ferramentas definido em `rules/TOOLS.md`.
 3. Fluxo e formato definidos em `workflows/SOP.md`.
-4. Modelo existente mais próximo em `Modelos\`.
+4. Modelo existente mais próximo em `USERPROFILE\Documents\Modelos`.
 
 Se um modelo existente conflitar com este arquivo em estilo, preserve as restrições deste arquivo e use o modelo apenas para estrutura, tom e nível de detalhe.
 
 ## Regra de aprendizado contínuo
 
-Antes de iniciar a análise de qualquer nova ofensa, consulte obrigatoriamente os arquivos em `Training\Pensamento_Ofensa_*.md`. Use esses documentos como base de conhecimento para:
+Antes de iniciar a análise de qualquer nova ofensa, consulte obrigatoriamente os arquivos em `USERPROFILE\Documents\Training\Pensamento_Ofensa_*.md`. Use esses documentos como base de conhecimento para:
 
 1. Identificar padrões de classificação já validados (BTP, TP, FP) para alertas similares.
 2. Reutilizar o racional técnico de casos análogos como referência de contexto.
@@ -38,7 +38,7 @@ A consulta ao Training não substitui a análise das evidências do caso corrent
 
 ## Regras obrigatórias
 
-1. Sempre procure primeiro um modelo equivalente em `Modelos\` antes de redigir qualquer texto novo.
+1. Sempre procure primeiro um modelo equivalente em `USERPROFILE\Documents\Modelos` antes de redigir qualquer texto novo.
 2. Use obrigatoriamente Português no título, na narrativa e nas recomendações.
 3. Escreva sempre em português com ortografia correta, preservando acentuação e cedilha. Saídas sem acento, sem cedilha ou “ASCIIzadas” são inválidas.
 4. Use exclusivamente horário de São Paulo. Na narrativa, escreva apenas a hora no formato `HH:MM:SS`, sem colchetes e sem anexar observações sobre fuso horário.
@@ -71,7 +71,7 @@ A consulta ao Training não substitui a análise das evidências do caso corrent
 
 13. Não use markdown decorativo no texto final do alerta. Não use negrito, itálico, listas ou tabelas dentro do conteúdo que será enviado ao cliente.
 
-14. Ao final de cada análise (independente da classificação), crie obrigatoriamente um documento de fluxo de pensamento em `Training\Pensamento_Ofensa_[ID].md`. Este arquivo deve transcrever na íntegra todos os blocos de raciocínio (thoughts) internos gerados durante a sessão e seguir rigorosamente esta estrutura:
+14. Ao final de cada análise (independente da classificação), crie obrigatoriamente um documento de fluxo de pensamento em `USERPROFILE\Documents\Training\Pensamento_Ofensa_[ID].md`. Este arquivo deve transcrever na íntegra todos os blocos de raciocínio (thoughts) internos gerados durante a sessão e seguir rigorosamente esta estrutura:
     - **Título:** `# Fluxo de Pensamento e Execução - Ofensa [ID] ([Cliente])`
     - **Metadados:** `**Data:** [Data]` e `**Analista:** Antigravity (IA SOC Agent)`
     - **Seção 1:** `## 1. Identificação Inicial da Demanda` (com sub-bullets: O quê, Quando, Onde, Objetivo)
@@ -185,7 +185,7 @@ Não registre dados de cliente, payloads completos ou informações sensíveis.
 - 30/03/2026
 - Contexto: Necessidade de auditoria detalhada e transparência no racional de decisão da IA.
 - Aprendizado: O documento de Fluxo de Pensamento (com pensamentos internos) é essencial para validar classificações complexas e treinar analistas.
-- Ação futura: Seguir a nova Regra 14 do AGENT.md e a Etapa 6 do SOP.md, salvando sempre em `Training\Pensamento_Ofensa_[ID].md`.
+- Ação futura: Seguir a nova Regra 14 do AGENT.md e a Etapa 6 do SOP.md, salvando sempre em `USERPROFILE\Documents\Training\Pensamento_Ofensa_[ID].md`.
 
 ## IOC Handling SOP
 
@@ -208,7 +208,7 @@ Este arquivo define a sequência obrigatória de trabalho. O agente deve seguir 
 
 ### Etapa 2 - Encontrar modelo aderente
 
-1. Procure um modelo equivalente em `Modelos\`.
+1. Procure um modelo equivalente em `USERPROFILE\Documents\Modelos`.
 2. Se houver mais de um modelo parecido, escolha o mais próximo pelo tipo de ofensa, fonte de log e narrativa.
 3. Se não houver modelo aderente, siga o formato padrão deste SOP sem inventar uma estrutura nova.
 
@@ -245,7 +245,7 @@ Regra de decisão:
 
 ### Etapa 6 - Documentar o Racional Técnico
 
-1. Após finalizar o alerta ou a nota de encerramento, crie obrigatoriamente um arquivo em `Training\Pensamento_Ofensa_[ID].md`.
+1. Após finalizar o alerta ou a nota de encerramento, crie obrigatoriamente um arquivo em `USERPROFILE\Documents\Training\Pensamento_Ofensa_[ID].md`.
 2. A estrutura do arquivo deve seguir rigorosamente este modelo:
    - **Título:** `# Fluxo de Pensamento e Execução - Ofensa [ID] ([Cliente])`
    - **Metadados:** Data e Analista (Antigravity).
@@ -326,3 +326,28 @@ Não inclua nada após a recomendação.
 ## 5. Aprendizado operacional
 
 Se durante a execução houver erro recorrente, ambiguidade relevante ou ajuste de processo que mereça ser lembrado depois, registre em `rules/MEMORY.md` com nota curta e objetiva.
+
+## Windows Workspace Paths
+
+---
+trigger: always_on
+---
+
+# Diretórios operacionais no Windows
+
+No Windows, use estes diretórios como destino oficial dos artefatos do SOCC, sempre sob `USERPROFILE\Documents`:
+
+- Configuração do usuário: `USERPROFILE\.socc`
+- Alertas gerados: `USERPROFILE\Documents\Alertas_Gerados`
+- Modelos do analista: `USERPROFILE\Documents\Modelos`
+- Notas geradas: `USERPROFILE\Documents\Notas_Geradas`
+- Treinamento: `USERPROFILE\Documents\Training`
+
+Regras obrigatórias:
+
+1. Nunca use a pasta do repositório do SOCC como destino para alertas, notas, modelos ou arquivos de treinamento.
+2. Consulte modelos somente em `USERPROFILE\Documents\Modelos`.
+3. Salve alertas finais em `USERPROFILE\Documents\Alertas_Gerados`.
+4. Salve notas de encerramento em `USERPROFILE\Documents\Notas_Geradas`.
+5. Salve arquivos de treinamento em `USERPROFILE\Documents\Training`.
+6. A pasta `.socc` do pacote é a referência final do runtime no Windows; `socc-canonical` não deve ser tratado como diretório operacional.

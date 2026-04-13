@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,6 +10,7 @@ import test from 'node:test'
 
 import {
   composeSoccAgentPrompt,
+  ensureWindowsWorkspaceLayout,
   syncSoccCanonicalFromUpstream,
   syncSoccSoul,
 } from './bootstrap-socc-soul.mjs'
@@ -173,9 +175,70 @@ test('syncSoccSoul generates canonical, runtime rules, all runtime skills, and m
   }
 })
 
+test('syncSoccSoul rewrites Windows workspace paths and provisions the user layout', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'socc-soul-windows-runtime-'))
+  await writeFile(join(root, 'package.json'), '{"name":"socc-test"}', 'utf8')
+  const upstreamRoot = await seedUpstreamAgents(root)
+  const userProfile = join(root, 'UserProfile')
+
+  const result = await syncSoccSoul(root, {
+    upstreamRoot,
+    platform: 'win32',
+    env: {
+      USERPROFILE: userProfile,
+    },
+  })
+  const runtimeRules = await readFile(result.runtimeRulesPath, 'utf8')
+
+  assert.match(runtimeRules, /Windows Workspace Paths/)
+  assert.match(
+    runtimeRules,
+    /USERPROFILE\\Documents\\Modelos/,
+  )
+  assert.match(
+    runtimeRules,
+    /USERPROFILE\\Documents\\Training/,
+  )
+  assert.match(runtimeRules, /USERPROFILE\\Documents\\Alertas_Gerados/)
+  assert.match(runtimeRules, /USERPROFILE\\Documents\\Notas_Geradas/)
+  assert.doesNotMatch(runtimeRules, /`Modelos\\`/)
+  assert.doesNotMatch(runtimeRules, /`Training\\Pensamento_Ofensa_\[ID\]\.md`/)
+
+  for (const dir of [
+    join(userProfile, '.socc'),
+    join(userProfile, 'Documents', 'Alertas_Gerados'),
+    join(userProfile, 'Documents', 'Modelos'),
+    join(userProfile, 'Documents', 'Notas_Geradas'),
+    join(userProfile, 'Documents', 'Training'),
+  ]) {
+    assert.equal(existsSync(dir), true)
+  }
+})
+
+test('ensureWindowsWorkspaceLayout provisions the Windows user folders', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'socc-windows-layout-'))
+  const userProfile = join(root, 'UserProfile')
+
+  const layout = await ensureWindowsWorkspaceLayout({
+    platform: 'win32',
+    env: {
+      USERPROFILE: userProfile,
+    },
+  })
+
+  assert.ok(layout)
+  assert.equal(layout?.documentsDir, join(userProfile, 'Documents'))
+  assert.equal(existsSync(join(userProfile, '.socc')), true)
+  assert.equal(existsSync(join(userProfile, 'Documents', 'Alertas_Gerados')), true)
+  assert.equal(existsSync(join(userProfile, 'Documents', 'Modelos')), true)
+  assert.equal(existsSync(join(userProfile, 'Documents', 'Notas_Geradas')), true)
+  assert.equal(existsSync(join(userProfile, 'Documents', 'Training')), true)
+})
+
 test('direct bootstrap skips canonical sync when only packaged .socc runtime exists', async () => {
   const root = await mkdtemp(join(tmpdir(), 'socc-soul-packaged-'))
   const packagedScriptPath = join(root, 'scripts', 'bootstrap-socc-soul.mjs')
+  const userProfile = join(root, 'UserProfile')
   await writeFile(join(root, 'package.json'), '{"name":"socc-test"}', 'utf8')
   await mkdir(join(root, 'scripts'), { recursive: true })
   await writeFile(
@@ -193,7 +256,13 @@ test('direct bootstrap skips canonical sync when only packaged .socc runtime exi
   const { stdout } = await execFileAsync(
     process.execPath,
     [packagedScriptPath],
-    { cwd: root },
+    {
+      cwd: root,
+      env: {
+        ...process.env,
+        USERPROFILE: userProfile,
+      },
+    },
   )
 
   assert.match(stdout, /skipping canonical sync/i)

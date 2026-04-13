@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
 import {
   cp,
   mkdir,
@@ -10,7 +11,7 @@ import {
   stat,
   writeFile,
 } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const SOC_CANONICAL_ROOT = ['socc-canonical', '.agents']
@@ -31,6 +32,105 @@ const RULE_RUNTIME_FILES = [
   { source: RULES_DIR, file: 'MEMORY.md', title: 'Persistent Conventions' },
   { source: WORKFLOWS_DIR, file: 'SOP.md', title: 'IOC Handling SOP' },
 ]
+
+function getWindowsWorkspaceLayout({
+  platform = process.platform,
+  env = process.env,
+  home = homedir(),
+} = {}) {
+  if (platform !== 'win32') {
+    return null
+  }
+
+  const userProfile = env.USERPROFILE || env.HOME || home
+  const configHome =
+    env.SOCC_CONFIG_DIR && env.SOCC_CONFIG_DIR.trim().length > 0
+      ? resolve(env.SOCC_CONFIG_DIR)
+      : join(userProfile, '.socc')
+  const documentsDir = join(userProfile, 'Documents')
+
+  return {
+    userProfile,
+    configHome,
+    documentsDir,
+    generatedAlertsDir: join(documentsDir, 'Alertas_Gerados'),
+    modelsDir: join(documentsDir, 'Modelos'),
+    generatedNotesDir: join(documentsDir, 'Notas_Geradas'),
+    trainingDir: join(documentsDir, 'Training'),
+  }
+}
+
+export async function ensureWindowsWorkspaceLayout(options = {}) {
+  const layout = getWindowsWorkspaceLayout(options)
+  if (!layout) {
+    return null
+  }
+
+  await Promise.all([
+    mkdir(layout.configHome, { recursive: true }),
+    mkdir(layout.generatedAlertsDir, { recursive: true }),
+    mkdir(layout.modelsDir, { recursive: true }),
+    mkdir(layout.generatedNotesDir, { recursive: true }),
+    mkdir(layout.trainingDir, { recursive: true }),
+  ])
+
+  return layout
+}
+
+function applyWindowsWorkspacePaths(ruleBundle, workspaceLayout) {
+  if (!workspaceLayout) {
+    return ruleBundle
+  }
+
+  const configHomePath = 'USERPROFILE\\.socc'
+  const alertsPath = 'USERPROFILE\\Documents\\Alertas_Gerados'
+  const modelsPath = 'USERPROFILE\\Documents\\Modelos'
+  const notesPath = 'USERPROFILE\\Documents\\Notas_Geradas'
+  const trainingPath = 'USERPROFILE\\Documents\\Training'
+  const trainingPattern = `${trainingPath}\\Pensamento_Ofensa_*.md`
+  const trainingFilePath = `${trainingPath}\\Pensamento_Ofensa_[ID].md`
+
+  const replacements = [
+    ['`Modelos\\`', `\`${modelsPath}\``],
+    ['`Training\\Pensamento_Ofensa_*.md`', `\`${trainingPattern}\``],
+    ['`Training\\Pensamento_Ofensa_[ID].md`', `\`${trainingFilePath}\``],
+  ]
+
+  let rewrittenBundle = ruleBundle
+  for (const [from, to] of replacements) {
+    rewrittenBundle = rewrittenBundle.split(from).join(to)
+  }
+
+  return [
+    rewrittenBundle.trimEnd(),
+    '',
+    '## Windows Workspace Paths',
+    '',
+    '---',
+    'trigger: always_on',
+    '---',
+    '',
+    '# Diretórios operacionais no Windows',
+    '',
+    'No Windows, use estes diretórios como destino oficial dos artefatos do SOCC, sempre sob `USERPROFILE\\Documents`:',
+    '',
+    `- Configuração do usuário: \`${configHomePath}\``,
+    `- Alertas gerados: \`${alertsPath}\``,
+    `- Modelos do analista: \`${modelsPath}\``,
+    `- Notas geradas: \`${notesPath}\``,
+    `- Treinamento: \`${trainingPath}\``,
+    '',
+    'Regras obrigatórias:',
+    '',
+    '1. Nunca use a pasta do repositório do SOCC como destino para alertas, notas, modelos ou arquivos de treinamento.',
+    `2. Consulte modelos somente em \`${modelsPath}\`.`,
+    `3. Salve alertas finais em \`${alertsPath}\`.`,
+    `4. Salve notas de encerramento em \`${notesPath}\`.`,
+    `5. Salve arquivos de treinamento em \`${trainingPath}\`.`,
+    '6. A pasta `.socc` do pacote é a referência final do runtime no Windows; `socc-canonical` não deve ser tratado como diretório operacional.',
+    '',
+  ].join('\n')
+}
 
 function findPackageRoot(startDir) {
   let current = resolve(startDir)
@@ -177,7 +277,7 @@ ${parts.skill.trim()}
 `
 }
 
-async function buildRuntimeRules(packageRoot) {
+async function buildRuntimeRules(packageRoot, options = {}) {
   const sections = []
   for (const section of RULE_RUNTIME_FILES) {
     const sourcePath = join(packageRoot, ...section.source, section.file)
@@ -194,10 +294,15 @@ async function buildRuntimeRules(packageRoot) {
 
   const runtimeRulesDir = join(packageRoot, ...RUNTIME_RULES_DIR)
   const runtimeRulesPath = join(runtimeRulesDir, 'socc-business-rules.md')
+  const workspaceLayout = getWindowsWorkspaceLayout(options)
 
   await rm(runtimeRulesDir, { recursive: true, force: true })
   await mkdir(runtimeRulesDir, { recursive: true })
-  await writeFile(runtimeRulesPath, composeRuleBundle(sections), 'utf8')
+  await writeFile(
+    runtimeRulesPath,
+    applyWindowsWorkspacePaths(composeRuleBundle(sections), workspaceLayout),
+    'utf8',
+  )
 
   return {
     runtimeRulesDir,
@@ -289,6 +394,9 @@ async function buildManifest({
   runtimeReferencesDir,
   runtimeSkills,
 }) {
+  const toManifestPath = path =>
+    relative(packageRoot, path).split(sep).join('/')
+
   const canonicalRoot = join(packageRoot, ...SOC_COPILOT_DIR)
   const sourceFiles = {
     identity: join(canonicalRoot, 'identity.md'),
@@ -308,24 +416,36 @@ async function buildManifest({
   const sourceBlocks = {}
   for (const [name, path] of Object.entries(sourceFiles)) {
     if (existsSync(path)) {
-      sourceBlocks[name] = await fileMetadata(path)
+      const metadata = await fileMetadata(path)
+      sourceBlocks[name] = {
+        ...metadata,
+        path: toManifestPath(metadata.path),
+      }
     }
   }
 
   return {
     generatedAt: new Date().toISOString(),
-    sourceRoot: canonicalRoot,
+    sourceRoot: toManifestPath(canonicalRoot),
     upstreamRoot: upstreamRoot || null,
-    generatedAgentPath,
-    generatedManifestPath,
-    runtimeAgentPath,
-    runtimeRulesPath,
-    runtimeSkillsDir,
-    runtimeReferencesDir,
+    generatedAgentPath: toManifestPath(generatedAgentPath),
+    generatedManifestPath: toManifestPath(generatedManifestPath),
+    runtimeAgentPath: toManifestPath(runtimeAgentPath),
+    runtimeRulesPath: toManifestPath(runtimeRulesPath),
+    runtimeSkillsDir: toManifestPath(runtimeSkillsDir),
+    runtimeReferencesDir: toManifestPath(runtimeReferencesDir),
     runtimeSkillNames: runtimeSkills.map(skill => skill.name),
-    sourceFiles,
+    sourceFiles: Object.fromEntries(
+      Object.entries(sourceFiles).map(([name, path]) => [
+        name,
+        toManifestPath(path),
+      ]),
+    ),
     sourceBlocks,
-    runtimeSkills,
+    runtimeSkills: runtimeSkills.map(skill => ({
+      ...skill,
+      path: toManifestPath(skill.path),
+    })),
   }
 }
 
@@ -365,8 +485,12 @@ export async function syncSoccSoul(
   {
     upstreamRoot = null,
     skillNames = null,
+    platform = process.platform,
+    env = process.env,
   } = {},
 ) {
+  await ensureWindowsWorkspaceLayout({ platform, env })
+
   if (upstreamRoot) {
     await syncSoccCanonicalFromUpstream(packageRoot, upstreamRoot)
   }
@@ -416,7 +540,10 @@ export async function syncSoccSoul(
     writeFile(runtimeAgentPath, prompt, 'utf8'),
   ])
 
-  const runtimeRules = await buildRuntimeRules(packageRoot)
+  const runtimeRules = await buildRuntimeRules(packageRoot, {
+    platform,
+    env,
+  })
   const runtimeReferences = await buildRuntimeReferences(packageRoot)
   const runtimeSkills = await buildRuntimeSkills(packageRoot, skillNames)
 
@@ -470,6 +597,8 @@ async function main() {
   const scriptDir = dirname(fileURLToPath(import.meta.url))
   const packageRoot = findPackageRoot(scriptDir)
   const { upstreamRoot } = parseArgs(process.argv.slice(2))
+
+  await ensureWindowsWorkspaceLayout()
 
   if (!upstreamRoot && !hasCanonicalSource(packageRoot)) {
     if (!hasPackagedRuntime(packageRoot)) {

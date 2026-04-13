@@ -11,6 +11,7 @@ import { env } from '../utils/env.js';
 import { errorMessage } from '../utils/errors.js';
 import { checkInstall, cleanupNpmInstallations, cleanupShellAliases, installLatest } from '../utils/nativeInstaller/index.js';
 import { getInitialSettings, updateSettingsForSource } from '../utils/settings/settings.js';
+import { ensureWindowsWorkspaceLayout } from '../utils/windowsWorkspace.js';
 interface InstallProps {
   onDone: (result: string, options?: {
     display?: CommandResultDisplay;
@@ -134,6 +135,10 @@ function Install({
         logForDebugging(`Install: Setup launcher completed with ${setupMessages.length} messages`);
         if (setupMessages.length > 0) {
           setupMessages.forEach(msg => logForDebugging(`Install: Setup message: ${msg.message}`));
+        }
+        const windowsWorkspace = await ensureWindowsWorkspaceLayout();
+        if (windowsWorkspace) {
+          logForDebugging(`Install: Windows workspace ready at ${windowsWorkspace.documentsDir}`);
         }
 
         // Now that native installation succeeded, clean up old npm installations
