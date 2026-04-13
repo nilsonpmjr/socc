@@ -196,7 +196,7 @@ export function Config({
     onIsSearchModeChange?.(ownsEsc);
   }, [ownsEsc, onIsSearchModeChange]);
   const isConnectedToIde = hasAccessToIDEExtensionDiffFeature(context.options.mcpClients);
-  const isFileCheckpointingAvailable = !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING);
+  const isFileCheckpointingAvailable = !isEnvTruthy(process.env.SOCC_DISABLE_FILE_CHECKPOINTING);
   const memoryFiles = React.use(getMemoryFiles(true));
   const shouldShowExternalIncludesToggle = hasExternalClaudeMdIncludes(memoryFiles);
   const autoUpdaterDisabledReason = getAutoUpdaterDisabledReason();
@@ -720,7 +720,7 @@ export function Config({
     }
   }, {
     id: 'agentPushNotifEnabled',
-    label: 'Push when Claude decides',
+    label: 'Push when SOCC decides',
     value: globalConfig.agentPushNotifEnabled ?? false,
     type: 'boolean' as const,
     onChange(agentPushNotifEnabled: boolean) {
@@ -891,18 +891,18 @@ export function Config({
       });
     }
   }] : []), {
-    id: 'claudeInChromeDefaultEnabled',
-    label: 'Claude in Chrome enabled by default',
-    value: globalConfig.claudeInChromeDefaultEnabled ?? true,
+    id: 'soccInChromeDefaultEnabled',
+    label: 'SOCC in Chrome enabled by default',
+    value: globalConfig.soccInChromeDefaultEnabled ?? true,
     type: 'boolean' as const,
     onChange(enabled_5: boolean) {
       saveGlobalConfig(current_18 => ({
         ...current_18,
-        claudeInChromeDefaultEnabled: enabled_5
+        soccInChromeDefaultEnabled: enabled_5
       }));
       setGlobalConfig({
         ...getGlobalConfig(),
-        claudeInChromeDefaultEnabled: enabled_5
+        soccInChromeDefaultEnabled: enabled_5
       });
       logEvent('tengu_claude_in_chrome_setting_changed', {
         enabled: enabled_5

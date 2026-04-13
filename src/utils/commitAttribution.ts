@@ -168,7 +168,7 @@ export function sanitizeModelName(shortName: string): string {
 }
 
 /**
- * Attribution state for tracking Claude's contributions to files.
+ * Attribution state for tracking SOCC's contributions to files.
  */
 export type AttributionState = {
   // File states keyed by relative path (from cwd)
@@ -192,10 +192,10 @@ export type AttributionState = {
 }
 
 /**
- * Summary of Claude's contribution for a commit.
+ * Summary of SOCC's contribution for a commit.
  */
 export type AttributionSummary = {
-  claudePercent: number
+  soccPercent: number
   claudeChars: number
   humanChars: number
   surfaces: string[]
@@ -227,7 +227,7 @@ export type AttributionData = {
  * Get the current client surface from environment.
  */
 export function getClientSurface(): string {
-  return process.env.CLAUDE_CODE_ENTRYPOINT ?? 'cli'
+  return process.env.SOCC_ENTRYPOINT ?? 'cli'
 }
 
 /**
@@ -332,12 +332,12 @@ function computeFileModificationState(
   const normalizedPath = normalizeFilePath(filePath)
 
   try {
-    // Calculate Claude's character contribution
-    let claudeContribution: number
+    // Calculate SOCC's character contribution
+    let soccContribution: number
 
     if (oldContent === '' || newContent === '') {
       // New file or full deletion - contribution is the content length
-      claudeContribution =
+      soccContribution =
         oldContent === '' ? newContent.length : oldContent.length
     } else {
       // Find actual changed region via common prefix/suffix matching.
@@ -361,16 +361,16 @@ function computeFileModificationState(
       }
       const oldChangedLen = oldContent.length - prefixEnd - suffixLen
       const newChangedLen = newContent.length - prefixEnd - suffixLen
-      claudeContribution = Math.max(oldChangedLen, newChangedLen)
+      soccContribution = Math.max(oldChangedLen, newChangedLen)
     }
 
     // Get current file state if it exists
     const existingState = existingFileStates.get(normalizedPath)
-    const existingContribution = existingState?.claudeContribution ?? 0
+    const existingContribution = existingState?.soccContribution ?? 0
 
     return {
       contentHash: computeContentHash(newContent),
-      claudeContribution: existingContribution + claudeContribution,
+      soccContribution: existingContribution + soccContribution,
       mtime,
     }
   } catch (error) {
@@ -396,7 +396,7 @@ export async function getFileMtime(filePath: string): Promise<number> {
 }
 
 /**
- * Track a file modification by Claude.
+ * Track a file modification by SOCC.
  * Called after Edit/Write tool completes.
  */
 export function trackFileModification(
@@ -423,7 +423,7 @@ export function trackFileModification(
   newFileStates.set(normalizedPath, newFileState)
 
   logForDebugging(
-    `Attribution: Tracked ${newFileState.claudeContribution} chars for ${normalizedPath}`,
+    `Attribution: Tracked ${newFileState.soccContribution} chars for ${normalizedPath}`,
   )
 
   return {
@@ -433,8 +433,8 @@ export function trackFileModification(
 }
 
 /**
- * Track a file creation by Claude (e.g., via bash command).
- * Used when Claude creates a new file through a non-tracked mechanism.
+ * Track a file creation by SOCC (e.g., via bash command).
+ * Used when SOCC creates a new file through a non-tracked mechanism.
  */
 export function trackFileCreation(
   state: AttributionState,
@@ -447,8 +447,8 @@ export function trackFileCreation(
 }
 
 /**
- * Track a file deletion by Claude (e.g., via bash rm command).
- * Used when Claude deletes a file through a non-tracked mechanism.
+ * Track a file deletion by SOCC (e.g., via bash rm command).
+ * Used when SOCC deletes a file through a non-tracked mechanism.
  */
 export function trackFileDeletion(
   state: AttributionState,
@@ -457,12 +457,12 @@ export function trackFileDeletion(
 ): AttributionState {
   const normalizedPath = normalizeFilePath(filePath)
   const existingState = state.fileStates.get(normalizedPath)
-  const existingContribution = existingState?.claudeContribution ?? 0
+  const existingContribution = existingState?.soccContribution ?? 0
   const deletedChars = oldContent.length
 
   const newFileState: FileAttributionState = {
     contentHash: '', // Empty hash for deleted files
-    claudeContribution: existingContribution + deletedChars,
+    soccContribution: existingContribution + deletedChars,
     mtime: Date.now(),
   }
 
@@ -470,7 +470,7 @@ export function trackFileDeletion(
   newFileStates.set(normalizedPath, newFileState)
 
   logForDebugging(
-    `Attribution: Tracked deletion of ${normalizedPath} (${deletedChars} chars removed, total contribution: ${newFileState.claudeContribution})`,
+    `Attribution: Tracked deletion of ${normalizedPath} (${deletedChars} chars removed, total contribution: ${newFileState.soccContribution})`,
   )
 
   return {
@@ -504,12 +504,12 @@ export function trackBulkFileChanges(
     if (change.type === 'deleted') {
       const normalizedPath = normalizeFilePath(change.path)
       const existingState = newFileStates.get(normalizedPath)
-      const existingContribution = existingState?.claudeContribution ?? 0
+      const existingContribution = existingState?.soccContribution ?? 0
       const deletedChars = change.oldContent.length
 
       newFileStates.set(normalizedPath, {
         contentHash: '',
-        claudeContribution: existingContribution + deletedChars,
+        soccContribution: existingContribution + deletedChars,
         mtime,
       })
 
@@ -529,7 +529,7 @@ export function trackBulkFileChanges(
         newFileStates.set(normalizedPath, newFileState)
 
         logForDebugging(
-          `Attribution: Tracked ${newFileState.claudeContribution} chars for ${normalizedPath}`,
+          `Attribution: Tracked ${newFileState.soccContribution} chars for ${normalizedPath}`,
         )
       }
     }
@@ -604,8 +604,8 @@ export async function calculateCommitAttribution(
       if (existing) {
         mergedFileStates.set(path, {
           ...fileState,
-          claudeContribution:
-            existing.claudeContribution + fileState.claudeContribution,
+          soccContribution:
+            existing.soccContribution + fileState.soccContribution,
         })
       } else {
         mergedFileStates.set(path, fileState)
@@ -637,8 +637,8 @@ export async function calculateCommitAttribution(
       if (deleted) {
         // File was deleted
         if (fileState) {
-          // Claude deleted this file (tracked deletion)
-          claudeChars = fileState.claudeContribution
+          // SOCC deleted this file (tracked deletion)
+          claudeChars = fileState.soccContribution
           humanChars = 0
         } else {
           // Human deleted this file (untracked deletion)
@@ -655,14 +655,14 @@ export async function calculateCommitAttribution(
 
           if (fileState) {
             // We have tracked modifications for this file
-            claudeChars = fileState.claudeContribution
+            claudeChars = fileState.soccContribution
             humanChars = 0
           } else if (baseline) {
             // File was modified but not tracked - human modification
             const diffSize = await getGitDiffSize(file)
             humanChars = diffSize > 0 ? diffSize : stats.size
           } else {
-            // New file not created by Claude
+            // New file not created by SOCC
             humanChars = stats.size
           }
         } catch {
@@ -713,7 +713,7 @@ export async function calculateCommitAttribution(
   }
 
   const totalChars = totalClaudeChars + totalHumanChars
-  const claudePercent =
+  const soccPercent =
     totalChars > 0 ? Math.round((totalClaudeChars / totalChars) * 100) : 0
 
   // Calculate surface breakdown (percentage of total content per surface)
@@ -730,7 +730,7 @@ export async function calculateCommitAttribution(
   return {
     version: 1,
     summary: {
-      claudePercent,
+      soccPercent,
       claudeChars: totalClaudeChars,
       humanChars: totalHumanChars,
       surfaces: Array.from(surfaces),

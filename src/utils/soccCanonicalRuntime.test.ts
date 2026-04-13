@@ -74,9 +74,9 @@ afterEach(() => {
   clearMemoryFileCaches()
   resetStateForTests()
   if (previousConfigDir === undefined) {
-    delete process.env.CLAUDE_CONFIG_DIR
+    delete process.env.SOCC_CONFIG_DIR
   } else {
-    process.env.CLAUDE_CONFIG_DIR = previousConfigDir
+    process.env.SOCC_CONFIG_DIR = previousConfigDir
   }
   if (tempRoot) {
     rmSync(tempRoot, { recursive: true, force: true })
@@ -86,11 +86,11 @@ afterEach(() => {
 
 test('generated runtime rules and all upstream skills are visible to native loaders', async () => {
   tempRoot = mkdtempSync(join(tmpdir(), 'socc-runtime-loaders-'))
-  previousConfigDir = process.env.CLAUDE_CONFIG_DIR
-  process.env.CLAUDE_CONFIG_DIR = join(tempRoot, 'isolated-config')
+  previousConfigDir = process.env.SOCC_CONFIG_DIR
+  process.env.SOCC_CONFIG_DIR = join(tempRoot, 'isolated-config')
 
   writeFileSync(join(tempRoot, 'package.json'), '{"name":"socc-test"}', 'utf8')
-  mkdirSync(process.env.CLAUDE_CONFIG_DIR, { recursive: true })
+  mkdirSync(process.env.SOCC_CONFIG_DIR, { recursive: true })
 
   const upstreamRoot = seedUpstreamAgents(tempRoot)
   await syncSoccSoul(tempRoot, { upstreamRoot })
@@ -108,7 +108,7 @@ test('generated runtime rules and all upstream skills are visible to native load
 
   const memoryFiles = await getMemoryFiles()
   const rulesFile = memoryFiles.find(file =>
-    file.path.endsWith('.claude/rules/socc-business-rules.md'),
+    file.path.endsWith('.socc/rules/socc-business-rules.md'),
   )
   const skills = await getSkillDirCommands(workspace)
   const promptSkills = skills

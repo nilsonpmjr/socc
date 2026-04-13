@@ -58,11 +58,11 @@ export function MCPRemoteServerMenu({
   const [authorizationUrl, setAuthorizationUrl] = React.useState<string | null>(null);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const authAbortControllerRef = useRef<AbortController | null>(null);
-  const [isClaudeAIAuthenticating, setIsClaudeAIAuthenticating] = useState(false);
-  const [claudeAIAuthUrl, setClaudeAIAuthUrl] = useState<string | null>(null);
-  const [isClaudeAIClearingAuth, setIsClaudeAIClearingAuth] = useState(false);
-  const [claudeAIClearAuthUrl, setClaudeAIClearAuthUrl] = useState<string | null>(null);
-  const [claudeAIClearAuthBrowserOpened, setClaudeAIClearAuthBrowserOpened] = useState(false);
+  const [isRemoteConnectorAuthenticating, setIsRemoteConnectorAuthenticating] = useState(false);
+  const [remoteConnectorAuthUrl, setRemoteConnectorAuthUrl] = useState<string | null>(null);
+  const [isRemoteConnectorClearingAuth, setIsRemoteConnectorClearingAuth] = useState(false);
+  const [remoteConnectorClearAuthUrl, setRemoteConnectorClearAuthUrl] = useState<string | null>(null);
+  const [remoteConnectorClearAuthBrowserOpened, setRemoteConnectorClearAuthBrowserOpened] = useState(false);
   const [urlCopied, setUrlCopied] = useState(false);
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const unmountedRef = useRef(false);
@@ -89,9 +89,9 @@ export function MCPRemoteServerMenu({
   // 2. It's connected and has tools (meaning it's working via some auth mechanism)
   const isEffectivelyAuthenticated = server.isAuthenticated || server.client.type === 'connected' && serverToolsCount > 0;
   const reconnectMcpServer = useMcpReconnect();
-  const handleClaudeAIAuthComplete = React.useCallback(async () => {
-    setIsClaudeAIAuthenticating(false);
-    setClaudeAIAuthUrl(null);
+  const handleRemoteConnectorAuthComplete = React.useCallback(async () => {
+    setIsRemoteConnectorAuthenticating(false);
+    setRemoteConnectorAuthUrl(null);
     setIsReconnecting(true);
     try {
       const result = await reconnectMcpServer(server.name);
@@ -115,7 +115,7 @@ export function MCPRemoteServerMenu({
       setIsReconnecting(false);
     }
   }, [reconnectMcpServer, server.name, onComplete]);
-  const handleClaudeAIClearAuthComplete = React.useCallback(async () => {
+  const handleRemoteConnectorClearAuthComplete = React.useCallback(async () => {
     await clearServerCache(server.name, {
       ...server.config,
       scope: server.scope
@@ -141,9 +141,9 @@ export function MCPRemoteServerMenu({
     });
     logEvent('tengu_claudeai_mcp_clear_auth_completed', {});
     onComplete?.(`Disconnected from ${server.name}.`);
-    setIsClaudeAIClearingAuth(false);
-    setClaudeAIClearAuthUrl(null);
-    setClaudeAIClearAuthBrowserOpened(false);
+    setIsRemoteConnectorClearingAuth(false);
+    setRemoteConnectorClearAuthUrl(null);
+    setRemoteConnectorClearAuthBrowserOpened(false);
   }, [server.name, server.config, server.scope, setAppState, onComplete]);
 
   // Escape to cancel authentication flow
@@ -157,43 +157,43 @@ export function MCPRemoteServerMenu({
     isActive: isAuthenticating
   });
 
-  // Escape to cancel Claude AI authentication
+  // Escape to cancel remote connector authentication
   useKeybinding('confirm:no', () => {
-    setIsClaudeAIAuthenticating(false);
-    setClaudeAIAuthUrl(null);
+    setIsRemoteConnectorAuthenticating(false);
+    setRemoteConnectorAuthUrl(null);
   }, {
     context: 'Confirmation',
-    isActive: isClaudeAIAuthenticating
+    isActive: isRemoteConnectorAuthenticating
   });
 
-  // Escape to cancel Claude AI clear auth
+  // Escape to cancel remote connector clear auth
   useKeybinding('confirm:no', () => {
-    setIsClaudeAIClearingAuth(false);
-    setClaudeAIClearAuthUrl(null);
-    setClaudeAIClearAuthBrowserOpened(false);
+    setIsRemoteConnectorClearingAuth(false);
+    setRemoteConnectorClearAuthUrl(null);
+    setRemoteConnectorClearAuthBrowserOpened(false);
   }, {
     context: 'Confirmation',
-    isActive: isClaudeAIClearingAuth
+    isActive: isRemoteConnectorClearingAuth
   });
 
   // Return key handling for authentication flows and 'c' to copy URL
   useInput((input, key) => {
-    if (key.return && isClaudeAIAuthenticating) {
-      void handleClaudeAIAuthComplete();
+    if (key.return && isRemoteConnectorAuthenticating) {
+      void handleRemoteConnectorAuthComplete();
     }
-    if (key.return && isClaudeAIClearingAuth) {
-      if (claudeAIClearAuthBrowserOpened) {
-        void handleClaudeAIClearAuthComplete();
+    if (key.return && isRemoteConnectorClearingAuth) {
+      if (remoteConnectorClearAuthBrowserOpened) {
+        void handleRemoteConnectorClearAuthComplete();
       } else {
         // First Enter: open the browser
-        const connectorsUrl = `${getOauthConfig().CLAUDE_AI_ORIGIN}/settings/connectors`;
-        setClaudeAIClearAuthUrl(connectorsUrl);
-        setClaudeAIClearAuthBrowserOpened(true);
+        const connectorsUrl = `${getOauthConfig().SOCC_REMOTE_ORIGIN}/settings/connectors`;
+        setRemoteConnectorClearAuthUrl(connectorsUrl);
+        setRemoteConnectorClearAuthBrowserOpened(true);
         void openBrowser(connectorsUrl);
       }
     }
     if (input === 'c' && !urlCopied) {
-      const urlToCopy = authorizationUrl || claudeAIAuthUrl || claudeAIClearAuthUrl;
+      const urlToCopy = authorizationUrl || remoteConnectorAuthUrl || remoteConnectorClearAuthUrl;
       if (urlToCopy) {
         void setClipboard(urlToCopy).then(raw => {
           if (unmountedRef.current) return;
@@ -212,8 +212,8 @@ export function MCPRemoteServerMenu({
   // Count MCP prompts for this server (skills are shown in /skills, not here)
   const serverCommandsCount = filterMcpPromptsByServer(mcp.commands, server.name).length;
   const toggleMcpServer = useMcpToggleEnabled();
-  const handleClaudeAIAuth = React.useCallback(async () => {
-    const claudeAiBaseUrl = getOauthConfig().CLAUDE_AI_ORIGIN;
+  const handleRemoteConnectorAuth = React.useCallback(async () => {
+    const remoteWebOrigin = getOauthConfig().SOCC_REMOTE_ORIGIN;
     const accountInfo = getOauthAccountInfo();
     const orgUuid = accountInfo?.organizationUuid;
     let authUrl: string;
@@ -221,19 +221,19 @@ export function MCPRemoteServerMenu({
       // Use the direct auth URL with org and server IDs
       // Replace 'mcprs' prefix with 'mcpsrv' if present
       const serverId = server.config.id.startsWith('mcprs') ? 'mcpsrv' + server.config.id.slice(5) : server.config.id;
-      const productSurface = encodeURIComponent(process.env.CLAUDE_CODE_ENTRYPOINT || 'cli');
-      authUrl = `${claudeAiBaseUrl}/api/organizations/${orgUuid}/mcp/start-auth/${serverId}?product_surface=${productSurface}`;
+      const productSurface = encodeURIComponent(process.env.SOCC_ENTRYPOINT || 'cli');
+      authUrl = `${remoteWebOrigin}/api/organizations/${orgUuid}/mcp/start-auth/${serverId}?product_surface=${productSurface}`;
     } else {
       // Fall back to settings/connectors if we don't have the required IDs
-      authUrl = `${claudeAiBaseUrl}/settings/connectors`;
+      authUrl = `${remoteWebOrigin}/settings/connectors`;
     }
-    setClaudeAIAuthUrl(authUrl);
-    setIsClaudeAIAuthenticating(true);
+    setRemoteConnectorAuthUrl(authUrl);
+    setIsRemoteConnectorAuthenticating(true);
     logEvent('tengu_claudeai_mcp_auth_started', {});
     await openBrowser(authUrl);
   }, [server.config]);
-  const handleClaudeAIClearAuth = React.useCallback(() => {
-    setIsClaudeAIClearingAuth(true);
+  const handleRemoteConnectorClearAuth = React.useCallback(() => {
+    setIsRemoteConnectorClearingAuth(true);
     logEvent('tengu_claudeai_mcp_clear_auth_started', {});
   }, []);
   const handleToggleEnabled = React.useCallback(async () => {
@@ -382,14 +382,14 @@ export function MCPRemoteServerMenu({
         </Box>
       </Box>;
   }
-  if (isClaudeAIAuthenticating) {
+  if (isRemoteConnectorAuthenticating) {
     return <Box flexDirection="column" gap={1} padding={1}>
         <Text color="claude">Authenticating with {server.name}…</Text>
         <Box>
           <Spinner />
           <Text> A browser window will open for authentication</Text>
         </Box>
-        {claudeAIAuthUrl && <Box flexDirection="column">
+        {remoteConnectorAuthUrl && <Box flexDirection="column">
             <Box>
               <Text dimColor>
                 If your browser doesn&apos;t open automatically, copy this URL
@@ -399,7 +399,7 @@ export function MCPRemoteServerMenu({
                   <KeyboardShortcutHint shortcut="c" action="copy" parens />
                 </Text>}
             </Box>
-            <Link url={claudeAIAuthUrl} />
+            <Link url={remoteConnectorAuthUrl} />
           </Box>}
         <Box marginLeft={3} flexDirection="column">
           <Text color="permission">
@@ -411,15 +411,15 @@ export function MCPRemoteServerMenu({
         </Box>
       </Box>;
   }
-  if (isClaudeAIClearingAuth) {
+  if (isRemoteConnectorClearingAuth) {
     return <Box flexDirection="column" gap={1} padding={1}>
         <Text color="claude">Clear authentication for {server.name}</Text>
-        {claudeAIClearAuthBrowserOpened ? <>
+        {remoteConnectorClearAuthBrowserOpened ? <>
             <Text>
               Find the MCP server in the browser and click
               &quot;Disconnect&quot;.
             </Text>
-            {claudeAIClearAuthUrl && <Box flexDirection="column">
+            {remoteConnectorClearAuthUrl && <Box flexDirection="column">
                 <Box>
                   <Text dimColor>
                     If your browser didn&apos;t open automatically, copy this
@@ -429,7 +429,7 @@ export function MCPRemoteServerMenu({
                       <KeyboardShortcutHint shortcut="c" action="copy" parens />
                     </Text>}
                 </Box>
-                <Link url={claudeAIClearAuthUrl} />
+                <Link url={remoteConnectorClearAuthUrl} />
               </Box>}
             <Box marginLeft={3} flexDirection="column">
               <Text color="permission">
@@ -595,10 +595,10 @@ export function MCPRemoteServerMenu({
               await handleClearAuth();
               break;
             case 'claudeai-auth':
-              await handleClaudeAIAuth();
+              await handleRemoteConnectorAuth();
               break;
             case 'claudeai-clear-auth':
-              handleClaudeAIClearAuth();
+              handleRemoteConnectorClearAuth();
               break;
             case 'reconnectMcpServer':
               setIsReconnecting(true);

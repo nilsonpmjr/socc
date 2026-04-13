@@ -5,7 +5,7 @@ import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
   logEvent,
 } from 'src/services/analytics/index.js'
-import { getClaudeAIOAuthTokens } from 'src/utils/auth.js'
+import { getSoccOAuthTokens } from 'src/utils/auth.js'
 import { getGlobalConfig, saveGlobalConfig } from 'src/utils/config.js'
 import { logForDebugging } from 'src/utils/debug.js'
 import { isEnvDefinedFalsy } from 'src/utils/envUtils.js'
@@ -14,7 +14,7 @@ import { clearMcpAuthCache } from './client.js'
 import { normalizeNameForMCP } from './normalization.js'
 import type { ScopedMcpServerConfig } from './types.js'
 
-type ClaudeAIMcpServer = {
+type RemoteConnectorMcpServer = {
   type: 'mcp_server'
   id: string
   display_name: string
@@ -22,8 +22,8 @@ type ClaudeAIMcpServer = {
   created_at: string
 }
 
-type ClaudeAIMcpServersResponse = {
-  data: ClaudeAIMcpServer[]
+type RemoteConnectorMcpServersResponse = {
+  data: RemoteConnectorMcpServer[]
   has_more: boolean
   next_page: string | null
 }
@@ -37,7 +37,7 @@ const MCP_SERVERS_BETA_HEADER = 'mcp-servers-2025-12-04'
  *
  * Results are memoized for the session lifetime (fetch once per CLI session).
  */
-export const fetchClaudeAIMcpConfigsIfEligible = memoize(
+export const fetchSoccRemoteMcpConfigsIfEligible = memoize(
   async (): Promise<Record<string, ScopedMcpServerConfig>> => {
     try {
       if (getAPIProvider() !== 'firstParty') {
@@ -58,7 +58,7 @@ export const fetchClaudeAIMcpConfigsIfEligible = memoize(
         return {}
       }
 
-      const tokens = getClaudeAIOAuthTokens()
+      const tokens = getSoccOAuthTokens()
       if (!tokens?.accessToken) {
         logForDebugging('[claudeai-mcp] No access token')
         logEvent('tengu_claudeai_mcp_eligibility', {
@@ -89,7 +89,7 @@ export const fetchClaudeAIMcpConfigsIfEligible = memoize(
 
       logForDebugging(`[claudeai-mcp] Fetching from ${url}`)
 
-      const response = await axios.get<ClaudeAIMcpServersResponse>(url, {
+      const response = await axios.get<RemoteConnectorMcpServersResponse>(url, {
         headers: {
           Authorization: `Bearer ${tokens.accessToken}`,
           'Content-Type': 'application/json',
@@ -144,31 +144,31 @@ export const fetchClaudeAIMcpConfigsIfEligible = memoize(
 )
 
 /**
- * Clears the memoized cache for fetchClaudeAIMcpConfigsIfEligible.
+ * Clears the memoized cache for fetchSoccRemoteMcpConfigsIfEligible.
  * Call this after login so the next fetch will use the new auth tokens.
  */
-export function clearClaudeAIMcpConfigsCache(): void {
-  fetchClaudeAIMcpConfigsIfEligible.cache.clear?.()
+export function clearSoccRemoteMcpConfigsCache(): void {
+  fetchSoccRemoteMcpConfigsIfEligible.cache.clear?.()
   // Also clear the auth cache so freshly-authorized servers get re-connected
   clearMcpAuthCache()
 }
 
 /**
- * Record that a claude.ai connector successfully connected. Idempotent.
+ * Record that a remote connector successfully connected. Idempotent.
  *
  * Gates the "N connectors unavailable/need auth" startup notifications: a
  * connector that was working yesterday and is now failed is a state change
  * worth surfacing; an org-configured connector that's been needs-auth since
  * it showed up is one the user has demonstrably ignored.
  */
-export function markClaudeAiMcpConnected(name: string): void {
+export function markSoccMcpConnected(name: string): void {
   saveGlobalConfig(current => {
-    const seen = current.claudeAiMcpEverConnected ?? []
+    const seen = current.soccMcpEverConnected ?? []
     if (seen.includes(name)) return current
-    return { ...current, claudeAiMcpEverConnected: [...seen, name] }
+    return { ...current, soccMcpEverConnected: [...seen, name] }
   })
 }
 
-export function hasClaudeAiMcpEverConnected(name: string): boolean {
-  return (getGlobalConfig().claudeAiMcpEverConnected ?? []).includes(name)
+export function hasSoccMcpEverConnected(name: string): boolean {
+  return (getGlobalConfig().soccMcpEverConnected ?? []).includes(name)
 }

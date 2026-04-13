@@ -1,5 +1,5 @@
 /**
- * OpenAI-compatible API shim for Claude Code.
+ * OpenAI-compatible API shim for SOCC.
  *
  * Translates Anthropic SDK calls (anthropic.beta.messages.create) into
  * OpenAI-compatible chat completion requests and streams back events
@@ -9,14 +9,14 @@
  * Together, Groq, Fireworks, DeepSeek, Mistral, and any OpenAI-compatible API.
  *
  * Environment variables:
- *   CLAUDE_CODE_USE_OPENAI=1          — enable this provider
+ *   SOCC_USE_OPENAI=1          — enable this provider
  *   OPENAI_API_KEY=sk-...             — API key (optional for local models)
  *   OPENAI_BASE_URL=http://...        — base URL (default: https://api.openai.com/v1)
  *   OPENAI_MODEL=gpt-4o              — default model override
  *   CODEX_API_KEY / ~/.codex/auth.json — Codex auth for codexplan/codexspark
  *
  * GitHub Copilot API (api.githubcopilot.com), OpenAI-compatible:
- *   CLAUDE_CODE_USE_GITHUB=1         — enable GitHub inference (no need for USE_OPENAI)
+ *   SOCC_USE_GITHUB=1         — enable GitHub inference (no need for USE_OPENAI)
  *   GITHUB_TOKEN or GH_TOKEN         — Copilot API token (mapped to Bearer auth)
  *   OPENAI_MODEL                     — optional; use github:copilot or openai/gpt-4.1 style IDs
  */
@@ -77,7 +77,7 @@ const COPILOT_HEADERS: Record<string, string> = {
 }
 
 function isGithubModelsMode(): boolean {
-  return isEnvTruthy(process.env.CLAUDE_CODE_USE_GITHUB)
+  return isEnvTruthy(process.env.SOCC_USE_GITHUB)
 }
 
 function filterAnthropicHeaders(
@@ -256,7 +256,7 @@ function convertContentBlocks(
 
 function isGeminiMode(): boolean {
   return (
-    isEnvTruthy(process.env.CLAUDE_CODE_USE_GEMINI) ||
+    isEnvTruthy(process.env.SOCC_USE_GEMINI) ||
     hasGeminiApiHost(process.env.OPENAI_BASE_URL)
   )
 }
@@ -274,7 +274,7 @@ function convertMessages(
   }
 
   for (const msg of messages) {
-    // Claude Code wraps messages in { role, message: { role, content } }
+    // SOCC wraps messages in { role, message: { role, content } }
     const inner = msg.message ?? msg
     const role = (inner as { role?: string }).role ?? msg.role
     const content = (inner as { content?: unknown }).content
@@ -1578,7 +1578,7 @@ export function createOpenAIShimClient(options: {
 
   // When Gemini provider is active, map Gemini env vars to OpenAI-compatible ones
   // so the existing providerConfig.ts infrastructure picks them up correctly.
-  if (isEnvTruthy(process.env.CLAUDE_CODE_USE_GEMINI)) {
+  if (isEnvTruthy(process.env.SOCC_USE_GEMINI)) {
     process.env.OPENAI_BASE_URL ??=
       process.env.GEMINI_BASE_URL ??
       'https://generativelanguage.googleapis.com/v1beta/openai'
@@ -1590,7 +1590,7 @@ export function createOpenAIShimClient(options: {
     if (process.env.GEMINI_MODEL && !process.env.OPENAI_MODEL) {
       process.env.OPENAI_MODEL = process.env.GEMINI_MODEL
     }
-  } else if (isEnvTruthy(process.env.CLAUDE_CODE_USE_GITHUB)) {
+  } else if (isEnvTruthy(process.env.SOCC_USE_GITHUB)) {
     process.env.OPENAI_BASE_URL ??= GITHUB_COPILOT_BASE
     process.env.OPENAI_API_KEY ??=
       process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN ?? ''

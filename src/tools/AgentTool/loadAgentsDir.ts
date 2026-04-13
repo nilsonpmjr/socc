@@ -82,7 +82,7 @@ export function getCanonicalSoccAgentFilePath(): string | null {
   if (!packageRoot) return null
 
   const candidates = [
-    join(packageRoot, '.claude', 'agents', 'socc.md'),
+    join(packageRoot, '.socc', 'agents', 'socc.md'),
     join(packageRoot, 'socc-canonical', '.agents', 'generated', 'socc-agent.md'),
   ]
 
@@ -371,7 +371,7 @@ async function initializeAgentMemorySnapshots(
 export const getAgentDefinitionsWithOverrides = memoize(
   async (cwd: string): Promise<AgentDefinitionsResult> => {
     // Simple mode: skip custom agents, only return built-ins
-    if (isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE)) {
+    if (isEnvTruthy(process.env.SOCC_SIMPLE)) {
       const builtInAgents = getBuiltInAgents()
       return {
         activeAgents: builtInAgents,

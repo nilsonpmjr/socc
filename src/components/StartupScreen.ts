@@ -71,9 +71,9 @@ const LOGO_SOCC = [
 // ─── Provider detection ───────────────────────────────────────────────────────
 
 function detectProvider(): { name: string; model: string; baseUrl: string; isLocal: boolean } {
-  const useGemini = process.env.CLAUDE_CODE_USE_GEMINI === '1' || process.env.CLAUDE_CODE_USE_GEMINI === 'true'
-  const useGithub = process.env.CLAUDE_CODE_USE_GITHUB === '1' || process.env.CLAUDE_CODE_USE_GITHUB === 'true'
-  const useOpenAI = process.env.CLAUDE_CODE_USE_OPENAI === '1' || process.env.CLAUDE_CODE_USE_OPENAI === 'true'
+  const useGemini = process.env.SOCC_USE_GEMINI === '1' || process.env.SOCC_USE_GEMINI === 'true'
+  const useGithub = process.env.SOCC_USE_GITHUB === '1' || process.env.SOCC_USE_GITHUB === 'true'
+  const useOpenAI = process.env.SOCC_USE_OPENAI === '1' || process.env.SOCC_USE_OPENAI === 'true'
 
   if (useGemini) {
     const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash'
@@ -129,7 +129,7 @@ function detectProvider(): { name: string; model: string; baseUrl: string; isLoc
   }
 
   // Default: Anthropic
-  const model = process.env.ANTHROPIC_MODEL || process.env.CLAUDE_MODEL || 'claude-sonnet-4-6'
+  const model = process.env.ANTHROPIC_MODEL || process.env.SOCC_MODEL || 'claude-sonnet-4-6'
   return { name: 'Anthropic', model, baseUrl: 'https://api.anthropic.com', isLocal: false }
 }
 

@@ -150,7 +150,7 @@ function getAutoModeDumpDir(): string {
 
 /**
  * Dump the auto mode classifier request and response bodies to the per-user
- * claude temp directory when CLAUDE_CODE_DUMP_AUTO_MODE is set. Files are
+ * claude temp directory when SOCC_DUMP_AUTO_MODE is set. Files are
  * named by unix timestamp: {timestamp}[.{suffix}].req.json and .res.json
  */
 async function maybeDumpAutoMode(
@@ -160,7 +160,7 @@ async function maybeDumpAutoMode(
   suffix?: string,
 ): Promise<void> {
   if (process.env.USER_TYPE !== 'ant') return
-  if (!isEnvTruthy(process.env.CLAUDE_CODE_DUMP_AUTO_MODE)) return
+  if (!isEnvTruthy(process.env.SOCC_DUMP_AUTO_MODE)) return
   const base = suffix ? `${timestamp}.${suffix}` : `${timestamp}`
   try {
     await mkdir(getAutoModeDumpDir(), { recursive: true })
@@ -572,14 +572,14 @@ export function buildTranscriptForClassifier(
  * Reads from bootstrap/state.ts cache (populated by context.ts) instead of
  * importing claudemd.ts directly — claudemd → permissions/filesystem →
  * permissions → yoloClassifier is a cycle. context.ts already gates on
- * CLAUDE_CODE_DISABLE_CLAUDE_MDS and normalizes '' to null before caching.
+ * SOCC_DISABLE_CLAUDE_MDS and normalizes '' to null before caching.
  * If the cache is unpopulated (tests, or an entrypoint that never calls
  * getUserContext), the classifier proceeds without CLAUDE.md — same as
  * pre-PR behavior.
  */
 function buildClaudeMdMessage(): Anthropic.MessageParam | null {
-  const claudeMd = getCachedClaudeMdContent()
-  if (claudeMd === null) return null
+  const soccMd = getCachedClaudeMdContent()
+  if (soccMd === null) return null
   return {
     role: 'user',
     content: [
@@ -589,7 +589,7 @@ function buildClaudeMdMessage(): Anthropic.MessageParam | null {
           `The following is the user's CLAUDE.md configuration. These are ` +
           `instructions the user provided to the agent and should be treated ` +
           `as part of the user's intent when evaluating actions.\n\n` +
-          `<user_claude_md>\n${claudeMd}\n</user_claude_md>`,
+          `<user_claude_md>\n${soccMd}\n</user_claude_md>`,
         cache_control: getCacheControl({ querySource: 'auto_mode' }),
       },
     ],
@@ -1156,9 +1156,9 @@ export async function classifyYoloAction(
     tools,
     transcriptBudget,
   )
-  const claudeMdMessage = buildClaudeMdMessage()
-  const prefixMessages: Anthropic.MessageParam[] = claudeMdMessage
-    ? [claudeMdMessage]
+  const soccMdMessage = buildClaudeMdMessage()
+  const prefixMessages: Anthropic.MessageParam[] = soccMdMessage
+    ? [soccMdMessage]
     : []
 
   const toolCallsLength =
@@ -1441,7 +1441,7 @@ type AutoModeConfig = {
  */
 function getClassifierModel(): string {
   if (process.env.USER_TYPE === 'ant') {
-    const envModel = process.env.CLAUDE_CODE_AUTO_MODE_MODEL
+    const envModel = process.env.SOCC_AUTO_MODE_MODEL
     if (envModel) return envModel
   }
   const config = getFeatureValue_CACHED_MAY_BE_STALE(
@@ -1464,7 +1464,7 @@ function resolveTwoStageClassifier():
   | 'thinking'
   | undefined {
   if (process.env.USER_TYPE === 'ant') {
-    const env = process.env.CLAUDE_CODE_TWO_STAGE_CLASSIFIER
+    const env = process.env.SOCC_TWO_STAGE_CLASSIFIER
     if (env === 'fast' || env === 'thinking') return env
     if (isEnvTruthy(env)) return true
     if (isEnvDefinedFalsy(env)) return false
@@ -1486,7 +1486,7 @@ function isTwoStageClassifierEnabled(): boolean {
 
 function isJsonlTranscriptEnabled(): boolean {
   if (process.env.USER_TYPE === 'ant') {
-    const env = process.env.CLAUDE_CODE_JSONL_TRANSCRIPT
+    const env = process.env.SOCC_JSONL_TRANSCRIPT
     if (isEnvTruthy(env)) return true
     if (isEnvDefinedFalsy(env)) return false
   }

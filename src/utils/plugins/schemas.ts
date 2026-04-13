@@ -637,7 +637,7 @@ const PluginManifestUserConfigSchema = lazySchema(() =>
           .string()
           .regex(
             /^[A-Za-z_]\w*$/,
-            'Option keys must be valid identifiers (letters, digits, underscore; no leading digit) — they become CLAUDE_PLUGIN_OPTION_<KEY> env vars in hooks',
+            'Option keys must be valid identifiers (letters, digits, underscore; no leading digit) — they become SOCC_PLUGIN_OPTION_<KEY> env vars in hooks',
           ),
         PluginUserConfigOptionSchema(),
       )
@@ -879,7 +879,7 @@ const PluginManifestSettingsSchema = lazySchema(() =>
  * still fail, since a typo there is more likely to be an author mistake
  * than a vendor extension. Type mismatches and other validation errors
  * still fail at all levels. For developer feedback on unknown top-level
- * fields, use `claude plugin validate`.
+ * fields, use `socc plugin validate`.
  */
 export const PluginManifestSchema = lazySchema(() =>
   z.object({
@@ -926,7 +926,7 @@ export const MarketplaceSourceSchema = lazySchema(() =>
         .string()
         .optional()
         .describe(
-          'Path to marketplace.json within repo (defaults to .claude-plugin/marketplace.json)',
+          'Path to marketplace.json within repo (defaults to .socc-plugin/marketplace.json)',
         ),
       sparsePaths: z
         .array(z.string())
@@ -934,7 +934,7 @@ export const MarketplaceSourceSchema = lazySchema(() =>
         .describe(
           'Directories to include via git sparse-checkout (cone mode). ' +
             'Use for monorepos where the marketplace lives in a subdirectory. ' +
-            'Example: [".claude-plugin", "plugins"]. ' +
+            'Example: [".socc-plugin", "plugins"]. ' +
             'If omitted, the full repository is cloned.',
         ),
     }),
@@ -958,7 +958,7 @@ export const MarketplaceSourceSchema = lazySchema(() =>
         .string()
         .optional()
         .describe(
-          'Path to marketplace.json within repo (defaults to .claude-plugin/marketplace.json)',
+          'Path to marketplace.json within repo (defaults to .socc-plugin/marketplace.json)',
         ),
       sparsePaths: z
         .array(z.string())
@@ -966,7 +966,7 @@ export const MarketplaceSourceSchema = lazySchema(() =>
         .describe(
           'Directories to include via git sparse-checkout (cone mode). ' +
             'Use for monorepos where the marketplace lives in a subdirectory. ' +
-            'Example: [".claude-plugin", "plugins"]. ' +
+            'Example: [".socc-plugin", "plugins"]. ' +
             'If omitted, the full repository is cloned.',
         ),
     }),
@@ -984,7 +984,7 @@ export const MarketplaceSourceSchema = lazySchema(() =>
       source: z.literal('directory'),
       path: z
         .string()
-        .describe('Local directory containing .claude-plugin/marketplace.json'),
+        .describe('Local directory containing .socc-plugin/marketplace.json'),
     }),
     z.object({
       source: z.literal('hostPattern'),
@@ -1062,7 +1062,7 @@ export const gitSha = lazySchema(() =>
 export const PluginSourceSchema = lazySchema(() =>
   z.union([
     RelativePath().describe(
-      'Path to the plugin root, relative to the marketplace root (the directory containing .claude-plugin/, not .claude-plugin/ itself)',
+      'Path to the plugin root, relative to the marketplace root (the directory containing .socc-plugin/, not .socc-plugin/ itself)',
     ),
     z
       .object({
@@ -1440,7 +1440,7 @@ export const SettingsPluginEntrySchema = lazySchema(() =>
  *   "version": "1.2.0",
  *   "installedAt": "2024-01-15T10:30:00Z",
  *   "marketplace": "anthropic-tools",
- *   "installPath": "/home/user/.claude/plugins/installed/anthropic-tools/code-formatter"
+ *   "installPath": "/home/user/.socc/plugins/installed/anthropic-tools/code-formatter"
  * }
  */
 export const InstalledPluginSchema = lazySchema(() =>
@@ -1496,9 +1496,9 @@ export const InstalledPluginsFileSchemaV1 = lazySchema(() =>
  *
  * Plugins can be installed at different scopes:
  * - managed: Enterprise/system-wide (read-only, platform-specific paths)
- * - user: User's global settings (~/.claude/settings.json)
- * - project: Shared project settings ($project/.claude/settings.json)
- * - local: Personal project overrides ($project/.claude/settings.local.json)
+ * - user: User's global settings (~/.socc/settings.json)
+ * - project: Shared project settings ($project/.socc/settings.json)
+ * - local: Personal project overrides ($project/.socc/settings.local.json)
  *
  * Note: 'flag' scope plugins (from --settings) are session-only and
  * are NOT persisted to installed_plugins.json.
@@ -1585,7 +1585,7 @@ export const InstalledPluginsFileSchema = lazySchema(() =>
  * Example entry:
  * {
  *   "source": { "source": "github", "repo": "anthropic/claude-plugins" },
- *   "installLocation": "/home/user/.claude/plugins/cached/marketplaces/anthropic-tools",
+ *   "installLocation": "/home/user/.socc/plugins/cached/marketplaces/anthropic-tools",
  *   "lastUpdated": "2024-01-15T10:30:00Z"
  * }
  */

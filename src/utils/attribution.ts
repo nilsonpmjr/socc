@@ -53,7 +53,7 @@ export function getAttributionTexts(): AttributionTexts {
   }
 
   if (getClientType() === 'remote') {
-    const remoteSessionId = process.env.CLAUDE_CODE_REMOTE_SESSION_ID
+    const remoteSessionId = process.env.SOCC_REMOTE_SESSION_ID
     if (remoteSessionId) {
       const ingressUrl = process.env.SESSION_INGRESS_URL
       // Skip for local dev - URLs won't persist
@@ -75,11 +75,11 @@ export function getAttributionTexts(): AttributionTexts {
       ? getPublicModelName(model)
       : 'Claude Opus 4.6'
   const defaultAttribution =
-    '🤖 Generated with [SOCC](https://github.com/Gitlawb/openclaude)'
+    '🤖 Generated with [SOCC](https://github.com/nilsonpmjr/socc)'
   const coAuthorDomain =
     getAPIProvider() === 'firstParty' ? 'anthropic.com' : 'gitlawb.com'
   const defaultCommit = isEnvTruthy(
-    process.env.OPENCLAUDE_DISABLE_CO_AUTHORED_BY,
+    process.env.SOCC_DISABLE_CO_AUTHORED_BY,
   )
     ? ''
     : `Co-Authored-By: ${modelName} <noreply@${coAuthorDomain}>`
@@ -307,7 +307,7 @@ export async function getEnhancedPRAttribution(
   }
 
   if (getClientType() === 'remote') {
-    const remoteSessionId = process.env.CLAUDE_CODE_REMOTE_SESSION_ID
+    const remoteSessionId = process.env.SOCC_REMOTE_SESSION_ID
     if (remoteSessionId) {
       const ingressUrl = process.env.SESSION_INGRESS_URL
       // Skip for local dev - URLs won't persist
@@ -331,7 +331,7 @@ export async function getEnhancedPRAttribution(
   }
 
   const defaultAttribution =
-    '🤖 Generated with [SOCC](https://github.com/Gitlawb/openclaude)'
+    '🤖 Generated with [SOCC](https://github.com/nilsonpmjr/socc)'
 
   // Get AppState first
   const appState = getAppState()
@@ -354,10 +354,10 @@ export async function getEnhancedPRAttribution(
       isInternalModelRepo(),
     ])
 
-  const claudePercent = attributionData?.summary.claudePercent ?? 0
+  const soccPercent = attributionData?.summary.soccPercent ?? 0
 
   logForDebugging(
-    `PR Attribution: claudePercent: ${claudePercent}, promptCount: ${promptCount}, memoryAccessCount: ${memoryAccessCount}`,
+    `PR Attribution: soccPercent: ${soccPercent}, promptCount: ${promptCount}, memoryAccessCount: ${memoryAccessCount}`,
   )
 
   // Get short model name, sanitized for non-internal repos
@@ -367,7 +367,7 @@ export async function getEnhancedPRAttribution(
     : sanitizeModelName(rawModelName)
 
   // If no attribution data, return default
-  if (claudePercent === 0 && promptCount === 0 && memoryAccessCount === 0) {
+  if (soccPercent === 0 && promptCount === 0 && memoryAccessCount === 0) {
     logForDebugging('PR Attribution: returning default (no data)')
     return defaultAttribution
   }
@@ -377,7 +377,7 @@ export async function getEnhancedPRAttribution(
     memoryAccessCount > 0
       ? `, ${memoryAccessCount} ${memoryAccessCount === 1 ? 'memory' : 'memories'} recalled`
       : ''
-  const summary = `🤖 Generated with [SOCC](https://github.com/Gitlawb/openclaude) (${claudePercent}% ${promptCount}-shotted by ${shortModelName}${memSuffix})`
+  const summary = `🤖 Generated with [SOCC](https://github.com/nilsonpmjr/socc) (${soccPercent}% ${promptCount}-shotted by ${shortModelName}${memSuffix})`
 
   // Append trailer lines for squash-merge survival. Only for allowlisted repos
   // (INTERNAL_MODEL_REPOS) and only in builds with COMMIT_ATTRIBUTION enabled —

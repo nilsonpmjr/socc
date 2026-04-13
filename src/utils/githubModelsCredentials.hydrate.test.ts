@@ -7,12 +7,12 @@ import { afterEach, describe, expect, mock, test } from 'bun:test'
 
 describe('hydrateGithubModelsTokenFromSecureStorage', () => {
   const orig = {
-    CLAUDE_CODE_USE_GITHUB: process.env.CLAUDE_CODE_USE_GITHUB,
+    SOCC_USE_GITHUB: process.env.SOCC_USE_GITHUB,
     GITHUB_TOKEN: process.env.GITHUB_TOKEN,
     GH_TOKEN: process.env.GH_TOKEN,
-    CLAUDE_CODE_GITHUB_TOKEN_HYDRATED:
-      process.env.CLAUDE_CODE_GITHUB_TOKEN_HYDRATED,
-    CLAUDE_CODE_SIMPLE: process.env.CLAUDE_CODE_SIMPLE,
+    SOCC_GITHUB_TOKEN_HYDRATED:
+      process.env.SOCC_GITHUB_TOKEN_HYDRATED,
+    SOCC_SIMPLE: process.env.SOCC_SIMPLE,
   }
 
   afterEach(() => {
@@ -27,10 +27,10 @@ describe('hydrateGithubModelsTokenFromSecureStorage', () => {
   })
 
   test('sets GITHUB_TOKEN from secure storage when USE_GITHUB and env token empty', async () => {
-    process.env.CLAUDE_CODE_USE_GITHUB = '1'
+    process.env.SOCC_USE_GITHUB = '1'
     delete process.env.GITHUB_TOKEN
     delete process.env.GH_TOKEN
-    delete process.env.CLAUDE_CODE_SIMPLE
+    delete process.env.SOCC_SIMPLE
 
     mock.module('./secureStorage/index.js', () => ({
       getSecureStorage: () => ({
@@ -45,13 +45,13 @@ describe('hydrateGithubModelsTokenFromSecureStorage', () => {
     )
     hydrateGithubModelsTokenFromSecureStorage()
     expect(process.env.GITHUB_TOKEN).toBe('stored-secret')
-    expect(process.env.CLAUDE_CODE_GITHUB_TOKEN_HYDRATED).toBe('1')
+    expect(process.env.SOCC_GITHUB_TOKEN_HYDRATED).toBe('1')
   })
 
   test('does not override existing GITHUB_TOKEN', async () => {
-    process.env.CLAUDE_CODE_USE_GITHUB = '1'
+    process.env.SOCC_USE_GITHUB = '1'
     process.env.GITHUB_TOKEN = 'already'
-    delete process.env.CLAUDE_CODE_GITHUB_TOKEN_HYDRATED
+    delete process.env.SOCC_GITHUB_TOKEN_HYDRATED
 
     mock.module('./secureStorage/index.js', () => ({
       getSecureStorage: () => ({
@@ -66,6 +66,6 @@ describe('hydrateGithubModelsTokenFromSecureStorage', () => {
     )
     hydrateGithubModelsTokenFromSecureStorage()
     expect(process.env.GITHUB_TOKEN).toBe('already')
-    expect(process.env.CLAUDE_CODE_GITHUB_TOKEN_HYDRATED).toBeUndefined()
+    expect(process.env.SOCC_GITHUB_TOKEN_HYDRATED).toBeUndefined()
   })
 })

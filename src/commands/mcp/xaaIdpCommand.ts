@@ -235,7 +235,7 @@ export function registerMcpXaaIdpCommand(mcp: Command): void {
         `Client secret: ${hasSecret ? '(stored in keychain)' : '(not set — PKCE-only)'}\n`,
       )
       process.stdout.write(
-        `Logged in:     ${hasIdToken ? 'yes (id_token cached)' : "no — run 'claude mcp xaa login'"}\n`,
+        `Logged in:     ${hasIdToken ? 'yes (id_token cached)' : "no — run 'socc mcp xaa login'"}\n`,
       )
       cliOk()
     })

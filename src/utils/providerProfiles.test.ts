@@ -9,14 +9,14 @@ async function importFreshProvidersModule() {
 const originalEnv = { ...process.env }
 
 const RESTORED_KEYS = [
-  'CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED',
-  'CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED_ID',
-  'CLAUDE_CODE_USE_OPENAI',
-  'CLAUDE_CODE_USE_GEMINI',
-  'CLAUDE_CODE_USE_GITHUB',
-  'CLAUDE_CODE_USE_BEDROCK',
-  'CLAUDE_CODE_USE_VERTEX',
-  'CLAUDE_CODE_USE_FOUNDRY',
+  'SOCC_PROVIDER_PROFILE_ENV_APPLIED',
+  'SOCC_PROVIDER_PROFILE_ENV_APPLIED_ID',
+  'SOCC_USE_OPENAI',
+  'SOCC_USE_GEMINI',
+  'SOCC_USE_GITHUB',
+  'SOCC_USE_BEDROCK',
+  'SOCC_USE_VERTEX',
+  'SOCC_USE_FOUNDRY',
   'OPENAI_BASE_URL',
   'OPENAI_API_BASE',
   'OPENAI_MODEL',
@@ -102,17 +102,17 @@ describe('applyProviderProfileToProcessEnv', () => {
   test('openai profile clears competing gemini/github flags', async () => {
     const { applyProviderProfileToProcessEnv } =
       await importFreshProviderProfileModules()
-    process.env.CLAUDE_CODE_USE_GEMINI = '1'
-    process.env.CLAUDE_CODE_USE_GITHUB = '1'
+    process.env.SOCC_USE_GEMINI = '1'
+    process.env.SOCC_USE_GITHUB = '1'
 
     applyProviderProfileToProcessEnv(buildProfile())
     const { getAPIProvider: getFreshAPIProvider } =
       await importFreshProvidersModule()
 
-    expect(process.env.CLAUDE_CODE_USE_GEMINI).toBeUndefined()
-    expect(process.env.CLAUDE_CODE_USE_GITHUB).toBeUndefined()
-    expect(String(process.env.CLAUDE_CODE_USE_OPENAI)).toBe('1')
-    expect(process.env.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED_ID).toBe(
+    expect(process.env.SOCC_USE_GEMINI).toBeUndefined()
+    expect(process.env.SOCC_USE_GITHUB).toBeUndefined()
+    expect(String(process.env.SOCC_USE_OPENAI)).toBe('1')
+    expect(process.env.SOCC_PROVIDER_PROFILE_ENV_APPLIED_ID).toBe(
       'provider_test',
     )
     expect(getFreshAPIProvider()).toBe('openai')
@@ -121,8 +121,8 @@ describe('applyProviderProfileToProcessEnv', () => {
   test('anthropic profile clears competing gemini/github flags', async () => {
     const { applyProviderProfileToProcessEnv } =
       await importFreshProviderProfileModules()
-    process.env.CLAUDE_CODE_USE_GEMINI = '1'
-    process.env.CLAUDE_CODE_USE_GITHUB = '1'
+    process.env.SOCC_USE_GEMINI = '1'
+    process.env.SOCC_USE_GITHUB = '1'
 
     applyProviderProfileToProcessEnv(
       buildProfile({
@@ -134,9 +134,9 @@ describe('applyProviderProfileToProcessEnv', () => {
     const { getAPIProvider: getFreshAPIProvider } =
       await importFreshProvidersModule()
 
-    expect(process.env.CLAUDE_CODE_USE_GEMINI).toBeUndefined()
-    expect(process.env.CLAUDE_CODE_USE_GITHUB).toBeUndefined()
-    expect(process.env.CLAUDE_CODE_USE_OPENAI).toBeUndefined()
+    expect(process.env.SOCC_USE_GEMINI).toBeUndefined()
+    expect(process.env.SOCC_USE_GITHUB).toBeUndefined()
+    expect(process.env.SOCC_USE_OPENAI).toBeUndefined()
     expect(getFreshAPIProvider()).toBe('firstParty')
   })
 })
@@ -145,7 +145,7 @@ describe('applyActiveProviderProfileFromConfig', () => {
   test('does not override explicit startup provider selection', async () => {
     const { applyActiveProviderProfileFromConfig } =
       await importFreshProviderProfileModules()
-    process.env.CLAUDE_CODE_USE_OPENAI = '1'
+    process.env.SOCC_USE_OPENAI = '1'
     process.env.OPENAI_BASE_URL = 'http://localhost:11434/v1'
     process.env.OPENAI_MODEL = 'qwen2.5:3b'
 
@@ -168,8 +168,8 @@ describe('applyActiveProviderProfileFromConfig', () => {
   test('does not override explicit startup selection when profile marker is stale', async () => {
     const { applyActiveProviderProfileFromConfig } =
       await importFreshProviderProfileModules()
-    process.env.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED = '1'
-    process.env.CLAUDE_CODE_USE_OPENAI = '1'
+    process.env.SOCC_PROVIDER_PROFILE_ENV_APPLIED = '1'
+    process.env.SOCC_USE_OPENAI = '1'
     process.env.OPENAI_BASE_URL = 'http://localhost:11434/v1'
     process.env.OPENAI_MODEL = 'qwen2.5:3b'
 
@@ -185,7 +185,7 @@ describe('applyActiveProviderProfileFromConfig', () => {
     } as any)
 
     expect(applied).toBeUndefined()
-    expect(String(process.env.CLAUDE_CODE_USE_OPENAI)).toBe('1')
+    expect(String(process.env.SOCC_USE_OPENAI)).toBe('1')
     expect(process.env.OPENAI_BASE_URL).toBe('http://localhost:11434/v1')
     expect(process.env.OPENAI_MODEL).toBe('qwen2.5:3b')
   })
@@ -231,7 +231,7 @@ describe('applyActiveProviderProfileFromConfig', () => {
       }),
     )
 
-    process.env.CLAUDE_CODE_USE_GITHUB = '1'
+    process.env.SOCC_USE_GITHUB = '1'
     process.env.OPENAI_MODEL = 'github:copilot'
 
     const applied = applyActiveProviderProfileFromConfig({
@@ -246,19 +246,19 @@ describe('applyActiveProviderProfileFromConfig', () => {
     } as any)
 
     expect(applied).toBeUndefined()
-    expect(process.env.CLAUDE_CODE_USE_GITHUB).toBe('1')
+    expect(process.env.SOCC_USE_GITHUB).toBe('1')
     expect(process.env.OPENAI_MODEL).toBe('github:copilot')
   })
 
   test('applies active profile when no explicit provider is selected', async () => {
     const { applyActiveProviderProfileFromConfig } =
       await importFreshProviderProfileModules()
-    delete process.env.CLAUDE_CODE_USE_OPENAI
-    delete process.env.CLAUDE_CODE_USE_GEMINI
-    delete process.env.CLAUDE_CODE_USE_GITHUB
-    delete process.env.CLAUDE_CODE_USE_BEDROCK
-    delete process.env.CLAUDE_CODE_USE_VERTEX
-    delete process.env.CLAUDE_CODE_USE_FOUNDRY
+    delete process.env.SOCC_USE_OPENAI
+    delete process.env.SOCC_USE_GEMINI
+    delete process.env.SOCC_USE_GITHUB
+    delete process.env.SOCC_USE_BEDROCK
+    delete process.env.SOCC_USE_VERTEX
+    delete process.env.SOCC_USE_FOUNDRY
 
     process.env.OPENAI_BASE_URL = 'http://localhost:11434/v1'
     process.env.OPENAI_MODEL = 'qwen2.5:3b'
@@ -275,7 +275,7 @@ describe('applyActiveProviderProfileFromConfig', () => {
     } as any)
 
     expect(applied?.id).toBe('saved_openai')
-    expect(String(process.env.CLAUDE_CODE_USE_OPENAI)).toBe('1')
+    expect(String(process.env.SOCC_USE_OPENAI)).toBe('1')
     expect(process.env.OPENAI_BASE_URL).toBe('https://api.openai.com/v1')
     expect(process.env.OPENAI_MODEL).toBe('gpt-4o')
   })
@@ -306,7 +306,7 @@ describe('persistActiveProviderProfileModel', () => {
     expect(updated?.id).toBe(activeProfile.id)
     expect(updated?.model).toBe('minimax-m2.5:cloud')
     expect(process.env.OPENAI_MODEL).toBe('minimax-m2.5:cloud')
-    expect(process.env.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED_ID).toBe(
+    expect(process.env.SOCC_PROVIDER_PROFILE_ENV_APPLIED_ID).toBe(
       activeProfile.id,
     )
 
@@ -332,10 +332,10 @@ describe('persistActiveProviderProfileModel', () => {
       activeProviderProfileId: activeProfile.id,
     }))
 
-    process.env.CLAUDE_CODE_USE_OPENAI = '1'
+    process.env.SOCC_USE_OPENAI = '1'
     process.env.OPENAI_MODEL = 'cli-model'
-    delete process.env.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED
-    delete process.env.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED_ID
+    delete process.env.SOCC_PROVIDER_PROFILE_ENV_APPLIED
+    delete process.env.SOCC_PROVIDER_PROFILE_ENV_APPLIED_ID
 
     persistActiveProviderProfileModel('minimax-m2.5:cloud')
 
@@ -385,14 +385,14 @@ describe('deleteProviderProfile', () => {
     expect(result.removed).toBe(true)
     expect(result.activeProfileId).toBeUndefined()
 
-    expect(process.env.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED).toBeUndefined()
+    expect(process.env.SOCC_PROVIDER_PROFILE_ENV_APPLIED).toBeUndefined()
 
-    expect(process.env.CLAUDE_CODE_USE_OPENAI).toBeUndefined()
-    expect(process.env.CLAUDE_CODE_USE_GEMINI).toBeUndefined()
-    expect(process.env.CLAUDE_CODE_USE_GITHUB).toBeUndefined()
-    expect(process.env.CLAUDE_CODE_USE_BEDROCK).toBeUndefined()
-    expect(process.env.CLAUDE_CODE_USE_VERTEX).toBeUndefined()
-    expect(process.env.CLAUDE_CODE_USE_FOUNDRY).toBeUndefined()
+    expect(process.env.SOCC_USE_OPENAI).toBeUndefined()
+    expect(process.env.SOCC_USE_GEMINI).toBeUndefined()
+    expect(process.env.SOCC_USE_GITHUB).toBeUndefined()
+    expect(process.env.SOCC_USE_BEDROCK).toBeUndefined()
+    expect(process.env.SOCC_USE_VERTEX).toBeUndefined()
+    expect(process.env.SOCC_USE_FOUNDRY).toBeUndefined()
 
     expect(process.env.OPENAI_BASE_URL).toBeUndefined()
     expect(process.env.OPENAI_API_BASE).toBeUndefined()
@@ -406,7 +406,7 @@ describe('deleteProviderProfile', () => {
 
   test('deleting final profile preserves explicit startup provider env', async () => {
     const { deleteProviderProfile } = await importFreshProviderProfileModules()
-    process.env.CLAUDE_CODE_USE_OPENAI = '1'
+    process.env.SOCC_USE_OPENAI = '1'
     process.env.OPENAI_BASE_URL = 'http://localhost:11434/v1'
     process.env.OPENAI_MODEL = 'qwen2.5:3b'
 
@@ -421,8 +421,8 @@ describe('deleteProviderProfile', () => {
     expect(result.removed).toBe(true)
     expect(result.activeProfileId).toBeUndefined()
 
-    expect(process.env.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED).toBeUndefined()
-    expect(String(process.env.CLAUDE_CODE_USE_OPENAI)).toBe('1')
+    expect(process.env.SOCC_PROVIDER_PROFILE_ENV_APPLIED).toBeUndefined()
+    expect(String(process.env.SOCC_USE_OPENAI)).toBe('1')
     expect(process.env.OPENAI_BASE_URL).toBe('http://localhost:11434/v1')
     expect(process.env.OPENAI_MODEL).toBe('qwen2.5:3b')
   })

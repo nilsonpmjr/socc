@@ -16,7 +16,7 @@ function getOauthConfigType(): OauthConfigType {
 }
 
 export function fileSuffixForOauthConfig(): string {
-  if (process.env.CLAUDE_CODE_CUSTOM_OAUTH_URL) {
+  if (process.env.SOCC_CUSTOM_OAUTH_URL) {
     return '-custom-oauth'
   }
   switch (getOauthConfigType()) {
@@ -30,21 +30,21 @@ export function fileSuffixForOauthConfig(): string {
   }
 }
 
-export const CLAUDE_AI_INFERENCE_SCOPE = 'user:inference' as const
-export const CLAUDE_AI_PROFILE_SCOPE = 'user:profile' as const
+export const SOCC_REMOTE_INFERENCE_SCOPE = 'user:inference' as const
+export const SOCC_REMOTE_PROFILE_SCOPE = 'user:profile' as const
 const CONSOLE_SCOPE = 'org:create_api_key' as const
 export const OAUTH_BETA_HEADER = 'oauth-2025-04-20' as const
 
 // Console OAuth scopes - for API key creation via Console
 export const CONSOLE_OAUTH_SCOPES = [
   CONSOLE_SCOPE,
-  CLAUDE_AI_PROFILE_SCOPE,
+  SOCC_REMOTE_PROFILE_SCOPE,
 ] as const
 
 // Claude.ai OAuth scopes - for Claude.ai subscribers (Pro/Max/Team/Enterprise)
-export const CLAUDE_AI_OAUTH_SCOPES = [
-  CLAUDE_AI_PROFILE_SCOPE,
-  CLAUDE_AI_INFERENCE_SCOPE,
+export const SOCC_REMOTE_OAUTH_SCOPES = [
+  SOCC_REMOTE_PROFILE_SCOPE,
+  SOCC_REMOTE_INFERENCE_SCOPE,
   'user:sessions:claude_code',
   'user:mcp_servers',
   'user:file_upload',
@@ -54,25 +54,25 @@ export const CLAUDE_AI_OAUTH_SCOPES = [
 // When logging in, request all scopes in order to handle both Console -> Claude.ai redirect
 // Ensure that `OAuthConsentPage` in apps repo is kept in sync with this list.
 export const ALL_OAUTH_SCOPES = Array.from(
-  new Set([...CONSOLE_OAUTH_SCOPES, ...CLAUDE_AI_OAUTH_SCOPES]),
+  new Set([...CONSOLE_OAUTH_SCOPES, ...SOCC_REMOTE_OAUTH_SCOPES]),
 )
 
 type OauthConfig = {
   BASE_API_URL: string
   CONSOLE_AUTHORIZE_URL: string
-  CLAUDE_AI_AUTHORIZE_URL: string
+  SOCC_REMOTE_AUTHORIZE_URL: string
   /**
-   * The claude.ai web origin. Separate from CLAUDE_AI_AUTHORIZE_URL because
+   * The claude.ai web origin. Separate from SOCC_REMOTE_AUTHORIZE_URL because
    * that now routes through claude.com/cai/* for attribution — deriving
    * .origin from it would give claude.com, breaking links to /code,
    * /settings/connectors, and other claude.ai web pages.
    */
-  CLAUDE_AI_ORIGIN: string
+  SOCC_REMOTE_ORIGIN: string
   TOKEN_URL: string
   API_KEY_URL: string
   ROLES_URL: string
   CONSOLE_SUCCESS_URL: string
-  CLAUDEAI_SUCCESS_URL: string
+  SOCC_REMOTE_SUCCESS_URL: string
   MANUAL_REDIRECT_URL: string
   CLIENT_ID: string
   OAUTH_FILE_SUFFIX: string
@@ -86,14 +86,14 @@ const PROD_OAUTH_CONFIG = {
   CONSOLE_AUTHORIZE_URL: 'https://platform.claude.com/oauth/authorize',
   // Bounces through claude.com/cai/* so CLI sign-ins connect to claude.com
   // visits for attribution. 307s to claude.ai/oauth/authorize in two hops.
-  CLAUDE_AI_AUTHORIZE_URL: 'https://claude.com/cai/oauth/authorize',
-  CLAUDE_AI_ORIGIN: 'https://claude.ai',
+  SOCC_REMOTE_AUTHORIZE_URL: 'https://claude.com/cai/oauth/authorize',
+  SOCC_REMOTE_ORIGIN: 'https://claude.ai',
   TOKEN_URL: 'https://platform.claude.com/v1/oauth/token',
   API_KEY_URL: 'https://api.anthropic.com/api/oauth/claude_cli/create_api_key',
   ROLES_URL: 'https://api.anthropic.com/api/oauth/claude_cli/roles',
   CONSOLE_SUCCESS_URL:
     'https://platform.claude.com/buy_credits?returnUrl=/oauth/code/success%3Fapp%3Dclaude-code',
-  CLAUDEAI_SUCCESS_URL:
+  SOCC_REMOTE_SUCCESS_URL:
     'https://platform.claude.com/oauth/code/success?app=claude-code',
   MANUAL_REDIRECT_URL: 'https://platform.claude.com/oauth/code/callback',
   CLIENT_ID: '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
@@ -121,9 +121,9 @@ const STAGING_OAUTH_CONFIG =
         BASE_API_URL: 'https://api-staging.anthropic.com',
         CONSOLE_AUTHORIZE_URL:
           'https://platform.staging.ant.dev/oauth/authorize',
-        CLAUDE_AI_AUTHORIZE_URL:
+        SOCC_REMOTE_AUTHORIZE_URL:
           'https://claude-ai.staging.ant.dev/oauth/authorize',
-        CLAUDE_AI_ORIGIN: 'https://claude-ai.staging.ant.dev',
+        SOCC_REMOTE_ORIGIN: 'https://claude-ai.staging.ant.dev',
         TOKEN_URL: 'https://platform.staging.ant.dev/v1/oauth/token',
         API_KEY_URL:
           'https://api-staging.anthropic.com/api/oauth/claude_cli/create_api_key',
@@ -131,7 +131,7 @@ const STAGING_OAUTH_CONFIG =
           'https://api-staging.anthropic.com/api/oauth/claude_cli/roles',
         CONSOLE_SUCCESS_URL:
           'https://platform.staging.ant.dev/buy_credits?returnUrl=/oauth/code/success%3Fapp%3Dclaude-code',
-        CLAUDEAI_SUCCESS_URL:
+        SOCC_REMOTE_SUCCESS_URL:
           'https://platform.staging.ant.dev/oauth/code/success?app=claude-code',
         MANUAL_REDIRECT_URL:
           'https://platform.staging.ant.dev/oauth/code/callback',
@@ -147,24 +147,24 @@ const STAGING_OAUTH_CONFIG =
 // scripts/claude-localhost override if your layout differs.
 function getLocalOauthConfig(): OauthConfig {
   const api =
-    process.env.CLAUDE_LOCAL_OAUTH_API_BASE?.replace(/\/$/, '') ??
+    process.env.SOCC_LOCAL_OAUTH_API_BASE?.replace(/\/$/, '') ??
     'http://localhost:8000'
   const apps =
-    process.env.CLAUDE_LOCAL_OAUTH_APPS_BASE?.replace(/\/$/, '') ??
+    process.env.SOCC_LOCAL_OAUTH_APPS_BASE?.replace(/\/$/, '') ??
     'http://localhost:4000'
   const consoleBase =
-    process.env.CLAUDE_LOCAL_OAUTH_CONSOLE_BASE?.replace(/\/$/, '') ??
+    process.env.SOCC_LOCAL_OAUTH_CONSOLE_BASE?.replace(/\/$/, '') ??
     'http://localhost:3000'
   return {
     BASE_API_URL: api,
     CONSOLE_AUTHORIZE_URL: `${consoleBase}/oauth/authorize`,
-    CLAUDE_AI_AUTHORIZE_URL: `${apps}/oauth/authorize`,
-    CLAUDE_AI_ORIGIN: apps,
+    SOCC_REMOTE_AUTHORIZE_URL: `${apps}/oauth/authorize`,
+    SOCC_REMOTE_ORIGIN: apps,
     TOKEN_URL: `${api}/v1/oauth/token`,
     API_KEY_URL: `${api}/api/oauth/claude_cli/create_api_key`,
     ROLES_URL: `${api}/api/oauth/claude_cli/roles`,
     CONSOLE_SUCCESS_URL: `${consoleBase}/buy_credits?returnUrl=/oauth/code/success%3Fapp%3Dclaude-code`,
-    CLAUDEAI_SUCCESS_URL: `${consoleBase}/oauth/code/success?app=claude-code`,
+    SOCC_REMOTE_SUCCESS_URL: `${consoleBase}/oauth/code/success?app=claude-code`,
     MANUAL_REDIRECT_URL: `${consoleBase}/oauth/code/callback`,
     CLIENT_ID: '22422756-60c9-4084-8eb7-27705fd5cf9a',
     OAUTH_FILE_SUFFIX: '-local-oauth',
@@ -173,7 +173,7 @@ function getLocalOauthConfig(): OauthConfig {
   }
 }
 
-// Allowed base URLs for CLAUDE_CODE_CUSTOM_OAUTH_URL override.
+// Allowed base URLs for SOCC_CUSTOM_OAUTH_URL override.
 // Only FedStart/PubSec deployments are permitted to prevent OAuth tokens
 // from being sent to arbitrary endpoints.
 const ALLOWED_OAUTH_BASE_URLS = [
@@ -197,32 +197,32 @@ export function getOauthConfig(): OauthConfig {
 
   // Allow overriding all OAuth URLs to point to an approved FedStart deployment.
   // Only allowlisted base URLs are accepted to prevent credential leakage.
-  const oauthBaseUrl = process.env.CLAUDE_CODE_CUSTOM_OAUTH_URL
+  const oauthBaseUrl = process.env.SOCC_CUSTOM_OAUTH_URL
   if (oauthBaseUrl) {
     const base = oauthBaseUrl.replace(/\/$/, '')
     if (!ALLOWED_OAUTH_BASE_URLS.includes(base)) {
       throw new Error(
-        'CLAUDE_CODE_CUSTOM_OAUTH_URL is not an approved endpoint.',
+        'SOCC_CUSTOM_OAUTH_URL is not an approved endpoint.',
       )
     }
     config = {
       ...config,
       BASE_API_URL: base,
       CONSOLE_AUTHORIZE_URL: `${base}/oauth/authorize`,
-      CLAUDE_AI_AUTHORIZE_URL: `${base}/oauth/authorize`,
-      CLAUDE_AI_ORIGIN: base,
+      SOCC_REMOTE_AUTHORIZE_URL: `${base}/oauth/authorize`,
+      SOCC_REMOTE_ORIGIN: base,
       TOKEN_URL: `${base}/v1/oauth/token`,
       API_KEY_URL: `${base}/api/oauth/claude_cli/create_api_key`,
       ROLES_URL: `${base}/api/oauth/claude_cli/roles`,
       CONSOLE_SUCCESS_URL: `${base}/oauth/code/success?app=claude-code`,
-      CLAUDEAI_SUCCESS_URL: `${base}/oauth/code/success?app=claude-code`,
+      SOCC_REMOTE_SUCCESS_URL: `${base}/oauth/code/success?app=claude-code`,
       MANUAL_REDIRECT_URL: `${base}/oauth/code/callback`,
       OAUTH_FILE_SUFFIX: '-custom-oauth',
     }
   }
 
   // Allow CLIENT_ID override via environment variable (e.g., for Xcode integration)
-  const clientIdOverride = process.env.CLAUDE_CODE_OAUTH_CLIENT_ID
+  const clientIdOverride = process.env.SOCC_OAUTH_CLIENT_ID
   if (clientIdOverride) {
     config = {
       ...config,

@@ -60,7 +60,7 @@ The proxy will start at `http://localhost:4000` by default.
 ### Option A: Environment Variables
 
 ```bash
-export CLAUDE_CODE_USE_OPENAI=1
+export SOCC_USE_OPENAI=1
 export OPENAI_BASE_URL=http://localhost:4000
 export OPENAI_API_KEY=<your-master-key-or-placeholder>
 export OPENAI_MODEL=<your-litellm-model-alias>
@@ -113,7 +113,7 @@ litellm_settings:
 litellm --config litellm_config.yaml --port 4000 --master_key sk-my-master-key
 
 # Connect SOCC
-export CLAUDE_CODE_USE_OPENAI=1
+export SOCC_USE_OPENAI=1
 export OPENAI_BASE_URL=http://localhost:4000
 export OPENAI_API_KEY=sk-my-master-key
 export OPENAI_MODEL=gpt-4o

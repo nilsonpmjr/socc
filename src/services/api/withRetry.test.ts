@@ -17,12 +17,12 @@ function makeError(headers: Record<string, string>): APIError {
 const originalEnv = { ...process.env }
 
 const envKeys = [
-  'CLAUDE_CODE_USE_OPENAI',
-  'CLAUDE_CODE_USE_GEMINI',
-  'CLAUDE_CODE_USE_GITHUB',
-  'CLAUDE_CODE_USE_BEDROCK',
-  'CLAUDE_CODE_USE_VERTEX',
-  'CLAUDE_CODE_USE_FOUNDRY',
+  'SOCC_USE_OPENAI',
+  'SOCC_USE_GEMINI',
+  'SOCC_USE_GITHUB',
+  'SOCC_USE_BEDROCK',
+  'SOCC_USE_VERTEX',
+  'SOCC_USE_FOUNDRY',
   'OPENAI_MODEL',
   'OPENAI_BASE_URL',
   'OPENAI_API_BASE',
@@ -134,7 +134,7 @@ describe('getRateLimitResetDelayMs - Anthropic (firstParty)', () => {
 
 describe('getRateLimitResetDelayMs - OpenAI provider', () => {
   test('reads x-ratelimit-reset-requests duration string', async () => {
-    process.env.CLAUDE_CODE_USE_OPENAI = '1'
+    process.env.SOCC_USE_OPENAI = '1'
     const { getRateLimitResetDelayMs } =
       await importFreshWithRetryModule('openai')
     const error = makeError({ 'x-ratelimit-reset-requests': '30s' })
@@ -143,7 +143,7 @@ describe('getRateLimitResetDelayMs - OpenAI provider', () => {
   })
 
   test('reads x-ratelimit-reset-tokens and picks the larger delay', async () => {
-    process.env.CLAUDE_CODE_USE_OPENAI = '1'
+    process.env.SOCC_USE_OPENAI = '1'
     const { getRateLimitResetDelayMs } =
       await importFreshWithRetryModule('openai')
     const error = makeError({
@@ -156,7 +156,7 @@ describe('getRateLimitResetDelayMs - OpenAI provider', () => {
   })
 
   test('returns null when no openai rate limit headers present', async () => {
-    process.env.CLAUDE_CODE_USE_OPENAI = '1'
+    process.env.SOCC_USE_OPENAI = '1'
     const { getRateLimitResetDelayMs } =
       await importFreshWithRetryModule('openai')
     const error = makeError({})
@@ -164,7 +164,7 @@ describe('getRateLimitResetDelayMs - OpenAI provider', () => {
   })
 
   test('works for github provider too', async () => {
-    process.env.CLAUDE_CODE_USE_GITHUB = '1'
+    process.env.SOCC_USE_GITHUB = '1'
     const { getRateLimitResetDelayMs } =
       await importFreshWithRetryModule('github')
     const error = makeError({ 'x-ratelimit-reset-requests': '5s' })
@@ -174,7 +174,7 @@ describe('getRateLimitResetDelayMs - OpenAI provider', () => {
 
 describe('getRateLimitResetDelayMs - providers without reset headers', () => {
   test('returns null for bedrock', async () => {
-    process.env.CLAUDE_CODE_USE_BEDROCK = '1'
+    process.env.SOCC_USE_BEDROCK = '1'
     const { getRateLimitResetDelayMs } =
       await importFreshWithRetryModule('bedrock')
     const error = makeError({ 'anthropic-ratelimit-unified-reset': String(Math.floor(Date.now() / 1000) + 60) })
@@ -183,7 +183,7 @@ describe('getRateLimitResetDelayMs - providers without reset headers', () => {
   })
 
   test('returns null for vertex', async () => {
-    process.env.CLAUDE_CODE_USE_VERTEX = '1'
+    process.env.SOCC_USE_VERTEX = '1'
     const { getRateLimitResetDelayMs } =
       await importFreshWithRetryModule('vertex')
     const error = makeError({})

@@ -1,7 +1,7 @@
 /**
  * Download functionality for native installer
  *
- * Handles downloading Claude binaries from various sources:
+ * Handles downloading SOCC binaries from various sources:
  * - Artifactory NPM packages
  * - GCS bucket
  */
@@ -25,7 +25,7 @@ import { getBinaryName, getPlatform } from './installer.js'
 const GCS_BUCKET_URL =
   'https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases'
 export const ARTIFACTORY_REGISTRY_URL =
-  process.env.CLAUDE_CODE_INTERNAL_ARTIFACTORY_REGISTRY_URL ?? ''
+  process.env.SOCC_INTERNAL_ARTIFACTORY_REGISTRY_URL ?? ''
 
 export async function getLatestVersionFromArtifactory(
   tag: string = 'latest',
@@ -280,7 +280,7 @@ const MAX_DOWNLOAD_RETRIES = 3
 
 function getStallTimeoutMs(): number {
   return (
-    Number(process.env.CLAUDE_CODE_STALL_TIMEOUT_MS_FOR_TESTING) ||
+    Number(process.env.SOCC_STALL_TIMEOUT_MS_FOR_TESTING) ||
     DEFAULT_STALL_TIMEOUT_MS
   )
 }

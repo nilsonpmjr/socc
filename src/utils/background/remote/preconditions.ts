@@ -4,7 +4,7 @@ import { getOrganizationUUID } from 'src/services/oauth/client.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../../services/analytics/growthbook.js'
 import {
   checkAndRefreshOAuthTokenIfNeeded,
-  getClaudeAIOAuthTokens,
+  getSoccOAuthTokens,
   isClaudeAISubscriber,
 } from '../../auth.js'
 import { getCwd } from '../../cwd.js'
@@ -81,7 +81,7 @@ export async function checkGithubAppInstalled(
   signal?: AbortSignal,
 ): Promise<boolean> {
   try {
-    const accessToken = getClaudeAIOAuthTokens()?.accessToken
+    const accessToken = getSoccOAuthTokens()?.accessToken
     if (!accessToken) {
       logForDebugging(
         'checkGithubAppInstalled: No access token found, assuming app not installed',
@@ -163,7 +163,7 @@ export async function checkGithubAppInstalled(
  */
 export async function checkGithubTokenSynced(): Promise<boolean> {
   try {
-    const accessToken = getClaudeAIOAuthTokens()?.accessToken
+    const accessToken = getSoccOAuthTokens()?.accessToken
     if (!accessToken) {
       logForDebugging('checkGithubTokenSynced: No access token found')
       return false

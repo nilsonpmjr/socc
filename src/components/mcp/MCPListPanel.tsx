@@ -127,7 +127,7 @@ export function MCPListPanel(t0) {
   } else {
     t4 = $[5];
   }
-  const claudeAiServers = t4;
+  const remoteConnectorServers = t4;
   let t5;
   if ($[6] !== serversByScope) {
     t5 = (serversByScope.get("dynamic") ?? []).sort(_temp4);
@@ -146,7 +146,7 @@ export function MCPListPanel(t0) {
   }
   const dynamicHeading = t6;
   let items;
-  if ($[9] !== agentServers || $[10] !== claudeAiServers || $[11] !== dynamicServers || $[12] !== serversByScope) {
+  if ($[9] !== agentServers || $[10] !== remoteConnectorServers || $[11] !== dynamicServers || $[12] !== serversByScope) {
     items = [];
     for (const scope of SCOPE_ORDER) {
       const scopeServers = serversByScope.get(scope) ?? [];
@@ -157,7 +157,7 @@ export function MCPListPanel(t0) {
         });
       }
     }
-    for (const server_0 of claudeAiServers) {
+    for (const server_0 of remoteConnectorServers) {
       items.push({
         type: "server",
         server: server_0
@@ -176,7 +176,7 @@ export function MCPListPanel(t0) {
       });
     }
     $[9] = agentServers;
-    $[10] = claudeAiServers;
+    $[10] = remoteConnectorServers;
     $[11] = dynamicServers;
     $[12] = serversByScope;
     $[13] = items;
@@ -395,9 +395,9 @@ export function MCPListPanel(t0) {
     t22 = $[50];
   }
   let t23;
-  if ($[51] !== claudeAiServers || $[52] !== renderServerItem) {
-    t23 = claudeAiServers.length > 0 && <Box flexDirection="column" marginBottom={1}><Box paddingLeft={2}><Text bold={true}>claude.ai</Text></Box>{claudeAiServers.map(server_5 => renderServerItem(server_5))}</Box>;
-    $[51] = claudeAiServers;
+  if ($[51] !== remoteConnectorServers || $[52] !== renderServerItem) {
+    t23 = remoteConnectorServers.length > 0 && <Box flexDirection="column" marginBottom={1}><Box paddingLeft={2}><Text bold={true}>claude.ai</Text></Box>{remoteConnectorServers.map(server_5 => renderServerItem(server_5))}</Box>;
+    $[51] = remoteConnectorServers;
     $[52] = renderServerItem;
     $[53] = t23;
   } else {
@@ -423,7 +423,7 @@ export function MCPListPanel(t0) {
   }
   let t26;
   if ($[60] !== hasFailedClients) {
-    t26 = hasFailedClients && <Text dimColor={true}>{debugMode ? "\u203B Error logs shown inline with --debug" : "\u203B Run claude --debug to see error logs"}</Text>;
+    t26 = hasFailedClients && <Text dimColor={true}>{debugMode ? "\u203B Error logs shown inline with --debug" : "\u203B Run socc --debug to see error logs"}</Text>;
     $[60] = hasFailedClients;
     $[61] = t26;
   } else {
@@ -431,7 +431,7 @@ export function MCPListPanel(t0) {
   }
   let t27;
   if ($[62] === Symbol.for("react.memo_cache_sentinel")) {
-    t27 = <Text dimColor={true}><Link url="https://code.claude.com/docs/en/mcp">https://code.claude.com/docs/en/mcp</Link>{" "}for help</Text>;
+    t27 = <Text dimColor={true}><Link url="https://github.com/nilsonpmjr/socc/tree/main/docs/mcp">https://github.com/nilsonpmjr/socc/tree/main/docs/mcp</Link>{" "}for help</Text>;
     $[62] = t27;
   } else {
     t27 = $[62];

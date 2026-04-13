@@ -238,7 +238,7 @@ function createPluginCommand(
         isSkill ? 'Plugin skill' : 'Plugin command',
       )
 
-    // Substitute ${CLAUDE_PLUGIN_ROOT} in allowed-tools before parsing
+    // Substitute ${SOCC_PLUGIN_ROOT} in allowed-tools before parsing
     const rawAllowedTools = frontmatter['allowed-tools']
     const substitutedAllowedTools =
       typeof rawAllowedTools === 'string'
@@ -336,7 +336,7 @@ function createPluginCommand(
           argumentNames,
         )
 
-        // Replace ${CLAUDE_PLUGIN_ROOT} and ${CLAUDE_PLUGIN_DATA} with their paths
+        // Replace ${SOCC_PLUGIN_ROOT} and ${SOCC_PLUGIN_DATA} with their paths
         finalContent = substitutePluginVariables(finalContent, {
           path: pluginPath,
           source: sourceName,
@@ -354,8 +354,8 @@ function createPluginCommand(
         }
 
         // Replace ${CLAUDE_SKILL_DIR} with this specific skill's directory.
-        // Distinct from ${CLAUDE_PLUGIN_ROOT}: a plugin can contain multiple
-        // skills, so CLAUDE_PLUGIN_ROOT points to the plugin root while
+        // Distinct from ${SOCC_PLUGIN_ROOT}: a plugin can contain multiple
+        // skills, so SOCC_PLUGIN_ROOT points to the plugin root while
         // CLAUDE_SKILL_DIR points to the individual skill's subdirectory.
         if (config.isSkillMode) {
           const rawSkillDir = dirname(file.filePath)
@@ -369,9 +369,9 @@ function createPluginCommand(
           )
         }
 
-        // Replace ${CLAUDE_SESSION_ID} with the current session ID
+        // Replace ${SOCC_SESSION_ID} with the current session ID
         finalContent = finalContent.replace(
-          /\$\{CLAUDE_SESSION_ID\}/g,
+          /\$\{SOCC_SESSION_ID\}/g,
           getSessionId(),
         )
 

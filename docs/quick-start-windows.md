@@ -28,7 +28,7 @@ npm install -g @vantagesec/socc
 Replace `sk-your-key-here` with your real key.
 
 ```powershell
-$env:CLAUDE_CODE_USE_OPENAI="1"
+$env:SOCC_USE_OPENAI="1"
 $env:OPENAI_API_KEY="sk-your-key-here"
 $env:OPENAI_MODEL="gpt-4o"
 
@@ -38,7 +38,7 @@ socc
 ### Option B: DeepSeek
 
 ```powershell
-$env:CLAUDE_CODE_USE_OPENAI="1"
+$env:SOCC_USE_OPENAI="1"
 $env:OPENAI_API_KEY="sk-your-key-here"
 $env:OPENAI_BASE_URL="https://api.deepseek.com/v1"
 $env:OPENAI_MODEL="deepseek-chat"
@@ -57,7 +57,7 @@ Then run:
 ```powershell
 ollama pull llama3.1:8b
 
-$env:CLAUDE_CODE_USE_OPENAI="1"
+$env:SOCC_USE_OPENAI="1"
 $env:OPENAI_BASE_URL="http://localhost:11434/v1"
 $env:OPENAI_MODEL="llama3.1:8b"
 
@@ -81,7 +81,7 @@ Then in LM Studio:
 Then run:
 
 ```powershell
-$env:CLAUDE_CODE_USE_OPENAI="1"
+$env:SOCC_USE_OPENAI="1"
 $env:OPENAI_BASE_URL="http://localhost:1234/v1"
 $env:OPENAI_MODEL="your-model-name"
 # $env:OPENAI_API_KEY="lmstudio"  # optional: some users need a dummy key

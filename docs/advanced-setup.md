@@ -38,7 +38,7 @@ bun run dev
 ### OpenAI
 
 ```bash
-export CLAUDE_CODE_USE_OPENAI=1
+export SOCC_USE_OPENAI=1
 export OPENAI_API_KEY=sk-...
 export OPENAI_MODEL=gpt-4o
 ```
@@ -51,7 +51,7 @@ export OPENAI_MODEL=gpt-4o
 If you already use the Codex CLI, SOCC reads `~/.codex/auth.json` automatically. You can also point it elsewhere with `CODEX_AUTH_JSON_PATH` or override the token directly with `CODEX_API_KEY`.
 
 ```bash
-export CLAUDE_CODE_USE_OPENAI=1
+export SOCC_USE_OPENAI=1
 export OPENAI_MODEL=codexplan
 
 # optional if you do not already have ~/.codex/auth.json
@@ -63,7 +63,7 @@ socc
 ### DeepSeek
 
 ```bash
-export CLAUDE_CODE_USE_OPENAI=1
+export SOCC_USE_OPENAI=1
 export OPENAI_API_KEY=sk-...
 export OPENAI_BASE_URL=https://api.deepseek.com/v1
 export OPENAI_MODEL=deepseek-chat
@@ -72,7 +72,7 @@ export OPENAI_MODEL=deepseek-chat
 ### Google Gemini via OpenRouter
 
 ```bash
-export CLAUDE_CODE_USE_OPENAI=1
+export SOCC_USE_OPENAI=1
 export OPENAI_API_KEY=sk-or-...
 export OPENAI_BASE_URL=https://openrouter.ai/api/v1
 export OPENAI_MODEL=google/gemini-2.0-flash-001
@@ -85,7 +85,7 @@ OpenRouter model availability changes over time. If a model stops working, try a
 ```bash
 ollama pull llama3.3:70b
 
-export CLAUDE_CODE_USE_OPENAI=1
+export SOCC_USE_OPENAI=1
 export OPENAI_BASE_URL=http://localhost:11434/v1
 export OPENAI_MODEL=llama3.3:70b
 ```
@@ -93,7 +93,7 @@ export OPENAI_MODEL=llama3.3:70b
 ### Atomic Chat (local, Apple Silicon)
 
 ```bash
-export CLAUDE_CODE_USE_OPENAI=1
+export SOCC_USE_OPENAI=1
 export OPENAI_BASE_URL=http://127.0.0.1:1337/v1
 export OPENAI_MODEL=your-model-name
 ```
@@ -111,7 +111,7 @@ Download Atomic Chat from [atomic.chat](https://atomic.chat/). The app must be r
 ### LM Studio
 
 ```bash
-export CLAUDE_CODE_USE_OPENAI=1
+export SOCC_USE_OPENAI=1
 export OPENAI_BASE_URL=http://localhost:1234/v1
 export OPENAI_MODEL=your-model-name
 ```
@@ -119,7 +119,7 @@ export OPENAI_MODEL=your-model-name
 ### Together AI
 
 ```bash
-export CLAUDE_CODE_USE_OPENAI=1
+export SOCC_USE_OPENAI=1
 export OPENAI_API_KEY=...
 export OPENAI_BASE_URL=https://api.together.xyz/v1
 export OPENAI_MODEL=meta-llama/Llama-3.3-70B-Instruct-Turbo
@@ -128,7 +128,7 @@ export OPENAI_MODEL=meta-llama/Llama-3.3-70B-Instruct-Turbo
 ### Groq
 
 ```bash
-export CLAUDE_CODE_USE_OPENAI=1
+export SOCC_USE_OPENAI=1
 export OPENAI_API_KEY=gsk_...
 export OPENAI_BASE_URL=https://api.groq.com/openai/v1
 export OPENAI_MODEL=llama-3.3-70b-versatile
@@ -137,7 +137,7 @@ export OPENAI_MODEL=llama-3.3-70b-versatile
 ### Mistral
 
 ```bash
-export CLAUDE_CODE_USE_OPENAI=1
+export SOCC_USE_OPENAI=1
 export OPENAI_API_KEY=...
 export OPENAI_BASE_URL=https://api.mistral.ai/v1
 export OPENAI_MODEL=mistral-large-latest
@@ -146,7 +146,7 @@ export OPENAI_MODEL=mistral-large-latest
 ### Azure OpenAI
 
 ```bash
-export CLAUDE_CODE_USE_OPENAI=1
+export SOCC_USE_OPENAI=1
 export OPENAI_API_KEY=your-azure-key
 export OPENAI_BASE_URL=https://your-resource.openai.azure.com/openai/deployments/your-deployment/v1
 export OPENAI_MODEL=gpt-4o
@@ -156,14 +156,14 @@ export OPENAI_MODEL=gpt-4o
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `CLAUDE_CODE_USE_OPENAI` | Yes | Set to `1` to enable the OpenAI provider |
+| `SOCC_USE_OPENAI` | Yes | Set to `1` to enable the OpenAI provider |
 | `OPENAI_API_KEY` | Yes* | Your API key (`*` not needed for local models like Ollama or Atomic Chat) |
 | `OPENAI_MODEL` | Yes | Model name such as `gpt-4o`, `deepseek-chat`, or `llama3.3:70b` |
 | `OPENAI_BASE_URL` | No | API endpoint, defaulting to `https://api.openai.com/v1` |
 | `CODEX_API_KEY` | Codex only | Codex or ChatGPT access token override |
 | `CODEX_AUTH_JSON_PATH` | Codex only | Path to a Codex CLI `auth.json` file |
 | `CODEX_HOME` | Codex only | Alternative Codex home directory |
-| `OPENCLAUDE_DISABLE_CO_AUTHORED_BY` | No | Legacy env var name that still suppresses the default `Co-Authored-By` trailer in generated git commits |
+| `SOCC_DISABLE_CO_AUTHORED_BY` | No | Legacy env var name that still suppresses the default `Co-Authored-By` trailer in generated git commits |
 
 You can also use `ANTHROPIC_MODEL` to override the model name. `OPENAI_MODEL` takes priority.
 
@@ -193,7 +193,7 @@ bun run hardening:strict
 
 Notes:
 
-- `doctor:runtime` fails fast if `CLAUDE_CODE_USE_OPENAI=1` with a placeholder key or a missing key for non-local providers.
+- `doctor:runtime` fails fast if `SOCC_USE_OPENAI=1` with a placeholder key or a missing key for non-local providers.
 - Local providers such as `http://localhost:11434/v1`, `http://10.0.0.1:11434/v1`, and `http://127.0.0.1:1337/v1` can run without `OPENAI_API_KEY`.
 - Codex profiles validate `CODEX_API_KEY` or the Codex CLI auth file and probe `POST /responses` instead of `GET /models`.
 
@@ -229,7 +229,7 @@ bun run profile:init -- --provider atomic-chat
 # codex bootstrap with a fast model alias
 bun run profile:init -- --provider codex --model codexspark
 
-# launch using the persisted profile (`.socc-profile.json`; legacy `.openclaude-profile.json` is still read)
+# launch using the persisted profile (`.socc-profile.json`)
 bun run dev:profile
 
 # codex profile (uses CODEX_API_KEY or ~/.codex/auth.json)

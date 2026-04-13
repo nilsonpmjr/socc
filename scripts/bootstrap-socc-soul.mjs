@@ -19,7 +19,7 @@ const RULES_DIR = [...SOC_CANONICAL_ROOT, 'rules']
 const WORKFLOWS_DIR = [...SOC_CANONICAL_ROOT, 'workflows']
 const GENERATED_DIR = [...SOC_CANONICAL_ROOT, 'generated']
 
-const RUNTIME_ROOT = ['.claude']
+const RUNTIME_ROOT = ['.socc']
 const RUNTIME_AGENT_PATH = [...RUNTIME_ROOT, 'agents', 'socc.md']
 const RUNTIME_RULES_DIR = [...RUNTIME_ROOT, 'rules']
 const RUNTIME_SKILLS_DIR = [...RUNTIME_ROOT, 'skills']

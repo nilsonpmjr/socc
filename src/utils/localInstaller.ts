@@ -6,27 +6,23 @@ import { access, chmod, writeFile } from 'fs/promises'
 import { homedir } from 'os'
 import { join } from 'path'
 import { type ReleaseChannel, saveGlobalConfig } from './config.js'
-import { getClaudeConfigHomeDir } from './envUtils.js'
+import { getSoccConfigHomeDir } from './envUtils.js'
 import { getErrnoCode } from './errors.js'
 import { execFileNoThrowWithCwd } from './execFileNoThrow.js'
 import { getFsImplementation } from './fsOperations.js'
 import { logError } from './log.js'
 import { jsonStringify } from './slowOperations.js'
 
-// Lazy getters: getClaudeConfigHomeDir() is memoized and reads process.env.
+// Lazy getters: getSoccConfigHomeDir() is memoized and reads process.env.
 // Evaluating at module scope would capture the value before entrypoints like
-// hfi.tsx get a chance to set CLAUDE_CONFIG_DIR in main(), and would also
+// hfi.tsx get a chance to set SOCC_CONFIG_DIR in main(), and would also
 // populate the memoize cache with that stale value for all 150+ other callers.
 function getLocalInstallDir(): string {
-  return join(getClaudeConfigHomeDir(), 'local')
+  return join(getSoccConfigHomeDir(), 'local')
 }
 
 function getLegacyLocalInstallDir(homeDir = homedir()): string {
-  return join(homeDir, '.claude', 'local')
-}
-
-function getOpenClaudeLocalInstallDir(homeDir = homedir()): string {
-  return join(homeDir, '.openclaude', 'local')
+  return join(homeDir, '.socc', 'local')
 }
 
 export function getCandidateLocalInstallDirs(options?: {
@@ -34,11 +30,10 @@ export function getCandidateLocalInstallDirs(options?: {
   homeDir?: string
 }): string[] {
   const homeDir = options?.homeDir ?? homedir()
-  const configHomeDir = options?.configHomeDir ?? getClaudeConfigHomeDir()
+  const configHomeDir = options?.configHomeDir ?? getSoccConfigHomeDir()
   return Array.from(
     new Set([
       join(configHomeDir, 'local'),
-      getOpenClaudeLocalInstallDir(homeDir),
       getLegacyLocalInstallDir(homeDir),
     ]),
   )
@@ -47,17 +42,11 @@ export function getCandidateLocalInstallDirs(options?: {
 function getCandidateLocalBinaryPaths(localInstallDir: string): string[] {
   return [
     join(localInstallDir, 'node_modules', '.bin', 'socc'),
-    join(localInstallDir, 'node_modules', '.bin', 'openclaude'),
-    join(localInstallDir, 'node_modules', '.bin', 'claude'),
   ]
 }
 
 export function isManagedLocalInstallationPath(execPath: string): boolean {
-  return (
-    execPath.includes('/.socc/local/node_modules/') ||
-    execPath.includes('/.openclaude/local/node_modules/') ||
-    execPath.includes('/.claude/local/node_modules/')
-  )
+  return execPath.includes('/.socc/local/node_modules/')
 }
 
 export function getLocalClaudePath(): string {
@@ -130,7 +119,7 @@ export async function ensureLocalPackageEnvironment(): Promise<boolean> {
 }
 
 /**
- * Install or update Claude CLI package in the local directory
+ * Install or update the SOCC CLI package in the local directory
  * @param channel - Release channel to use (latest or stable)
  * @param specificVersion - Optional specific version to install (overrides channel)
  */
@@ -158,7 +147,7 @@ export async function installOrUpdateClaudePackage(
 
     if (result.code !== 0) {
       const error = new Error(
-        `Failed to install Claude CLI package: ${result.stderr}`,
+        `Failed to install SOCC CLI package: ${result.stderr}`,
       )
       logError(error)
       return result.code === 190 ? 'in_progress' : 'install_failed'

@@ -2,16 +2,16 @@ import { afterEach, expect, test } from 'bun:test'
 
 import { getSystemPrompt, DEFAULT_AGENT_PROMPT } from './prompts.js'
 import { CLI_SYSPROMPT_PREFIXES, getCLISyspromptPrefix } from './system.js'
-import { CLAUDE_CODE_GUIDE_AGENT } from '../tools/AgentTool/built-in/claudeCodeGuideAgent.js'
+import { SOCC_GUIDE_AGENT } from '../tools/AgentTool/built-in/soccGuideAgent.js'
 import { GENERAL_PURPOSE_AGENT } from '../tools/AgentTool/built-in/generalPurposeAgent.js'
 import { EXPLORE_AGENT } from '../tools/AgentTool/built-in/exploreAgent.js'
 import { PLAN_AGENT } from '../tools/AgentTool/built-in/planAgent.js'
 import { STATUSLINE_SETUP_AGENT } from '../tools/AgentTool/built-in/statuslineSetup.js'
 
-const originalSimpleEnv = process.env.CLAUDE_CODE_SIMPLE
+const originalSimpleEnv = process.env.SOCC_SIMPLE
 
 afterEach(() => {
-  process.env.CLAUDE_CODE_SIMPLE = originalSimpleEnv
+  process.env.SOCC_SIMPLE = originalSimpleEnv
 })
 
 test('CLI identity prefixes describe SOCC instead of Claude Code', () => {
@@ -27,7 +27,7 @@ test('CLI identity prefixes describe SOCC instead of Claude Code', () => {
 })
 
 test('simple mode identity describes SOCC instead of Claude Code', async () => {
-  process.env.CLAUDE_CODE_SIMPLE = '1'
+  process.env.SOCC_SIMPLE = '1'
 
   const prompt = await getSystemPrompt([], 'gpt-4o')
 
@@ -67,7 +67,7 @@ test('built-in agent prompts describe SOCC instead of Claude Code', () => {
   expect(statuslinePrompt).toContain('SOCC')
   expect(statuslinePrompt).not.toContain('Claude Code')
 
-  const guidePrompt = CLAUDE_CODE_GUIDE_AGENT.getSystemPrompt({
+  const guidePrompt = SOCC_GUIDE_AGENT.getSystemPrompt({
     toolUseContext: {
       options: {
         commands: [],

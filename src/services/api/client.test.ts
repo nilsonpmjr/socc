@@ -14,8 +14,8 @@ type ShimClient = {
 const originalFetch = globalThis.fetch
 const originalMacro = (globalThis as Record<string, unknown>).MACRO
 const originalEnv = {
-  CLAUDE_CODE_USE_OPENAI: process.env.CLAUDE_CODE_USE_OPENAI,
-  CLAUDE_CODE_USE_GEMINI: process.env.CLAUDE_CODE_USE_GEMINI,
+  SOCC_USE_OPENAI: process.env.SOCC_USE_OPENAI,
+  SOCC_USE_GEMINI: process.env.SOCC_USE_GEMINI,
   GEMINI_API_KEY: process.env.GEMINI_API_KEY,
   GEMINI_MODEL: process.env.GEMINI_MODEL,
   GEMINI_BASE_URL: process.env.GEMINI_BASE_URL,
@@ -39,13 +39,13 @@ function restoreEnv(key: string, value: string | undefined): void {
 
 beforeEach(() => {
   ;(globalThis as Record<string, unknown>).MACRO = { VERSION: 'test-version' }
-  process.env.CLAUDE_CODE_USE_GEMINI = '1'
+  process.env.SOCC_USE_GEMINI = '1'
   process.env.GEMINI_API_KEY = 'gemini-test-key'
   process.env.GEMINI_MODEL = 'gemini-2.0-flash'
   process.env.GEMINI_BASE_URL = 'https://gemini.example/v1beta/openai'
   process.env.GEMINI_AUTH_MODE = 'api-key'
 
-  delete process.env.CLAUDE_CODE_USE_OPENAI
+  delete process.env.SOCC_USE_OPENAI
   delete process.env.GOOGLE_API_KEY
   delete process.env.OPENAI_API_KEY
   delete process.env.OPENAI_BASE_URL
@@ -57,8 +57,8 @@ beforeEach(() => {
 
 afterEach(() => {
   ;(globalThis as Record<string, unknown>).MACRO = originalMacro
-  restoreEnv('CLAUDE_CODE_USE_OPENAI', originalEnv.CLAUDE_CODE_USE_OPENAI)
-  restoreEnv('CLAUDE_CODE_USE_GEMINI', originalEnv.CLAUDE_CODE_USE_GEMINI)
+  restoreEnv('SOCC_USE_OPENAI', originalEnv.SOCC_USE_OPENAI)
+  restoreEnv('SOCC_USE_GEMINI', originalEnv.SOCC_USE_GEMINI)
   restoreEnv('GEMINI_API_KEY', originalEnv.GEMINI_API_KEY)
   restoreEnv('GEMINI_MODEL', originalEnv.GEMINI_MODEL)
   restoreEnv('GEMINI_BASE_URL', originalEnv.GEMINI_BASE_URL)
@@ -140,7 +140,7 @@ test('routes Gemini provider requests through the OpenAI-compatible shim', async
 test('strips Anthropic-specific custom headers before sending OpenAI-compatible shim requests', async () => {
   let capturedHeaders: Headers | undefined
 
-  process.env.CLAUDE_CODE_USE_OPENAI = '1'
+  process.env.SOCC_USE_OPENAI = '1'
   process.env.OPENAI_API_KEY = 'openai-test-key'
   process.env.OPENAI_BASE_URL = 'http://example.test/v1'
   process.env.OPENAI_MODEL = 'gpt-4o'

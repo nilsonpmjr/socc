@@ -44,7 +44,7 @@ Inside SOCC:
 macOS / Linux:
 
 ```bash
-export CLAUDE_CODE_USE_OPENAI=1
+export SOCC_USE_OPENAI=1
 export OPENAI_API_KEY=sk-your-key-here
 export OPENAI_MODEL=gpt-4o
 
@@ -54,7 +54,7 @@ socc
 Windows PowerShell:
 
 ```powershell
-$env:CLAUDE_CODE_USE_OPENAI="1"
+$env:SOCC_USE_OPENAI="1"
 $env:OPENAI_API_KEY="sk-your-key-here"
 $env:OPENAI_MODEL="gpt-4o"
 
@@ -66,7 +66,7 @@ socc
 macOS / Linux:
 
 ```bash
-export CLAUDE_CODE_USE_OPENAI=1
+export SOCC_USE_OPENAI=1
 export OPENAI_BASE_URL=http://localhost:11434/v1
 export OPENAI_MODEL=qwen2.5-coder:7b
 
@@ -76,7 +76,7 @@ socc
 Windows PowerShell:
 
 ```powershell
-$env:CLAUDE_CODE_USE_OPENAI="1"
+$env:SOCC_USE_OPENAI="1"
 $env:OPENAI_BASE_URL="http://localhost:11434/v1"
 $env:OPENAI_MODEL="qwen2.5-coder:7b"
 
@@ -131,7 +131,7 @@ For best results, use models with strong tool/function calling support.
 
 SOCC can route different agents to different models through settings-based routing. This is useful for cost optimization or splitting work by model strength.
 
-Add to `~/.claude/settings.json`:
+Add to `~/.socc/settings.json`:
 
 ```json
 {
@@ -283,13 +283,13 @@ Coverage output is written to `coverage/lcov.info`, and SOCC also generates a gi
 - `src/` - core CLI/runtime
 - `scripts/` - build, verification, and maintenance scripts
 - `docs/` - setup, contributor, and project documentation
-- `vscode-extension/openclaude-vscode/` - VS Code extension
+- `vscode-extension/socc-vscode/` - VS Code extension package for SOCC
 - `.github/` - repo automation, templates, and CI configuration
 - `bin/` - CLI launcher entrypoints
 
 ## VS Code Extension
 
-The repo includes a VS Code extension in [`vscode-extension/openclaude-vscode`](vscode-extension/openclaude-vscode) for SOCC launch integration, provider-aware control-center UI, and theme support.
+The repo includes a VS Code extension package in [`vscode-extension/socc-vscode`](vscode-extension/socc-vscode) for SOCC launch integration, provider-aware control-center UI, and theme support.
 
 ## Security
 
@@ -315,7 +315,7 @@ For larger changes, open an issue first so the scope is clear before implementat
 
 SOCC is an independent community project and is not affiliated with, endorsed by, or sponsored by Anthropic.
 
-SOCC is based on the OpenClaude codebase, which originated from the Claude Code codebase and was later extended for broader provider support and open use. "Claude" and "Claude Code" are trademarks of Anthropic PBC. See [LICENSE](LICENSE) for details.
+SOCC is based on the SOCC codebase, which originated from the Claude Code codebase and was later extended for broader provider support and open use. "Claude" and "Claude Code" are trademarks of Anthropic PBC. See [LICENSE](LICENSE) for details.
 
 ## License
 

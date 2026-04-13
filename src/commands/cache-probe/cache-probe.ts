@@ -184,7 +184,7 @@ export const call: LocalCommandCall = async (args) => {
   const modelOverride = parts.find((p) => !p.startsWith('--')) || undefined
   const modelStr = modelOverride ?? getMainLoopModel()
   const request = resolveProviderRequest({ model: modelStr })
-  const isGithub = isEnvTruthy(process.env.CLAUDE_CODE_USE_GITHUB)
+  const isGithub = isEnvTruthy(process.env.SOCC_USE_GITHUB)
 
   // Resolve API key the same way the OpenAI shim does
   let apiKey = process.env.OPENAI_API_KEY ?? ''

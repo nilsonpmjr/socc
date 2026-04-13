@@ -5,9 +5,9 @@ import {
 import { sanitizeToolNameForAnalytics } from '../../../services/analytics/metadata.js'
 import type { ToolPermissionContext } from '../../../Tool.js'
 import {
-  CLAUDE_FOLDER_PERMISSION_PATTERN,
+  SOCC_FOLDER_PERMISSION_PATTERN,
   FILE_EDIT_TOOL_NAME,
-  GLOBAL_CLAUDE_FOLDER_PERMISSION_PATTERN,
+  GLOBAL_SOCC_FOLDER_PERMISSION_PATTERN,
 } from '../../../tools/FileEditTool/constants.js'
 import { env } from '../../../utils/env.js'
 import { generateSuggestions } from '../../../utils/permissions/filesystem.js'
@@ -57,7 +57,7 @@ export type PermissionHandlerOptions = {
   hasFeedback?: boolean
   feedback?: string
   enteredFeedbackMode?: boolean
-  scope?: 'claude-folder' | 'global-claude-folder'
+  scope?: 'socc-folder' | 'global-socc-folder'
 }
 
 function handleAcceptOnce(
@@ -101,15 +101,15 @@ function handleAcceptSession(
 
   logPermissionEvent('accept', completionType, languageName, messageId)
 
-  // For claude-folder scope, grant session-level access to all .claude/ files
+  // For socc-folder scope, grant session-level access to all .socc/ files
   if (
-    options?.scope === 'claude-folder' ||
-    options?.scope === 'global-claude-folder'
+    options?.scope === 'socc-folder' ||
+    options?.scope === 'global-socc-folder'
   ) {
     const pattern =
-      options.scope === 'global-claude-folder'
-        ? GLOBAL_CLAUDE_FOLDER_PERMISSION_PATTERN
-        : CLAUDE_FOLDER_PERMISSION_PATTERN
+      options.scope === 'global-socc-folder'
+        ? GLOBAL_SOCC_FOLDER_PERMISSION_PATTERN
+        : SOCC_FOLDER_PERMISSION_PATTERN
     const suggestions: PermissionUpdate[] = [
       {
         type: 'addRules',

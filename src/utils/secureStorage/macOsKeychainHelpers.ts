@@ -17,7 +17,7 @@
 import { createHash } from 'crypto'
 import { userInfo } from 'os'
 import { getOauthConfig } from 'src/constants/oauth.js'
-import { getClaudeConfigHomeDir } from '../envUtils.js'
+import { getSoccConfigHomeDir } from '../envUtils.js'
 import type { SecureStorageData } from './index.js'
 
 // Suffix distinguishing the OAuth credentials keychain entry from the legacy
@@ -29,14 +29,14 @@ const SECURE_STORAGE_SERVICE_BASE = 'SOCC'
 const LEGACY_SECURE_STORAGE_SERVICE_BASE = 'Claude Code'
 
 /**
- * Get the service/resource name for secure storage, scoped by CLAUDE_CONFIG_DIR
+ * Get the service/resource name for secure storage, scoped by SOCC_CONFIG_DIR
  * if it's set to a non-default location.
  */
 export function getSecureStorageServiceName(
   serviceSuffix: string = '',
 ): string {
-  const configDir = getClaudeConfigHomeDir()
-  const isDefaultDir = !process.env.CLAUDE_CONFIG_DIR
+  const configDir = getSoccConfigHomeDir()
+  const isDefaultDir = !process.env.SOCC_CONFIG_DIR
 
   // Use a hash of the config dir path to create a unique but stable suffix
   // Only add suffix for non-default directories to maintain backwards compatibility
@@ -49,8 +49,8 @@ export function getSecureStorageServiceName(
 export function getLegacySecureStorageServiceNames(
   serviceSuffix: string = '',
 ): string[] {
-  const configDir = getClaudeConfigHomeDir()
-  const isDefaultDir = !process.env.CLAUDE_CONFIG_DIR
+  const configDir = getSoccConfigHomeDir()
+  const isDefaultDir = !process.env.SOCC_CONFIG_DIR
   const dirHash = isDefaultDir
     ? ''
     : `-${createHash('sha256').update(configDir).digest('hex').substring(0, 8)}`

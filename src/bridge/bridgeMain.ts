@@ -913,7 +913,7 @@ export async function runBridgeLoop(
           // ant-dev override (e.g. forcing v2 before the server flag is on).
           if (
             secret.use_code_sessions === true ||
-            isEnvTruthy(process.env.CLAUDE_BRIDGE_USE_CCR_V2)
+            isEnvTruthy(process.env.SOCC_BRIDGE_USE_CCR_V2)
           ) {
             sdkUrl = buildCCRv2SdkUrl(config.apiBaseUrl, sessionId)
             // Retry once on transient failure (network blip, 500) before
@@ -1513,7 +1513,7 @@ export async function runBridgeLoop(
   }
 
   // In single-session mode with a known session, leave the session and
-  // environment alive so `claude remote-control --session-id=<id>` can resume.
+  // environment alive so `socc remote-control --session-id=<id>` can resume.
   // The backend GCs stale environments via a 4h TTL (BRIDGE_LAST_POLL_TTL).
   // Archiving the session or deregistering the environment would make the
   // printed resume command a lie — deregister deletes Firestore + Redis stream.
@@ -1529,7 +1529,7 @@ export async function runBridgeLoop(
     !fatalExit
   ) {
     logger.logStatus(
-      `Resume this session by running \`claude remote-control --continue\``,
+      `Resume this session by running \`socc remote-control --continue\``,
     )
     logForDebugging(
       `[bridge:shutdown] Skipping archive+deregister to allow resume of session ${initialSessionId}`,
@@ -1820,7 +1820,7 @@ export function parseArgs(args: string[]): ParsedArgs {
       createSessionInDir = false
     } else {
       return makeError(
-        `Unknown argument: ${arg}\nRun 'claude remote-control --help' for usage.`,
+        `Unknown argument: ${arg}\nRun 'socc remote-control --help' for usage.`,
       )
     }
   }
@@ -1921,7 +1921,7 @@ async function printHelp(): Promise<void> {
 Remote Control - Connect your local environment to claude.ai/code
 
 USAGE
-  claude remote-control [options]
+  socc remote-control [options]
 OPTIONS
   --name <name>                    Name for the session (shown in claude.ai/code)
 ${
@@ -1940,7 +1940,7 @@ ${serverOptions}
 DESCRIPTION
   Remote Control allows you to control sessions on your local device from
   claude.ai/code (https://claude.ai/code). Run this command in the
-  directory you want to work in, then connect from the Claude app or web.
+  directory you want to work in, then connect from the mobile app or web.
 ${serverDescription}
 NOTES
   - You must be logged in with a Claude account that has a subscription
@@ -2122,7 +2122,7 @@ export async function bridgeMain(args: string[]): Promise<void> {
     })
     // biome-ignore lint/suspicious/noConsole:: intentional console output
     console.log(
-      '\nRemote Control lets you access this CLI session from the web (claude.ai/code)\nor the Claude app, so you can pick up where you left off on any device.\n\nYou can disconnect remote access anytime by running /remote-control again.\n',
+      '\nRemote Control lets you access this CLI session from the web (claude.ai/code)\nor the mobile app, so you can pick up where you left off on any device.\n\nYou can disconnect remote access anytime by running /remote-control again.\n',
     )
     const answer = await new Promise<string>(resolve => {
       rl.question('Enable Remote Control? (y/n) ', resolve)
@@ -2154,7 +2154,7 @@ export async function bridgeMain(args: string[]): Promise<void> {
     if (!found) {
       // biome-ignore lint/suspicious/noConsole: intentional error output
       console.error(
-        `Error: No recent session found in this directory or its worktrees. Run \`claude remote-control\` to start a new one.`,
+        `Error: No recent session found in this directory or its worktrees. Run \`socc remote-control\` to start a new one.`,
       )
       // eslint-disable-next-line custom-rules/no-process-exit
       process.exit(1)
@@ -2175,7 +2175,7 @@ export async function bridgeMain(args: string[]): Promise<void> {
   }
 
   // In production, baseUrl is the Anthropic API (from OAuth config).
-  // CLAUDE_BRIDGE_BASE_URL overrides this for ant local dev only.
+  // SOCC_BRIDGE_BASE_URL overrides this for ant local dev only.
   const baseUrl = getBridgeBaseUrl()
 
   // For non-localhost targets, require HTTPS to protect credentials.
@@ -2195,12 +2195,12 @@ export async function bridgeMain(args: string[]): Promise<void> {
   // Session ingress URL for WebSocket connections. In production this is the
   // same as baseUrl (Envoy routes /v1/session_ingress/* to session-ingress).
   // Locally, session-ingress runs on a different port (9413) than the
-  // contain-provide-api (8211), so CLAUDE_BRIDGE_SESSION_INGRESS_URL must be
-  // set explicitly. Ant-only, matching CLAUDE_BRIDGE_BASE_URL.
+  // contain-provide-api (8211), so SOCC_BRIDGE_SESSION_INGRESS_URL must be
+  // set explicitly. Ant-only, matching SOCC_BRIDGE_BASE_URL.
   const sessionIngressUrl =
     process.env.USER_TYPE === 'ant' &&
-    process.env.CLAUDE_BRIDGE_SESSION_INGRESS_URL
-      ? process.env.CLAUDE_BRIDGE_SESSION_INGRESS_URL
+    process.env.SOCC_BRIDGE_SESSION_INGRESS_URL
+      ? process.env.SOCC_BRIDGE_SESSION_INGRESS_URL
       : baseUrl
 
   const { getBranch, getRemoteUrl, findGitRoot } = await import(
@@ -2252,7 +2252,7 @@ export async function bridgeMain(args: string[]): Promise<void> {
     })
     // biome-ignore lint/suspicious/noConsole: intentional dialog output
     console.log(
-      `\nSOCC Remote Control is launching in spawn mode which lets you create new sessions in this project from SOCC on Web or your mobile app. Learn more here: https://code.claude.com/docs/en/remote-control\n\n` +
+      `\nSOCC Remote Control is launching in spawn mode which lets you create new sessions in this project from SOCC on Web or your mobile app. Learn more here: https://github.com/nilsonpmjr/socc/tree/main/docs/remote-control\n\n` +
         `Spawn mode for this project:\n` +
         `  [1] same-dir \u2014 sessions share the current directory (default)\n` +
         `  [2] worktree \u2014 each session gets an isolated git worktree\n\n` +
@@ -2852,8 +2852,8 @@ export async function runBridgeHeadless(
   }
   const sessionIngressUrl =
     process.env.USER_TYPE === 'ant' &&
-    process.env.CLAUDE_BRIDGE_SESSION_INGRESS_URL
-      ? process.env.CLAUDE_BRIDGE_SESSION_INGRESS_URL
+    process.env.SOCC_BRIDGE_SESSION_INGRESS_URL
+      ? process.env.SOCC_BRIDGE_SESSION_INGRESS_URL
       : baseUrl
 
   const { getBranch, getRemoteUrl, findGitRoot } = await import(

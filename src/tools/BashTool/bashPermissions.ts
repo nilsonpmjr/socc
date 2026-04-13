@@ -475,7 +475,7 @@ const ANT_ONLY_SAFE_ENV_VARS = new Set([
 
 /**
  * Strips full-line comments from a command.
- * This handles cases where Claude adds comments in bash commands, e.g.:
+ * This handles cases where the assistant adds comments in bash commands, e.g.:
  *   "# Check the logs directory\nls /home/user/logs"
  * Should be stripped to: "ls /home/user/logs"
  *
@@ -1193,7 +1193,7 @@ export async function checkCommandAndSuggestRules(
   // validators (backslash-escaped operators, etc.) would only add FPs.
   if (
     !astParseSucceeded &&
-    !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_COMMAND_INJECTION_CHECK)
+    !isEnvTruthy(process.env.SOCC_DISABLE_COMMAND_INJECTION_CHECK)
   ) {
     const safetyResult = await bashCommandIsSafeAsync(input.command)
 
@@ -1653,7 +1653,7 @@ export async function bashToolHasPermission(
   // When tree-sitter WASM is unavailable OR the injection check is disabled
   // via env var, we fall back to the old path (legacy gate at ~1370 runs).
   const injectionCheckDisabled = isEnvTruthy(
-    process.env.CLAUDE_CODE_DISABLE_COMMAND_INJECTION_CHECK,
+    process.env.SOCC_DISABLE_COMMAND_INJECTION_CHECK,
   )
   // GrowthBook killswitch for shadow mode — when off, skip the native parse
   // entirely. Computed once; feature() must stay inline in the ternary below.
@@ -2016,9 +2016,9 @@ export async function bashToolHasPermission(
       // SECURITY: Compute compoundCommandHasCd from the full command, NOT
       // hardcode false. The pipe-handling path previously passed `false` here,
       // disabling the cd+redirect check at pathValidation.ts:821. Appending
-      // `| echo done` to `cd .claude && echo x > settings.json` routed through
+      // `| echo done` to `cd .socc && echo x > settings.json` routed through
       // this path with compoundCommandHasCd=false, letting the redirect write
-      // to .claude/settings.json without the cd+redirect block firing.
+      // to .socc/settings.json without the cd+redirect block firing.
       const pathResult = checkPathConstraints(
         input,
         getCwd(),
@@ -2061,7 +2061,7 @@ export async function bashToolHasPermission(
   // same question: "can splitCommand be trusted on this input?"
   if (
     astSubcommands === null &&
-    !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_COMMAND_INJECTION_CHECK)
+    !isEnvTruthy(process.env.SOCC_DISABLE_COMMAND_INJECTION_CHECK)
   ) {
     const originalCommandSafetyResult = await bashCommandIsSafeAsync(
       input.command,
@@ -2173,7 +2173,7 @@ export async function bashToolHasPermission(
   }
 
   // Track if compound command contains cd for security validation
-  // This prevents bypassing path checks via: cd .claude/ && mv test.txt settings.json
+  // This prevents bypassing path checks via: cd .socc/ && mv test.txt settings.json
   const compoundCommandHasCd = cdCommands.length > 0
 
   // SECURITY: Block compound commands that have both cd AND git
@@ -2320,7 +2320,7 @@ export async function bashToolHasPermission(
   let hasPossibleCommandInjection = false
   if (
     astSubcommands === null &&
-    !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_COMMAND_INJECTION_CHECK)
+    !isEnvTruthy(process.env.SOCC_DISABLE_COMMAND_INJECTION_CHECK)
   ) {
     // CC-643: Batch divergence telemetry into a single logEvent. The per-sub
     // logEvent was the hot-path syscall driver (each call → /proc/self/stat

@@ -1,15 +1,15 @@
-# PRD — SOCCsização do Clone do OpenClaude
+# PRD — SOCCsização do Runtime Base
 
 ## 1. Executive Summary
 
-- **Problem Statement**: A base atual em TypeScript/Bun ainda se apresenta como `OpenClaude`, com foco primário em coding-agent generalista, embora o objetivo do produto seja ser o SOCC: uma ferramenta centrada em SOC, threat intelligence e incident response. Isso gera desalinhamento entre identidade, UX, documentação, modelo mental do usuário e postura de segurança.
-- **Proposed Solution**: Transformar o clone atual em `SOCC`, usando a stack existente como runtime principal e reaproveitando do legado do SOCC apenas o branding e a alma comportamental presente em `.agents`. A transformação inclui renomeação completa de pacote, binário, superfícies de UX e documentação, além de reposicionar o agente `Socc` como analista de segurança padrão e “alma” do produto, mantendo menções ao OpenClaude apenas onde forem úteis para atribuição, histórico ou licenciamento.
+- **Problem Statement**: A base atual em TypeScript/Bun ainda carrega branding anterior, com foco primário em coding-agent generalista, embora o objetivo do produto seja ser o SOCC: uma ferramenta centrada em SOC, threat intelligence e incident response. Isso gera desalinhamento entre identidade, UX, documentação, modelo mental do usuário e postura de segurança.
+- **Proposed Solution**: Transformar o runtime atual em `SOCC`, usando a stack existente como runtime principal e reaproveitando do legado do SOCC apenas o branding e a alma comportamental presente em `.agents`. A transformação inclui renomeação completa de pacote, binário, superfícies de UX e documentação, além de reposicionar o agente `Socc` como analista de segurança padrão e “alma” do produto, mantendo menções ao branding anterior apenas onde forem úteis para atribuição, histórico ou licenciamento.
 - **Success Criteria**:
   - `socc` passa a ser o único binário/documentação principal de operação, com `socc --help` e `socc --version` funcionais no fluxo padrão.
-  - Menções ativas a `OpenClaude` são reduzidas a `0` nas superfícies principais de produto, onboarding, help, docs operacionais e UX, exceto em `README`, `CONTRIBUTING`, `LICENSE` e outros pontos explícitos de atribuição histórica.
+  - Menções ativas ao branding anterior são reduzidas a `0` nas superfícies principais de produto, onboarding, help, docs operacionais e UX, exceto em `README`, `CONTRIBUTING`, `LICENSE` e outros pontos explícitos de atribuição histórica.
   - O fluxo inicial do produto passa a comunicar claramente que o SOCC é um copiloto para SOC/threat intel/incident response, e que capacidades de coding-agent continuam disponíveis como suporte secundário.
   - O agente `Socc` é carregado por padrão com comportamento alinhado ao material de referência: PT-BR por padrão, separação entre observado e inferido, e proibição explícita de inventar IOCs/CVEs/TTPs/fontes.
-  - A documentação principal de instalação, uso e arquitetura é reposicionada para segurança e operação SOC, com referência explícita ao legado do OpenClaude apenas onde agregue contexto.
+  - A documentação principal de instalação, uso e arquitetura é reposicionada para segurança e operação SOC, com referência explícita ao legado do runtime anterior apenas onde agregue contexto.
 
 ## 2. User Experience & Functionality
 
@@ -24,7 +24,7 @@
   - As an incident responder, I want the assistant to separate observed evidence from inferred conclusions so that I can trust and reuse the analysis in real workflows.
   - As a threat intelligence analyst, I want the product language, commands, docs, and defaults to reflect SOC operations instead of a generic coding CLI so that onboarding matches the actual purpose of the tool.
   - As a maintainer, I want to keep the current TypeScript/Bun runtime while reusing only branding and agent soul artifacts from the legacy SOCC materials so that migration stays narrow and controlled.
-  - As a project owner, I want historical attribution to OpenClaude preserved only in appropriate legal/community documents so that the product can establish an independent identity without losing provenance.
+  - As a project owner, I want historical attribution to the prior runtime preserved only in appropriate legal/community documents so that the product can establish an independent identity without losing provenance.
 
 - **Acceptance Criteria**:
   - Story 1 is done when the primary executable, help text, startup copy, package metadata and install docs all use `socc` as the canonical command and product name.
@@ -35,7 +35,7 @@
   - Story 3 is done when coding-agent features remain available but are described as secondary capabilities in support of the analyst workflow.
   - Story 4 is done when the migration plan keeps the current TypeScript/Bun architecture as the runtime source of truth and explicitly forbids reusing legacy SOCC commands or harness implementations.
   - Story 4 is done when the only approved reuse from the legacy SOCC material is branding guidance and the agent soul/identity artifacts under `.agents`.
-  - Story 5 is done when `README`, `CONTRIBUTING`, `LICENSE` and equivalent attribution surfaces may mention OpenClaude as origin/base, while product-facing operational UX no longer depends on that branding.
+  - Story 5 is done when `README`, `CONTRIBUTING`, `LICENSE` and equivalent attribution surfaces may mention the prior runtime as origin/base, while product-facing operational UX no longer depends on that branding.
 
 - **Non-Goals**:
   - Reescrever o runtime principal em Python nesta fase.
@@ -66,8 +66,8 @@
 - **Architecture Overview**:
   - O runtime principal permanece a base TypeScript/Bun já presente no repositório.
   - A transformação deve ser realizada em camadas:
-    - camada 1: identidade do produto (`OpenClaude` -> `SOCC`);
-    - camada 2: identidade do runtime (`openclaude` -> `socc`, package/bin/proto/help/settings/output paths);
+    - camada 1: identidade do produto (branding anterior -> `SOCC`);
+    - camada 2: identidade do runtime (namespace anterior -> `socc`, package/bin/proto/help/settings/output paths);
     - camada 3: reposicionamento de UX e docs para segurança;
     - camada 4: ativação do agente `Socc` como comportamento padrão;
     - camada 5: incorporação exclusiva do branding e da alma comportamental de `.agents`.
@@ -75,8 +75,8 @@
   - O modelo operacional desejado é: CLI/TUI/headless runtime security-first, com coding-agent capabilities tratadas como suporte para investigação, automação limitada e produtividade do analista.
 
 - **Integration Points**:
-  - Package manager: o pacote publicado deve migrar de `@gitlawb/openclaude` para a identidade final definida do SOCC, com `socc` como binário principal.
-  - CLI/runtime: `bin/openclaude`, mensagens de erro, docs de instalação, `README`, quick starts, scripts de smoke e comandos derivados devem ser migrados para `socc`.
+  - Package manager: o pacote publicado deve refletir a identidade final definida do SOCC, com `socc` como binário principal.
+  - CLI/runtime: binário, mensagens de erro, docs de instalação, `README`, quick starts, scripts de smoke e comandos derivados devem ser migrados para `socc`.
   - Configuração local: a solução deve definir uma convenção unificada de paths e arquivos de configuração do SOCC, preferencialmente orientada a `~/.socc` e equivalentes de projeto, com estratégia explícita de migração de paths herdados.
   - gRPC/protocolos: artefatos como `src/proto/socc.proto` e namespaces correlatos devem entrar no inventário de compatibilidade/versionamento para clientes existentes.
   - Persona/agente: o contrato do agente `Socc` deve ser carregável na stack atual a partir de artefatos declarativos ou configuração equivalente, mantendo espaço para futuras especializações.
@@ -98,7 +98,7 @@
     - Tornar `socc` o binário principal.
     - Reposicionar `README`, quick starts, install docs, help e mensagens iniciais para segurança/SOC.
     - Adaptar o agente `Socc` como persona padrão do runtime.
-    - Preservar menções ao OpenClaude apenas em documentos de atribuição, histórico e licença.
+    - Preservar menções ao runtime anterior apenas em documentos de atribuição, histórico e licença.
   - v1.1:
     - Migrar paths/configurações centrais para convenção `socc`.
     - Consolidar help, onboarding e superfície operacional do runtime atual sob a identidade SOCC.
@@ -110,8 +110,8 @@
     - Evoluir o produto como copiloto SOC sem depender de comandos ou harness herdados do SOCC legado.
 
 - **Technical Risks**:
-  - Renomeação ampla pode quebrar scripts, docs, automações e integrações que dependem de `openclaude`.
-  - Paths legados como `.openclaude` e referências a `.claude/settings.json` podem gerar confusão operacional ou regressões se a estratégia de migração for incompleta.
+  - Renomeação ampla pode quebrar scripts, docs, automações e integrações que dependem do namespace anterior.
+  - Paths legados anteriores e referências a `.socc/settings.json` podem gerar confusão operacional ou regressões se a estratégia de migração for incompleta.
   - O reposicionamento de branding sem adaptação real do comportamento do agente pode resultar em “SOCC” apenas cosmético.
   - Misturar domínio SOC com superfícies generalistas sem hierarquia clara pode manter onboarding ambíguo e reduzir confiança do usuário.
   - Reaproveitar acidentalmente comandos ou harness do SOCC legado pode reintroduzir escopo não aprovado e comprometer a coerência da migração.

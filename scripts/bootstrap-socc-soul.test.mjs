@@ -137,7 +137,7 @@ test('syncSoccSoul generates canonical, runtime rules, all runtime skills, and m
     ),
   )
   const runtimeReference = await readFile(
-    join(root, '.claude', 'references', 'evidence-rules.md'),
+    join(root, '.socc', 'references', 'evidence-rules.md'),
     'utf8',
   )
 

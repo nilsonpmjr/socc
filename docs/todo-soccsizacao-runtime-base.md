@@ -1,6 +1,6 @@
-# TODO — Implementação da SOCCsização do Clone do OpenClaude
+# TODO — Implementação da SOCCsização do Runtime Base
 
-**PRD pai:** `prd-soccsizacao-openclaude.md`  
+**PRD pai:** `prd-soccsizacao-runtime-base.md`  
 **Objetivo:** transformar a base atual em `SOCC`, com foco primário em SOC / threat intel / incident response, sem reaproveitar comandos nem harness do SOCC legado.
 
 ---
@@ -37,7 +37,7 @@
 - [x] quick starts e guide não técnico descrevem o SOCC como copiloto de segurança
 - [x] extensão VS Code e superfícies visuais principais já expõem SOCC como identidade primária
 - [x] `insights`, onboarding visual e control center da extensão já usam identidade e paleta SOCC
-- [ ] menções operacionais a `OpenClaude` saem das superfícies principais, preservando apenas atribuição histórica quando útil
+- [ ] menções operacionais ao branding anterior saem das superfícies principais, preservando apenas atribuição histórica quando útil
 
 ---
 
@@ -49,7 +49,7 @@
 
 **Acceptance Criteria**
 
-- [x] paths, nomes e mensagens principais deixam de depender de `openclaude`
+- [x] paths, nomes e mensagens principais deixam de depender do branding anterior
 - [x] convenção de runtime/configuração aponta para identidade `socc`
 - [x] secure storage, native host e metadata principal de integração já priorizam `SOCC`
 - [x] proto ativo do runtime migrou para `src/proto/socc.proto`
@@ -63,7 +63,7 @@
 
 - [x] compatibilidade temporária, se existir, é explícita e limitada
 - [x] compatibilidade legada de perfil e credenciais permanece funcional sem expor branding antigo como padrão
-- [ ] superfícies novas não apresentam `openclaude` como nome principal
+- [ ] superfícies novas não apresentam branding anterior como nome principal
 
 ---
 
@@ -143,7 +143,7 @@
 **Acceptance Criteria**
 
 - [ ] o agente `socc` carregado do artefato canônico gera o mesmo prompt-base no fluxo interativo e no não interativo
-- [ ] regras geradas em `.claude/rules/` continuam entrando no contexto por `claudemd.ts`
+- [ ] regras geradas em `.socc/rules/` continuam entrando no contexto por `claudemd.ts`
 - [ ] todas as skills de `socc-copilot/skills` continuam visíveis via `loadSkillsDir.ts`
 
 ### SI-503: publicar `@vantagesec/socc` no npm como passo final da SOCCsização

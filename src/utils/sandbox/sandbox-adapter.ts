@@ -1,6 +1,6 @@
 /**
- * Adapter layer that wraps @anthropic-ai/sandbox-runtime with Claude CLI-specific integrations.
- * This file provides the bridge between the external sandbox-runtime package and Claude CLI's
+ * Adapter layer that wraps @anthropic-ai/sandbox-runtime with SOCC-specific integrations.
+ * This file provides the bridge between the external sandbox-runtime package and SOCC's
  * settings system, tool integration, and additional features.
  */
 
@@ -220,7 +220,7 @@ export function convertToSandboxRuntimeConfig(
   }
 
   // Extract filesystem paths from Edit and Read rules
-  // Always include current directory and Claude temp directory as writable
+  // Always include current directory and SOCC temp directory as writable
   // The temp directory is needed for Shell.ts cwd tracking files
   const allowWrite: string[] = ['.', getClaudeTempDir()]
   const denyWrite: string[] = []
@@ -240,18 +240,18 @@ export function convertToSandboxRuntimeConfig(
   const cwd = getCwdState()
   const originalCwd = getOriginalCwd()
   if (cwd !== originalCwd) {
-    denyWrite.push(resolve(cwd, '.claude', 'settings.json'))
-    denyWrite.push(resolve(cwd, '.claude', 'settings.local.json'))
+    denyWrite.push(resolve(cwd, '.socc', 'settings.json'))
+    denyWrite.push(resolve(cwd, '.socc', 'settings.local.json'))
   }
 
-  // Block writes to .claude/skills in both original and current working directories.
-  // The sandbox-runtime's getDangerousDirectories() protects .claude/commands and
-  // .claude/agents but not .claude/skills. Skills have the same privilege level
+  // Block writes to .socc/skills in both original and current working directories.
+  // The sandbox-runtime's getDangerousDirectories() protects .socc/commands and
+  // .socc/agents but not .socc/skills. Skills have the same privilege level
   // (auto-discovered, auto-loaded, full Claude capabilities) so they need the
   // same OS-level sandbox protection.
-  denyWrite.push(resolve(originalCwd, '.claude', 'skills'))
+  denyWrite.push(resolve(originalCwd, '.socc', 'skills'))
   if (cwd !== originalCwd) {
-    denyWrite.push(resolve(cwd, '.claude', 'skills'))
+    denyWrite.push(resolve(cwd, '.socc', 'skills'))
   }
 
   // SECURITY: Git's is_git_directory() treats cwd as a bare repo if it has

@@ -20,7 +20,7 @@ import {
   LEGACY_AGENT_TOOL_NAME,
 } from '../tools/AgentTool/constants.js'
 import type { LogOption } from '../types/logs.js'
-import { getClaudeConfigHomeDir } from '../utils/envUtils.js'
+import { getSoccConfigHomeDir } from '../utils/envUtils.js'
 import { toError } from '../utils/errors.js'
 import { execFileNoThrow } from '../utils/execFileNoThrow.js'
 import { logError } from '../utils/log.js'
@@ -87,7 +87,7 @@ const getRemoteHostSessionCount: (hs: string) => Promise<number> =
           'ssh',
           [
             `${homespace}.coder`,
-            'find /root/.claude/projects -name "*.jsonl" 2>/dev/null | wc -l',
+            'find /root/.socc/projects -name "*.jsonl" 2>/dev/null | wc -l',
           ],
           { timeout: 30000 },
         )
@@ -111,7 +111,7 @@ const collectFromRemoteHost: (
           // SCP the projects folder
           const scpResult = await execFileNoThrow(
             'scp',
-            ['-rq', `${homespace}.coder:/root/.claude/projects/`, tempDir],
+            ['-rq', `${homespace}.coder:/root/.socc/projects/`, tempDir],
             { timeout: 300000 },
           )
           if (scpResult.code !== 0) {
@@ -254,7 +254,7 @@ type SessionMeta = {
   lines_removed: number
   files_modified: number
   message_hours: number[]
-  user_message_timestamps: string[] // ISO timestamps for multi-clauding detection
+  user_message_timestamps: string[] // ISO timestamps for concurrent-session detection
 }
 
 type SessionFacets = {
@@ -414,11 +414,11 @@ const LABEL_MAP: Record<string, string> = {
   essential: 'Essential',
 }
 
-// Lazy getters: getClaudeConfigHomeDir() is memoized and reads process.env.
+// Lazy getters: getSoccConfigHomeDir() is memoized and reads process.env.
 // Calling it at module scope would populate the memoize cache before
-// entrypoints can set CLAUDE_CONFIG_DIR, breaking all 150+ other callers.
+// entrypoints can set SOCC_CONFIG_DIR, breaking all 150+ other callers.
 function getDataDir(): string {
-  return join(getClaudeConfigHomeDir(), 'usage-data')
+  return join(getSoccConfigHomeDir(), 'usage-data')
 }
 function getFacetsDir(): string {
   return join(getDataDir(), 'facets')
@@ -485,7 +485,7 @@ function extractToolStats(log: LogOption): {
   linesRemoved: number
   filesModified: Set<string>
   messageHours: number[]
-  userMessageTimestamps: string[] // ISO timestamps for multi-clauding detection
+  userMessageTimestamps: string[] // ISO timestamps for concurrent-session detection
 } {
   const toolCounts: Record<string, number> = {}
   const languages: Record<string, number> = {}
@@ -506,7 +506,7 @@ function extractToolStats(log: LogOption): {
   let linesRemoved = 0
   const filesModified = new Set<string>()
   const messageHours: number[] = []
-  const userMessageTimestamps: string[] = [] // For multi-clauding detection
+  const userMessageTimestamps: string[] = [] // For concurrent-session detection
   let usesMcp = false
   let usesWebSearch = false
   let usesWebFetch = false
@@ -610,13 +610,13 @@ function extractToolStats(log: LogOption): {
 
       // Only track message hours and response times for actual human messages
       if (isHumanMessage) {
-        // Track message hour for time-of-day analysis and timestamp for multi-clauding
+        // Track message hour for time-of-day analysis and timestamp for concurrent-session detection
         if (msgTimestamp) {
           try {
             const msgDate = new Date(msgTimestamp)
             const hour = msgDate.getHours() // Local hour 0-23
             messageHours.push(hour)
-            // Collect timestamp for multi-clauding detection (matching Python)
+            // Collect timestamp for concurrent-session detection (matching Python)
             userMessageTimestamps.push(msgTimestamp)
           } catch {
             // Skip invalid timestamps
@@ -869,7 +869,7 @@ function formatTranscriptForFacets(log: LogOption): string {
 
 const SUMMARIZE_CHUNK_PROMPT = `Summarize this portion of a SOCC session transcript. Focus on:
 1. What the user asked for
-2. What Claude did (tools used, files modified)
+2. What SOCC did (tools used, files modified)
 3. Any friction or issues
 4. The outcome
 
@@ -1055,11 +1055,11 @@ RESPOND WITH ONLY A VALID JSON OBJECT matching this schema:
 }
 
 /**
- * Detects multi-clauding (using multiple Claude sessions concurrently).
+ * Detects multiple concurrent SOCC sessions.
  * Uses a sliding window to find the pattern: session1 -> session2 -> session1
  * within a 30-minute window.
  */
-export function detectMultiClauding(
+export function detectMultiSoccing(
   sessions: Array<{
     session_id: string
     user_message_timestamps: string[]
@@ -1317,7 +1317,7 @@ function aggregateData(
   // Store message hours for time-of-day chart
   result.message_hours = allMessageHours
 
-  result.multi_clauding = detectMultiClauding(sessions)
+  result.multi_clauding = detectMultiSoccing(sessions)
 
   return result
 }
@@ -1354,7 +1354,7 @@ Include 4-5 areas. Skip internal CC operations.`,
 
 RESPOND WITH ONLY A VALID JSON OBJECT:
 {
-  "narrative": "2-3 paragraphs analyzing HOW the user interacts with SOCC. Use second person 'you'. Describe patterns: iterate quickly vs detailed upfront specs? Interrupt often or let Claude run? Include specific examples. Use **bold** for key insights.",
+  "narrative": "2-3 paragraphs analyzing HOW the user interacts with SOCC. Use second person 'you'. Describe patterns: iterate quickly vs detailed upfront specs? Interrupt often or let SOCC run? Include specific examples. Use **bold** for key insights.",
   "key_pattern": "One sentence summary of most distinctive interaction style"
 }`,
     maxTokens: 8192,
@@ -1399,11 +1399,11 @@ Include 3 friction categories with 2 examples each.`,
    - Good for: database queries, Slack integration, GitHub issue lookup, connecting to internal APIs
 
 2. **Custom Skills**: Reusable prompts you define as markdown files that run with a single /command.
-   - How to use: Create \`.claude/skills/commit/SKILL.md\` with instructions. Then type \`/commit\` to run it.
+   - How to use: Create \`.socc/skills/commit/SKILL.md\` with instructions. Then type \`/commit\` to run it.
    - Good for: repetitive workflows - /commit, /review, /test, /deploy, /pr, or complex multi-step workflows
 
 3. **Hooks**: Shell commands that auto-run at specific lifecycle events.
-   - How to use: Add to \`.claude/settings.json\` under "hooks" key.
+   - How to use: Add to \`.socc/settings.json\` under "hooks" key.
    - Good for: auto-formatting code, running type checks, enforcing conventions
 
 4. **Headless Mode**: Run SOCC non-interactively from scripts and CI/CD.
@@ -1743,7 +1743,7 @@ Use this 4-part structure:
 
 2. **What's hindering you** - Split into (a) SOCC's fault (misunderstandings, wrong approaches, bugs) and (b) user-side friction (not providing enough context, environment issues -- ideally more general than just one project). Be honest but constructive.
 
-3. **Quick wins to try** - Specific SOCC features they could try from the examples below, or a workflow technique if you think it's really compelling. (Avoid stuff like "Ask Claude to confirm before taking actions" or "Type out more context up front" which are less compelling.)
+3. **Quick wins to try** - Specific SOCC features they could try from the examples below, or a workflow technique if you think it's really compelling. (Avoid stuff like "Ask SOCC to confirm before taking actions" or "Type out more context up front" which are less compelling.)
 
 4. **Ambitious workflows for better models** - As we move to much more capable models over the next 3-6 months, what should they prepare for? What workflows that seem impossible now will become possible? Draw from the appropriate section below.
 
@@ -2310,14 +2310,14 @@ function generateHtmlReport(
     .friction-desc { font-size: 13px; color: #7f1d1d; margin-bottom: 10px; }
     .friction-examples { margin: 0 0 0 20px; font-size: 13px; color: #334155; }
     .friction-examples li { margin-bottom: 4px; }
-    .claude-md-section { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 16px; margin-bottom: 20px; }
-    .claude-md-section h3 { font-size: 14px; font-weight: 600; color: #1e40af; margin: 0 0 12px 0; }
-    .claude-md-actions { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #dbeafe; }
+    .socc-md-section { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 16px; margin-bottom: 20px; }
+    .socc-md-section h3 { font-size: 14px; font-weight: 600; color: #1e40af; margin: 0 0 12px 0; }
+    .socc-md-actions { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #dbeafe; }
     .copy-all-btn { background: #2563eb; color: white; border: none; border-radius: 4px; padding: 6px 12px; font-size: 12px; cursor: pointer; font-weight: 500; transition: all 0.2s; }
     .copy-all-btn:hover { background: #1d4ed8; }
     .copy-all-btn.copied { background: #16a34a; }
-    .claude-md-item { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; padding: 10px 0; border-bottom: 1px solid #dbeafe; }
-    .claude-md-item:last-child { border-bottom: none; }
+    .socc-md-item { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; padding: 10px 0; border-bottom: 1px solid #dbeafe; }
+    .socc-md-item:last-child { border-bottom: none; }
     .cmd-checkbox { margin-top: 2px; }
     .cmd-code { background: white; padding: 8px 12px; border-radius: 4px; font-size: 12px; color: #1e40af; border: 1px solid #bfdbfe; font-family: monospace; display: block; white-space: pre-wrap; word-break: break-word; flex: 1; }
     .cmd-why { font-size: 12px; color: #64748b; width: 100%; padding-left: 24px; margin-top: 4px; }
@@ -2806,7 +2806,7 @@ export async function generateUsageReport(options?: {
 
   // Optionally collect data from remote hosts first (internal-only)
   if (process.env.USER_TYPE === 'ant' && options?.collectRemote) {
-    const destDir = join(getClaudeConfigHomeDir(), 'projects')
+    const destDir = join(getSoccConfigHomeDir(), 'projects')
     const { hosts, totalCopied } = await collectAllRemoteHostData(destDir)
     remoteStats = { hosts, totalCopied }
   }
@@ -2994,7 +2994,7 @@ export async function generateUsageReport(options?: {
   const aggregated = aggregateData(substantiveSessions, substantiveFacets)
   aggregated.total_sessions_scanned = totalSessionsScanned
 
-  // Generate parallel insights from Claude (6 sections)
+  // Generate parallel insights from SOCC (6 sections)
   const insights = await generateParallelInsights(aggregated, facets)
 
   // Generate HTML report
@@ -3125,7 +3125,7 @@ ${remoteInfo}
 
 Your full shareable insights report is ready: ${reportUrl}${uploadHint}`
 
-    // Return prompt for Claude to respond to
+    // Return prompt for SOCC to respond to
     return [
       {
         type: 'text',
