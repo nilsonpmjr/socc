@@ -62,7 +62,7 @@ const remoteSubscriberExternalTokenNotice: StatusNoticeDefinition = {
     return <Box flexDirection="row" marginTop={1}>
         <Text color="warning">{figures.warning}</Text>
         <Text color="warning">
-          Auth conflict: Using {authTokenInfo.source} instead of the Claude.ai account
+          Auth conflict: Using {authTokenInfo.source} instead of the subscription account
           subscription token. Either unset {authTokenInfo.source}, or run
           `socc /logout`.
         </Text>

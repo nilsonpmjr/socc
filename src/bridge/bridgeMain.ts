@@ -1943,7 +1943,7 @@ DESCRIPTION
   directory you want to work in, then connect from the mobile app or web.
 ${serverDescription}
 NOTES
-  - You must be logged in with a Claude account that has a subscription
+  - You must be logged in with a subscription-backed account
   - Run \`claude\` first in the directory to accept the workspace trust dialog
 ${serverNote}`
   // biome-ignore lint/suspicious/noConsole: intentional help output

@@ -3,7 +3,7 @@
  *
  * Registers the `socc-cli://` custom URI scheme with the OS,
  * so that clicking a `socc-cli://` link in a browser (or any app) will
- * invoke `claude --handle-uri <url>`.
+ * invoke `socc --handle-uri <url>`.
  *
  * Platform details:
  *   macOS  — Creates a minimal .app trampoline in ~/Applications with
@@ -66,7 +66,7 @@ function windowsCommandValue(claudePath: string): string {
  * Creates a .app bundle where the CFBundleExecutable is a symlink to the
  * already-installed (and signed) `claude` binary. When macOS opens a
  * `socc-cli://` URL, it launches `claude` through this app bundle.
- * Claude then uses the url-handler NAPI module to read the URL from the
+ * SOCC then uses the url-handler NAPI module to read the URL from the
  * Apple Event and handles it normally.
  *
  * This approach avoids shipping a separate executable (which would need

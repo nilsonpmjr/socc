@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-04-12T21:17:33.996Z",
+  "generatedAt": "2026-04-13T17:18:45.377Z",
   "sourceRoot": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot",
-  "upstreamRoot": "/home/nilsonpmjr/Modelos/socc/.agents",
+  "upstreamRoot": null,
   "generatedAgentPath": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/generated/socc-agent.md",
   "generatedManifestPath": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/generated/socc-agent-manifest.json",
   "runtimeAgentPath": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/.socc/agents/socc.md",

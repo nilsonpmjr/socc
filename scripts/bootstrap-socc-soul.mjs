@@ -52,6 +52,14 @@ async function readRequiredFile(path) {
   return readFile(path, 'utf8')
 }
 
+function hasCanonicalSource(packageRoot) {
+  return existsSync(join(packageRoot, ...SOC_COPILOT_DIR, 'identity.md'))
+}
+
+function hasPackagedRuntime(packageRoot) {
+  return existsSync(join(packageRoot, ...RUNTIME_AGENT_PATH))
+}
+
 async function readOptionalFile(path) {
   if (!existsSync(path)) {
     return ''
@@ -462,6 +470,20 @@ async function main() {
   const scriptDir = dirname(fileURLToPath(import.meta.url))
   const packageRoot = findPackageRoot(scriptDir)
   const { upstreamRoot } = parseArgs(process.argv.slice(2))
+
+  if (!upstreamRoot && !hasCanonicalSource(packageRoot)) {
+    if (!hasPackagedRuntime(packageRoot)) {
+      throw new Error(
+        'SOCC canonical source is unavailable and no packaged runtime artifacts were found.',
+      )
+    }
+
+    console.log(
+      'SOCC packaged runtime already contains .socc artifacts; skipping canonical sync.',
+    )
+    return
+  }
+
   const result = await syncSoccSoul(packageRoot, { upstreamRoot })
 
   assert.ok(result.generatedAgentPath)

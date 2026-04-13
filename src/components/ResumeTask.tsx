@@ -249,10 +249,10 @@ function renderErrorSpecificGuidance(errorType: LoadErrorType): React.ReactNode 
         </Box>;
     case 'auth':
         return <Box marginY={1} flexDirection="column">
-          <Text dimColor>Teleport requires a Claude.ai account</Text>
+          <Text dimColor>Teleport requires a subscription-backed account</Text>
           <Text dimColor>
-            Run <Text bold>/login</Text> and select &quot;Claude.ai account with
-            subscription&quot;
+            Run <Text bold>/login</Text> and select the subscription-backed
+            account option
           </Text>
         </Box>;
     case 'api':

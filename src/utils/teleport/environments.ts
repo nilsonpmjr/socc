@@ -33,7 +33,7 @@ export async function fetchEnvironments(): Promise<EnvironmentResource[]> {
   const accessToken = getSoccOAuthTokens()?.accessToken
   if (!accessToken) {
     throw new Error(
-      'SOCC web sessions require authentication with a Claude.ai account. API key authentication is not sufficient. Please run /login to authenticate, or check your authentication status with /status.',
+      'SOCC web sessions require a subscription-backed account. API key authentication is not sufficient. Please run /login to authenticate, or check your authentication status with /status.',
     )
   }
 

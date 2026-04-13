@@ -230,7 +230,7 @@ function getMcpToolTimeoutMs(): number {
 
 import { isSoccInChromeMCPServer } from '../../utils/soccInChrome/common.js'
 
-// Lazy: toolRendering.tsx pulls React/ink; only needed when Claude-in-Chrome MCP server is connected
+// Lazy: toolRendering.tsx pulls React/ink; only needed when SOCC-in-Chrome MCP server is connected
 /* eslint-disable @typescript-eslint/no-require-imports */
 const soccInChromeToolRendering =
   (): typeof import('../../utils/soccInChrome/toolRendering.js') =>

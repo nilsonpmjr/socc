@@ -776,6 +776,9 @@ export async function getAttachments(
         maybe('at_mentioned_files', () =>
           processAtMentionedFiles(input, context),
         ),
+        maybe('local_path_files', () =>
+          processStandaloneFilePaths(input, context),
+        ),
         maybe('mcp_resources', () =>
           processMcpResourceAttachments(input, context),
         ),
@@ -1896,7 +1899,35 @@ async function processAtMentionedFiles(
   input: string,
   toolUseContext: ToolUseContext,
 ): Promise<Attachment[]> {
-  const files = extractAtMentionedFiles(input)
+  return processReferencedFiles(
+    extractAtMentionedFiles(input),
+    toolUseContext,
+    'tengu_at_mention_extracting_directory_success',
+    'tengu_at_mention_extracting_filename_success',
+    'tengu_at_mention_extracting_filename_error',
+  )
+}
+
+async function processStandaloneFilePaths(
+  input: string,
+  toolUseContext: ToolUseContext,
+): Promise<Attachment[]> {
+  return processReferencedFiles(
+    extractStandaloneFilePaths(input),
+    toolUseContext,
+    'tengu_local_path_extracting_directory_success',
+    'tengu_local_path_extracting_filename_success',
+    'tengu_local_path_extracting_filename_error',
+  )
+}
+
+async function processReferencedFiles(
+  files: string[],
+  toolUseContext: ToolUseContext,
+  directorySuccessEventName: string,
+  fileSuccessEventName: string,
+  fileErrorEventName: string,
+): Promise<Attachment[]> {
   if (files.length === 0) return []
 
   const appState = toolUseContext.getAppState()
@@ -1929,7 +1960,7 @@ async function processAtMentionedFiles(
                 )
               }
               const stdout = names.join('\n')
-              logEvent('tengu_at_mention_extracting_directory_success', {})
+              logEvent(directorySuccessEventName, {})
 
               return {
                 type: 'directory' as const,
@@ -1948,8 +1979,8 @@ async function processAtMentionedFiles(
         return await generateFileAttachment(
           absoluteFilename,
           toolUseContext,
-          'tengu_at_mention_extracting_filename_success',
-          'tengu_at_mention_extracting_filename_error',
+          fileSuccessEventName,
+          fileErrorEventName,
           'at-mention',
           {
             offset: lineStart,
@@ -1957,7 +1988,7 @@ async function processAtMentionedFiles(
           },
         )
       } catch {
-        logEvent('tengu_at_mention_extracting_filename_error', {})
+        logEvent(fileErrorEventName, {})
       }
     }),
   )
@@ -2788,6 +2819,33 @@ export function extractAtMentionedFiles(content: string): string[] {
 
   // Combine and deduplicate
   return uniq([...quotedMatches, ...regularMatches])
+}
+
+export function extractStandaloneFilePaths(content: string): string[] {
+  // Detect direct absolute local paths in normal prose so users don't need
+  // to remember the @mention syntax for simple "analyze this file" flows.
+  const quotedAbsolutePathRegex =
+    /(^|[\s(])["']((?:[A-Za-z]:[\\/]|\/)[^"'\r\n]+)["']/g
+  const unquotedAbsolutePathRegex =
+    /(^|[\s(])((?:[A-Za-z]:[\\/]|\/)[^\s'")\]}>,;|&]+)/g
+
+  const results: string[] = []
+
+  let match
+  while ((match = quotedAbsolutePathRegex.exec(content)) !== null) {
+    if (match[2]) {
+      results.push(match[2])
+    }
+  }
+
+  while ((match = unquotedAbsolutePathRegex.exec(content)) !== null) {
+    if (match[2]) {
+      results.push(match[2].replace(/[!?]+$/, ''))
+    }
+  }
+
+  const atMentioned = new Set(extractAtMentionedFiles(content))
+  return uniq(results).filter(path => !atMentioned.has(path))
 }
 
 export function extractMcpResourceMentions(content: string): string[] {

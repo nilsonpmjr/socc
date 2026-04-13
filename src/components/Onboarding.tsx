@@ -71,9 +71,9 @@ export function Onboarding({
          */}
         <OrderedList>
           <OrderedList.Item>
-            <Text>SOCC can make mistakes</Text>
+            <Text>Models can make mistakes</Text>
             <Text dimColor wrap="wrap">
-              You should always review SOCC&apos;s responses, especially when
+              You should always review models&apos; responses, especially when
               <Newline />
               running code.
               <Newline />
@@ -98,7 +98,7 @@ export function Onboarding({
   const apiKeyNeedingApproval = useMemo(() => {
     // Add API key step if needed
     // On homespace, ANTHROPIC_API_KEY is preserved in process.env for child
-    // processes but ignored by Claude Code itself (see auth.ts).
+    // processes but ignored by SOCC itself (see auth.ts).
     if (!process.env.ANTHROPIC_API_KEY || isRunningOnHomespace() || !isAnthropicAuthEnabled()) {
       return '';
     }

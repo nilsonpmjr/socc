@@ -2288,7 +2288,7 @@ async function* queryModel(
                 max_tokens: maxOutputTokens,
               })
               yield createAssistantAPIErrorMessage({
-                content: `${API_ERROR_MESSAGE_PREFIX}: Claude's response exceeded the ${
+                content: `${API_ERROR_MESSAGE_PREFIX}: The model's response exceeded the ${
                   maxOutputTokens
                 } output token maximum. To configure this behavior, set the SOCC_MAX_OUTPUT_TOKENS environment variable.`,
                 apiError: 'max_output_tokens',
@@ -3313,7 +3313,7 @@ export async function queryHaiku({
 type QueryWithModelOptions = Omit<Options, 'getToolPermissionContext'>
 
 /**
- * Query a specific model through the Claude Code infrastructure.
+ * Query a specific model through SOCC's first-party infrastructure.
  * This goes through the full query pipeline including proper authentication,
  * betas, and headers - unlike direct API calls.
  */

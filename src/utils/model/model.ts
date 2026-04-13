@@ -443,7 +443,7 @@ export function renderModelSetting(setting: ModelName | ModelAlias): string {
  * if the model is not recognized as a public model.
  */
 export function getPublicModelDisplayName(model: ModelName): string | null {
-  // For OpenAI/Gemini/Codex/GitHub providers, show the actual model name not a Claude alias
+  // For OpenAI/Gemini/Codex/GitHub providers, show the actual model name instead of a first-party alias
   if (getAPIProvider() === 'openai' || getAPIProvider() === 'gemini' || getAPIProvider() === 'codex' || getAPIProvider() === 'github') {
     // Return display names for known GitHub Copilot models
     const copilotModelNames: Record<string, string> = {

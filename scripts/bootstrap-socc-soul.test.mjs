@@ -2,6 +2,9 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
 import {
@@ -9,6 +12,11 @@ import {
   syncSoccCanonicalFromUpstream,
   syncSoccSoul,
 } from './bootstrap-socc-soul.mjs'
+
+const execFileAsync = promisify(execFile)
+const bootstrapScriptPath = fileURLToPath(
+  new URL('./bootstrap-socc-soul.mjs', import.meta.url),
+)
 
 const ALL_TEST_SKILLS = [
   'soc-generalist',
@@ -163,4 +171,30 @@ test('syncSoccSoul generates canonical, runtime rules, all runtime skills, and m
   for (const content of runtimeSkillEntries) {
     assert.match(content, /Use/)
   }
+})
+
+test('direct bootstrap skips canonical sync when only packaged .socc runtime exists', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'socc-soul-packaged-'))
+  const packagedScriptPath = join(root, 'scripts', 'bootstrap-socc-soul.mjs')
+  await writeFile(join(root, 'package.json'), '{"name":"socc-test"}', 'utf8')
+  await mkdir(join(root, 'scripts'), { recursive: true })
+  await writeFile(
+    packagedScriptPath,
+    await readFile(bootstrapScriptPath, 'utf8'),
+    'utf8',
+  )
+  await mkdir(join(root, '.socc', 'agents'), { recursive: true })
+  await writeFile(
+    join(root, '.socc', 'agents', 'socc.md'),
+    '---\nname: socc\ndescription: packaged runtime\n---\n# prompt\n',
+    'utf8',
+  )
+
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    [packagedScriptPath],
+    { cwd: root },
+  )
+
+  assert.match(stdout, /skipping canonical sync/i)
 })

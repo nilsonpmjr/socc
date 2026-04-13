@@ -247,7 +247,7 @@ export function convertToSandboxRuntimeConfig(
   // Block writes to .socc/skills in both original and current working directories.
   // The sandbox-runtime's getDangerousDirectories() protects .socc/commands and
   // .socc/agents but not .socc/skills. Skills have the same privilege level
-  // (auto-discovered, auto-loaded, full Claude capabilities) so they need the
+  // (auto-discovered, auto-loaded, full SOCC capabilities) so they need the
   // same OS-level sandbox protection.
   denyWrite.push(resolve(originalCwd, '.socc', 'skills'))
   if (cwd !== originalCwd) {
@@ -256,7 +256,7 @@ export function convertToSandboxRuntimeConfig(
 
   // SECURITY: Git's is_git_directory() treats cwd as a bare repo if it has
   // HEAD + objects/ + refs/. An attacker planting these (plus a config with
-  // core.fsmonitor) escapes the sandbox when Claude's unsandboxed git runs.
+  // core.fsmonitor) escapes the sandbox when SOCC's unsandboxed git runs.
   //
   // Unconditionally denying these paths makes sandbox-runtime mount
   // /dev/null at non-existent ones, which (a) leaves a 0-byte HEAD stub on
@@ -381,7 +381,7 @@ export function convertToSandboxRuntimeConfig(
 }
 
 // ============================================================================
-// Claude CLI-specific state
+// SOCC-specific state
 // ============================================================================
 
 let initializationPromise: Promise<void> | undefined
@@ -398,7 +398,7 @@ const bareGitRepoScrubPaths: string[] = []
 
 /**
  * Delete bare-repo files planted at cwd during a sandboxed command, before
- * Claude's unsandboxed git calls can see them. See the SECURITY block above
+ * SOCC's unsandboxed git calls can see them. See the SECURITY block above
  * bareGitRepoFiles. anthropics/claude-code#29316.
  */
 function scrubBareGitRepoFiles(): void {
@@ -823,7 +823,7 @@ async function reset(): Promise<void> {
 
 /**
  * Add a command to the excluded commands list (commands that should not be sandboxed)
- * This is a Claude CLI-specific function that updates local settings.
+ * This is a SOCC-specific function that updates local settings.
  */
 export function addToExcludedCommands(
   command: string,
@@ -922,7 +922,7 @@ export interface ISandboxManager {
 }
 
 /**
- * Claude CLI sandbox manager - wraps sandbox-runtime with Claude-specific features
+ * SOCC sandbox manager - wraps sandbox-runtime with SOCC-specific features
  */
 export const SandboxManager: ISandboxManager = {
   // Custom implementations
