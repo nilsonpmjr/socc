@@ -52,6 +52,7 @@ bun run dev:profile
 - Preserve existing repo patterns unless the change is intentionally refactoring them.
 - Add or update tests when the change affects behavior.
 - Update docs when setup, commands, or user-facing behavior changes.
+- Treat `README.md` as the entrypoint and `docs/` as the canonical documentation set.
 
 ## Validation
 
@@ -76,6 +77,14 @@ When working on provider/runtime setup, this can also help:
 bun run doctor:runtime
 ```
 
+When you touch docs structure or publishing behavior, validate the docs build too:
+
+```bash
+python -m venv /tmp/socc-docs-venv
+/tmp/socc-docs-venv/bin/pip install -r docs/requirements.txt
+/tmp/socc-docs-venv/bin/sphinx-build -b html docs docs/_build/html
+```
+
 ## Pull Requests
 
 Good PRs usually include:
@@ -88,6 +97,7 @@ Good PRs usually include:
 If the PR touches UI, terminal presentation, or the VS Code extension, include screenshots when useful.
 
 If the PR changes provider behavior, mention which provider path was tested.
+If the PR changes docs navigation or publishing, mention whether the Sphinx build was validated.
 
 ## Code Style
 

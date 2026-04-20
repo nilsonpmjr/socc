@@ -2,8 +2,8 @@
 
 ## Supported Versions
 
-Open Claude is currently maintained on the latest `main` branch and the latest
-npm release only.
+SOCC is currently maintained on the latest `main` branch and the latest npm
+release only.
 
 | Version | Supported |
 | ------- | --------- |
@@ -16,8 +16,8 @@ landed directly on `main` before a package release is published.
 
 ## Reporting a Vulnerability
 
-If you believe you have found a security vulnerability in Open Claude, please
-report it privately.
+If you believe you have found a security vulnerability in SOCC, please report it
+privately.
 
 Preferred reporting channel:
 
@@ -58,9 +58,9 @@ report.
 
 This policy applies to:
 
-- the Open Claude source code in this repository
+- the SOCC source code in this repository
 - official release artifacts published from this repository
-- the `@gitlawb/openclaude` npm package
+- the `@vantagesec/socc` npm package
 
 This policy does not cover:
 
