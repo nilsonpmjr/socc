@@ -39,6 +39,13 @@ Inside SOCC:
 - run `/onboard-github` for GitHub Models onboarding
 - start with a payload, alert, URL, log excerpt, or investigative question when using SOCC as a security analyst copiloto
 
+## Security Usage Notes
+
+- Treat SOCC as analyst support, not as an autonomous authority.
+- Validate IOCs, findings, and conclusions before escalation, containment, blocking, or external reporting.
+- Separate what was directly observed from what is inferred, especially in incident response and threat intelligence workflows.
+- Smaller or cheaper models may degrade investigation quality; verify important results against source evidence.
+
 ### Fastest OpenAI setup
 
 macOS / Linux:

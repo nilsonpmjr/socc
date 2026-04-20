@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -120,4 +120,32 @@ test('generated runtime rules and all upstream skills are visible to native load
   expect(rulesFile?.content).toContain('follow behavior rules')
   expect(rulesFile?.content).toContain('handle iocs declaratively')
   expect(promptSkills).toEqual(ALL_TEST_SKILLS)
+})
+
+test('generated socc agent preserves non-fabrication and observed-vs-inferred guidance', async () => {
+  tempRoot = mkdtempSync(join(tmpdir(), 'socc-runtime-agent-contract-'))
+  previousConfigDir = process.env.SOCC_CONFIG_DIR
+  process.env.SOCC_CONFIG_DIR = join(tempRoot, 'isolated-config')
+
+  writeFileSync(join(tempRoot, 'package.json'), '{"name":"socc-test"}', 'utf8')
+  mkdirSync(process.env.SOCC_CONFIG_DIR, { recursive: true })
+
+  const upstreamRoot = join(process.cwd(), 'socc-canonical', '.agents')
+  await syncSoccSoul(tempRoot, { upstreamRoot })
+
+  const workspace = join(tempRoot, 'workspace')
+  mkdirSync(workspace, { recursive: true })
+
+  resetStateForTests()
+  setOriginalCwd(workspace)
+  setProjectRoot(workspace)
+  setCwdState(workspace)
+  setAdditionalDirectoriesForClaudeMd([])
+  clearMemoryFileCaches()
+
+  const agentPath = join(tempRoot, '.socc', 'agents', 'socc.md')
+  const agentContent = readFileSync(agentPath, 'utf8')
+
+  expect(agentContent).toContain('Nunca invente IOCs, CVEs, hashes, domínios, IPs, TTPs ou fontes.')
+  expect(agentContent).toContain('Separe sempre o que foi **observado** do que foi **inferido**.')
 })

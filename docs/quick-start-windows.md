@@ -124,13 +124,19 @@ Check the basics:
 - make sure a model is loaded in LM Studio
 - make sure the model name matches what you set in `OPENAI_MODEL`
 
-## 6. Updating SOCC
+## 6. Safety Reminder
+
+- Use SOCC as analyst support, not as the final authority.
+- Review and validate important findings before taking defensive action or sharing conclusions.
+- Prefer starting with a payload, alert, URL, log excerpt, or investigative question.
+
+## 7. Updating SOCC
 
 ```powershell
 npm install -g @vantagesec/socc@latest
 ```
 
-## 7. Uninstalling SOCC
+## 8. Uninstalling SOCC
 
 ```powershell
 npm uninstall -g @vantagesec/socc
