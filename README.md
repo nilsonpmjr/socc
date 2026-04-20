@@ -3,12 +3,13 @@
 Security operations copiloto for threat intelligence, suspicious artifact triage, investigation support, and incident response.
 
 [![PR Checks](https://github.com/nilsonpmjr/socc/actions/workflows/pr-checks.yml/badge.svg)](https://github.com/nilsonpmjr/socc/actions/workflows/pr-checks.yml)
+[![Documentation Status](https://readthedocs.org/projects/socc/badge/?version=latest)](https://socc.readthedocs.io/en/latest/)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933)](https://nodejs.org/)
 [![Bun](https://img.shields.io/badge/Bun-1.3.11-f6dece)](https://bun.sh/)
 [![Security Policy](https://img.shields.io/badge/security-policy-0f766e)](SECURITY.md)
 [![License](https://img.shields.io/badge/license-MIT-2563eb)](LICENSE)
 
-[Documentation](docs/index.md) | [Quick Start](docs/install/quickstart.md) | [Advanced Setup](docs/install/advanced-setup.md) | [Security](SECURITY.md) | [Contributing](CONTRIBUTING.md)
+[Documentation](https://socc.readthedocs.io/en/latest/) | [Quick Start](https://socc.readthedocs.io/en/latest/install/quickstart.html) | [Advanced Setup](https://socc.readthedocs.io/en/latest/install/advanced-setup.html) | [Security](SECURITY.md) | [Contributing](CONTRIBUTING.md)
 
 ---
 
@@ -45,15 +46,15 @@ Inside SOCC:
 - run `/onboard-github` for GitHub Models onboarding
 - start with a payload, alert, URL, log excerpt, or investigative question
 
-If you want a source build, provider-specific examples, or runtime diagnostics, go straight to the [documentation hub](docs/index.md).
+If you want a source build, provider-specific examples, or runtime diagnostics, go straight to the [documentation hub](https://socc.readthedocs.io/en/latest/).
 
 ## Documentation
 
-- Installation: [requirements](docs/install/requirements.md), [quick start](docs/install/quickstart.md), [Windows setup](docs/install/windows.md), [advanced setup](docs/install/advanced-setup.md)
-- Configuration: [provider setup](docs/configuration/providers.md), [LiteLLM proxy](docs/configuration/litellm.md)
-- Operations: [runtime hardening](docs/operations/runtime-hardening.md), [headless gRPC](docs/operations/headless-grpc.md)
-- Architecture: [system overview](docs/architecture/overview.md), [runtime map](docs/architecture/runtime.md)
-- Contribution: [contributor guide](docs/contributing/index.md)
+- Installation: [requirements](https://socc.readthedocs.io/en/latest/install/requirements.html), [quick start](https://socc.readthedocs.io/en/latest/install/quickstart.html), [Windows setup](https://socc.readthedocs.io/en/latest/install/windows.html), [advanced setup](https://socc.readthedocs.io/en/latest/install/advanced-setup.html)
+- Configuration: [provider setup](https://socc.readthedocs.io/en/latest/configuration/providers.html), [LiteLLM proxy](https://socc.readthedocs.io/en/latest/configuration/litellm.html)
+- Operations: [runtime hardening](https://socc.readthedocs.io/en/latest/operations/runtime-hardening.html), [headless gRPC](https://socc.readthedocs.io/en/latest/operations/headless-grpc.html)
+- Architecture: [system overview](https://socc.readthedocs.io/en/latest/architecture/overview.html), [runtime map](https://socc.readthedocs.io/en/latest/architecture/runtime.html)
+- Contribution: [contributor guide](https://socc.readthedocs.io/en/latest/contributing/index.html)
 
 ## Security Notes
 
