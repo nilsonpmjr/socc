@@ -16,17 +16,17 @@ import { readGeminiAccessToken } from './geminiCredentials.ts'
 import { getOllamaChatBaseUrl } from './providerDiscovery.ts'
 
 export const PROFILE_FILE_NAME = '.socc-profile.json'
-export const LEGACY_PROFILE_FILE_NAMES = ['.openclaude-profile.json'] as const
+export const LEGACY_PROFILE_FILE_NAMES = [] as const
 export const DEFAULT_GEMINI_BASE_URL =
   'https://generativelanguage.googleapis.com/v1beta/openai'
 export const DEFAULT_GEMINI_MODEL = 'gemini-2.0-flash'
 
 const PROFILE_ENV_KEYS = [
-  'CLAUDE_CODE_USE_OPENAI',
-  'CLAUDE_CODE_USE_GEMINI',
-  'CLAUDE_CODE_USE_BEDROCK',
-  'CLAUDE_CODE_USE_VERTEX',
-  'CLAUDE_CODE_USE_FOUNDRY',
+  'SOCC_USE_OPENAI',
+  'SOCC_USE_GEMINI',
+  'SOCC_USE_BEDROCK',
+  'SOCC_USE_VERTEX',
+  'SOCC_USE_FOUNDRY',
   'OPENAI_BASE_URL',
   'OPENAI_MODEL',
   'OPENAI_API_KEY',
@@ -428,17 +428,17 @@ export function hasExplicitProviderSelection(
   processEnv: NodeJS.ProcessEnv = process.env,
 ): boolean {
   // If env was already applied from a provider profile, preserve it.
-  if (processEnv.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED === '1') {
+  if (processEnv.SOCC_PROVIDER_PROFILE_ENV_APPLIED === '1') {
     return true
   }
 
   return (
-    processEnv.CLAUDE_CODE_USE_OPENAI !== undefined ||
-    processEnv.CLAUDE_CODE_USE_GITHUB !== undefined ||
-    processEnv.CLAUDE_CODE_USE_GEMINI !== undefined ||
-    processEnv.CLAUDE_CODE_USE_BEDROCK !== undefined ||
-    processEnv.CLAUDE_CODE_USE_VERTEX !== undefined ||
-    processEnv.CLAUDE_CODE_USE_FOUNDRY !== undefined
+    processEnv.SOCC_USE_OPENAI !== undefined ||
+    processEnv.SOCC_USE_GITHUB !== undefined ||
+    processEnv.SOCC_USE_GEMINI !== undefined ||
+    processEnv.SOCC_USE_BEDROCK !== undefined ||
+    processEnv.SOCC_USE_VERTEX !== undefined ||
+    processEnv.SOCC_USE_FOUNDRY !== undefined
   )
 }
 
@@ -510,11 +510,11 @@ export async function buildLaunchEnv(options: {
   if (options.profile === 'gemini') {
     const env: NodeJS.ProcessEnv = {
       ...processEnv,
-      CLAUDE_CODE_USE_GEMINI: '1',
+      SOCC_USE_GEMINI: '1',
     }
 
-    delete env.CLAUDE_CODE_USE_OPENAI
-    delete env.CLAUDE_CODE_USE_GITHUB
+    delete env.SOCC_USE_OPENAI
+    delete env.SOCC_USE_GITHUB
 
     env.GEMINI_MODEL =
       shellGeminiModel ||
@@ -562,11 +562,11 @@ export async function buildLaunchEnv(options: {
 
   const env: NodeJS.ProcessEnv = {
     ...processEnv,
-    CLAUDE_CODE_USE_OPENAI: '1',
+    SOCC_USE_OPENAI: '1',
   }
 
-  delete env.CLAUDE_CODE_USE_GEMINI
-  delete env.CLAUDE_CODE_USE_GITHUB
+  delete env.SOCC_USE_GEMINI
+  delete env.SOCC_USE_GITHUB
   delete env.GEMINI_API_KEY
   delete env.GEMINI_AUTH_MODE
   delete env.GEMINI_ACCESS_TOKEN
@@ -692,7 +692,7 @@ export async function buildStartupEnvFromProfile(options?: {
   // Saved /provider profiles should still win over provider-manager env that was
   // auto-applied during startup. Only explicit shell/flag provider selection
   // should bypass the persisted startup profile.
-  const profileManagedEnv = processEnv.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED === '1'
+  const profileManagedEnv = processEnv.SOCC_PROVIDER_PROFILE_ENV_APPLIED === '1'
   if (hasExplicitProviderSelection(processEnv) && !profileManagedEnv) {
     return processEnv
   }
@@ -707,8 +707,8 @@ export async function buildStartupEnvFromProfile(options?: {
         for (const key of PROFILE_ENV_KEYS) {
           delete cleanedEnv[key]
         }
-        delete cleanedEnv.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED
-        delete cleanedEnv.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED_ID
+        delete cleanedEnv.SOCC_PROVIDER_PROFILE_ENV_APPLIED
+        delete cleanedEnv.SOCC_PROVIDER_PROFILE_ENV_APPLIED_ID
         return cleanedEnv
       })()
     : processEnv
@@ -718,7 +718,7 @@ export async function buildStartupEnvFromProfile(options?: {
     persisted,
     goal:
       options?.goal ??
-      normalizeRecommendationGoal(processEnv.OPENCLAUDE_PROFILE_GOAL),
+      normalizeRecommendationGoal(processEnv.SOCC_PROFILE_GOAL),
     processEnv: launchProcessEnv,
     getOllamaChatBaseUrl:
       options?.getOllamaChatBaseUrl ?? getOllamaChatBaseUrl,

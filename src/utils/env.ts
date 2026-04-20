@@ -1,9 +1,8 @@
 import memoize from 'lodash-es/memoize.js'
-import { homedir } from 'os'
 import { join } from 'path'
 import { fileSuffixForOauthConfig } from '../constants/oauth.js'
 import { isRunningWithBun } from './bundledMode.js'
-import { getClaudeConfigHomeDir, isEnvTruthy } from './envUtils.js'
+import { getSoccConfigHomeDir, isEnvTruthy } from './envUtils.js'
 import { findExecutable } from './findExecutable.js'
 import { getFsImplementation } from './fsOperations.js'
 import { which } from './which.js'
@@ -11,8 +10,8 @@ import { which } from './which.js'
 type Platform = 'win32' | 'darwin' | 'linux'
 
 // Config and data paths
-export const getGlobalClaudeFile = memoize((): string => {
-  const configHome = getClaudeConfigHomeDir()
+export const getGlobalSoccFile = memoize((): string => {
+  const configHome = getSoccConfigHomeDir()
   const suffix = fileSuffixForOauthConfig()
   const primaryConfig = join(
     configHome,
@@ -21,19 +20,6 @@ export const getGlobalClaudeFile = memoize((): string => {
 
   if (getFsImplementation().existsSync(primaryConfig)) {
     return primaryConfig
-  }
-
-  // If SOCC already owns the config home, do not fall back to ~/.claude.json.
-  // That legacy file can carry stale provider profiles and auth state from a
-  // different product lineage, which breaks SOCC startup before the UI loads.
-  if (configHome === join(homedir(), '.socc')) {
-    return primaryConfig
-  }
-
-  const legacyFilename = `.claude${suffix}.json`
-  const legacyConfig = join(process.env.CLAUDE_CONFIG_DIR || homedir(), legacyFilename)
-  if (getFsImplementation().existsSync(legacyConfig)) {
-    return legacyConfig
   }
 
   return primaryConfig
@@ -348,12 +334,12 @@ export const env = {
 
 /**
  * Returns the host platform for analytics reporting.
- * If CLAUDE_CODE_HOST_PLATFORM is set to a valid platform value, that overrides
+ * If SOCC_HOST_PLATFORM is set to a valid platform value, that overrides
  * the detected platform. This is useful for container/remote environments where
  * process.platform reports the container OS but the actual host platform differs.
  */
 export function getHostPlatformForAnalytics(): Platform {
-  const override = process.env.CLAUDE_CODE_HOST_PLATFORM
+  const override = process.env.SOCC_HOST_PLATFORM
   if (override === 'win32' || override === 'darwin' || override === 'linux') {
     return override
   }

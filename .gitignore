@@ -8,7 +8,13 @@ dist/
 reports/
 GEMINI.md
 package-lock.json
-/.claude/*
-!/.claude/agents/
-!/.claude/agents/**
+/.socc/*
+!/.socc/agents/
+!/.socc/agents/**
+!/.socc/references/
+!/.socc/references/**
+!/.socc/rules/
+!/.socc/rules/**
+!/.socc/skills/
+!/.socc/skills/**
 coverage/

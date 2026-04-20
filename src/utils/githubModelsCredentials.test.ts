@@ -6,13 +6,13 @@ describe('readGithubModelsToken', () => {
       './githubModelsCredentials.js?read-bare-mode'
     )
 
-    const prev = process.env.CLAUDE_CODE_SIMPLE
-    process.env.CLAUDE_CODE_SIMPLE = '1'
+    const prev = process.env.SOCC_SIMPLE
+    process.env.SOCC_SIMPLE = '1'
     expect(readGithubModelsToken()).toBeUndefined()
     if (prev === undefined) {
-      delete process.env.CLAUDE_CODE_SIMPLE
+      delete process.env.SOCC_SIMPLE
     } else {
-      process.env.CLAUDE_CODE_SIMPLE = prev
+      process.env.SOCC_SIMPLE = prev
     }
   })
 })
@@ -23,15 +23,15 @@ describe('saveGithubModelsToken / clearGithubModelsToken', () => {
       './githubModelsCredentials.js?save-bare-mode'
     )
 
-    const prev = process.env.CLAUDE_CODE_SIMPLE
-    process.env.CLAUDE_CODE_SIMPLE = '1'
+    const prev = process.env.SOCC_SIMPLE
+    process.env.SOCC_SIMPLE = '1'
     const r = saveGithubModelsToken('abc')
     expect(r.success).toBe(false)
     expect(r.warning).toContain('Bare mode')
     if (prev === undefined) {
-      delete process.env.CLAUDE_CODE_SIMPLE
+      delete process.env.SOCC_SIMPLE
     } else {
-      process.env.CLAUDE_CODE_SIMPLE = prev
+      process.env.SOCC_SIMPLE = prev
     }
   })
 
@@ -40,13 +40,13 @@ describe('saveGithubModelsToken / clearGithubModelsToken', () => {
       './githubModelsCredentials.js?clear-bare-mode'
     )
 
-    const prev = process.env.CLAUDE_CODE_SIMPLE
-    process.env.CLAUDE_CODE_SIMPLE = '1'
+    const prev = process.env.SOCC_SIMPLE
+    process.env.SOCC_SIMPLE = '1'
     expect(clearGithubModelsToken().success).toBe(true)
     if (prev === undefined) {
-      delete process.env.CLAUDE_CODE_SIMPLE
+      delete process.env.SOCC_SIMPLE
     } else {
-      process.env.CLAUDE_CODE_SIMPLE = prev
+      process.env.SOCC_SIMPLE = prev
     }
   })
 })

@@ -48,7 +48,7 @@ test('install command displays socc.exe path on Windows', async () => {
 test('cleanupNpmInstallations removes socc and legacy local install dirs', async () => {
   const removedPaths: string[] = []
   ;(globalThis as Record<string, unknown>).MACRO = {
-    PACKAGE_URL: '@gitlawb/openclaude',
+    PACKAGE_URL: '@vantagesec/socc',
   }
 
   mock.module('fs/promises', () => ({
@@ -66,7 +66,7 @@ test('cleanupNpmInstallations removes socc and legacy local install dirs', async
   }))
 
   mock.module('./envUtils.js', () => ({
-    getClaudeConfigHomeDir: () => join(homedir(), '.socc'),
+    getSoccConfigHomeDir: () => join(homedir(), '.socc'),
     isEnvTruthy: (value: string | undefined) => value === '1',
   }))
 
@@ -74,5 +74,5 @@ test('cleanupNpmInstallations removes socc and legacy local install dirs', async
   await cleanupNpmInstallations()
 
   expect(removedPaths).toContain(join(homedir(), '.socc', 'local'))
-  expect(removedPaths).toContain(join(homedir(), '.claude', 'local'))
+  expect(removedPaths).toContain(join(homedir(), '.socc', 'local'))
 })

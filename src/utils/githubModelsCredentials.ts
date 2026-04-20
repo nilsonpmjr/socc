@@ -2,10 +2,10 @@ import { isBareMode, isEnvTruthy } from './envUtils.js'
 import { getSecureStorage } from './secureStorage/index.js'
 import { exchangeForCopilotToken } from '../services/github/deviceFlow.js'
 
-/** JSON key in the shared OpenClaude secure storage blob. */
+/** JSON key in the shared SOCC secure storage blob. */
 export const GITHUB_MODELS_STORAGE_KEY = 'githubModels' as const
 export const GITHUB_MODELS_HYDRATED_ENV_MARKER =
-  'CLAUDE_CODE_GITHUB_TOKEN_HYDRATED' as const
+  'SOCC_GITHUB_TOKEN_HYDRATED' as const
 
 export type GithubModelsCredentialBlob = {
   accessToken: string
@@ -74,7 +74,7 @@ export async function readGithubModelsTokenAsync(): Promise<string | undefined> 
  * stored token into process.env so the OpenAI shim and validation see it.
  */
 export function hydrateGithubModelsTokenFromSecureStorage(): void {
-  if (!isEnvTruthy(process.env.CLAUDE_CODE_USE_GITHUB)) {
+  if (!isEnvTruthy(process.env.SOCC_USE_GITHUB)) {
     delete process.env[GITHUB_MODELS_HYDRATED_ENV_MARKER]
     return
   }
@@ -106,7 +106,7 @@ export function hydrateGithubModelsTokenFromSecureStorage(): void {
  * exchange the OAuth token for a fresh Copilot token and persist it.
  */
 export async function refreshGithubModelsTokenIfNeeded(): Promise<boolean> {
-  if (!isEnvTruthy(process.env.CLAUDE_CODE_USE_GITHUB)) {
+  if (!isEnvTruthy(process.env.SOCC_USE_GITHUB)) {
     return false
   }
   if (isBareMode()) {

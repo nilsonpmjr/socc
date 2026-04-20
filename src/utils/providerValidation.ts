@@ -69,15 +69,15 @@ export async function getProviderValidationError(
     ) => Promise<GeminiResolvedCredential>
   },
 ): Promise<string | null> {
-  const useOpenAI = isEnvTruthy(env.CLAUDE_CODE_USE_OPENAI)
-  const useGithub = isEnvTruthy(env.CLAUDE_CODE_USE_GITHUB)
+  const useOpenAI = isEnvTruthy(env.SOCC_USE_OPENAI)
+  const useGithub = isEnvTruthy(env.SOCC_USE_GITHUB)
 
-  if (isEnvTruthy(env.CLAUDE_CODE_USE_GEMINI)) {
+  if (isEnvTruthy(env.SOCC_USE_GEMINI)) {
     const geminiCredential = await (
       options?.resolveGeminiCredential ?? resolveGeminiCredential
     )(env)
     if (geminiCredential.kind === 'none') {
-      return 'GEMINI_API_KEY, GOOGLE_API_KEY, GEMINI_ACCESS_TOKEN, or Google ADC credentials are required when CLAUDE_CODE_USE_GEMINI=1.'
+      return 'GEMINI_API_KEY, GOOGLE_API_KEY, GEMINI_ACCESS_TOKEN, or Google ADC credentials are required when SOCC_USE_GEMINI=1.'
     }
     return null
   }
@@ -137,7 +137,7 @@ export async function getProviderValidationError(
     if (useGithub && hasGithubToken) {
       return null
     }
-    return 'OPENAI_API_KEY is required when CLAUDE_CODE_USE_OPENAI=1 and OPENAI_BASE_URL is not local.'
+    return 'OPENAI_API_KEY is required when SOCC_USE_OPENAI=1 and OPENAI_BASE_URL is not local.'
   }
 
   return null

@@ -163,7 +163,7 @@ export function buildCurrentProviderSummary(options?: {
   const persisted = options?.persisted ?? loadProfileFile()
   const savedProfileLabel = persisted?.profile ?? 'none'
 
-  if (isEnvTruthy(processEnv.CLAUDE_CODE_USE_GEMINI)) {
+  if (isEnvTruthy(processEnv.SOCC_USE_GEMINI)) {
     return {
       providerLabel: 'Google Gemini',
       modelLabel: getSafeDisplayValue(
@@ -178,7 +178,7 @@ export function buildCurrentProviderSummary(options?: {
     }
   }
 
-  if (isEnvTruthy(processEnv.CLAUDE_CODE_USE_GITHUB)) {
+  if (isEnvTruthy(processEnv.SOCC_USE_GITHUB)) {
     return {
       providerLabel: 'GitHub Models',
       modelLabel: getSafeDisplayValue(
@@ -195,7 +195,7 @@ export function buildCurrentProviderSummary(options?: {
     }
   }
 
-  if (isEnvTruthy(processEnv.CLAUDE_CODE_USE_OPENAI)) {
+  if (isEnvTruthy(processEnv.SOCC_USE_OPENAI)) {
     const request = resolveProviderRequest({
       model: processEnv.OPENAI_MODEL,
       baseUrl: processEnv.OPENAI_BASE_URL,
@@ -220,7 +220,7 @@ export function buildCurrentProviderSummary(options?: {
     providerLabel: 'Anthropic',
     modelLabel: getSafeDisplayValue(
       processEnv.ANTHROPIC_MODEL ??
-        processEnv.CLAUDE_MODEL ??
+        processEnv.SOCC_MODEL ??
         'claude-sonnet-4-6',
       processEnv,
     ),

@@ -1,16 +1,231 @@
 {
-  "generatedAt": "2026-04-11T20:09:04.252Z",
-  "sourceRoot": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot",
-  "generatedAgentPath": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/generated/socc-agent.md",
-  "runtimeAgentPath": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/.claude/agents/socc.md",
+  "generatedAt": "2026-04-20T17:27:43.543Z",
+  "sourceRoot": "socc-canonical/.agents/soc-copilot",
+  "upstreamRoot": null,
+  "generatedAgentPath": "socc-canonical/.agents/generated/socc-agent.md",
+  "generatedManifestPath": "socc-canonical/.agents/generated/socc-agent-manifest.json",
+  "runtimeAgentPath": ".socc/agents/socc.md",
+  "runtimeRulesPath": ".socc/rules/socc-business-rules.md",
+  "runtimeSkillsDir": ".socc/skills",
+  "runtimeReferencesDir": ".socc/references",
+  "runtimeSkillNames": [
+    "code-review-excellence",
+    "cybersecurity-analyst",
+    "data-visualization",
+    "deep-research",
+    "excel-analysis",
+    "find-skills",
+    "humanizer",
+    "malware-behavior",
+    "mitre",
+    "observability-logs-search",
+    "payload-triage",
+    "phishing-analysis",
+    "prd",
+    "remembering-conversations",
+    "sequential-thinking",
+    "soc-generalist",
+    "suspicious-url",
+    "systematic-debugging",
+    "translation-expertise",
+    "web-search"
+  ],
   "sourceFiles": {
-    "identity": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/identity.md",
-    "soul": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/SOUL.md",
-    "user": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/USER.md",
-    "agents": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/AGENTS.md",
-    "tools": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/TOOLS.md",
-    "memory": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/MEMORY.md",
-    "skills": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/skills.md",
-    "skill": "/home/nilsonpmjr/.gemini/antigravity/scratch/socc/socc-canonical/.agents/soc-copilot/SKILL.md"
-  }
+    "identity": "socc-canonical/.agents/soc-copilot/identity.md",
+    "soul": "socc-canonical/.agents/soc-copilot/SOUL.md",
+    "user": "socc-canonical/.agents/soc-copilot/USER.md",
+    "agents": "socc-canonical/.agents/soc-copilot/AGENTS.md",
+    "tools": "socc-canonical/.agents/soc-copilot/TOOLS.md",
+    "memory": "socc-canonical/.agents/soc-copilot/MEMORY.md",
+    "skills": "socc-canonical/.agents/soc-copilot/skills.md",
+    "skill": "socc-canonical/.agents/soc-copilot/SKILL.md",
+    "rulesAgent": "socc-canonical/.agents/rules/AGENT.md",
+    "rulesTools": "socc-canonical/.agents/rules/TOOLS.md",
+    "rulesMemory": "socc-canonical/.agents/rules/MEMORY.md",
+    "workflowSop": "socc-canonical/.agents/workflows/SOP.md"
+  },
+  "sourceBlocks": {
+    "identity": {
+      "path": "socc-canonical/.agents/soc-copilot/identity.md",
+      "sha256": "7f4e655bcab4cf2d3f662d76687b616e9e5da461aed80b669e38233272b6d433",
+      "mtimeMs": 1776110949512.2214
+    },
+    "soul": {
+      "path": "socc-canonical/.agents/soc-copilot/SOUL.md",
+      "sha256": "d337ef58227c7eb3ec4638b4a56edf12283f2521b19e03583ce22e5d3d84afd8",
+      "mtimeMs": 1776110949512.2214
+    },
+    "user": {
+      "path": "socc-canonical/.agents/soc-copilot/USER.md",
+      "sha256": "44af3a21476a83abd9a9aed93d201573f4729d63ef2be87d1fa84e2073b47690",
+      "mtimeMs": 1776110949512.2214
+    },
+    "agents": {
+      "path": "socc-canonical/.agents/soc-copilot/AGENTS.md",
+      "sha256": "055615392fb01fa08118d35ae53dcdace9bc1c2596a7f16678224bf165f664d1",
+      "mtimeMs": 1776110949512.2214
+    },
+    "tools": {
+      "path": "socc-canonical/.agents/soc-copilot/TOOLS.md",
+      "sha256": "dbbf7bf495c4f23baa0a0fc92bba4635bfb89c3ca53279700c4967ae2d72f0cb",
+      "mtimeMs": 1776110949512.2214
+    },
+    "memory": {
+      "path": "socc-canonical/.agents/soc-copilot/MEMORY.md",
+      "sha256": "1507bbae85098cf81c83b399bff0c4d316d187a1a4e3bb0df3029ed7a22861b2",
+      "mtimeMs": 1776110949512.2214
+    },
+    "skills": {
+      "path": "socc-canonical/.agents/soc-copilot/skills.md",
+      "sha256": "0f8a8c0fd0af23751c083fe8b84866dba35784b2ea590b94c5b298a35108b6d3",
+      "mtimeMs": 1776110949512.2214
+    },
+    "skill": {
+      "path": "socc-canonical/.agents/soc-copilot/SKILL.md",
+      "sha256": "97f59e20347142fb39bcedc1e1455c9755c34cdbc9af08fd1903fc596aeca1f3",
+      "mtimeMs": 1776110949512.2214
+    },
+    "rulesAgent": {
+      "path": "socc-canonical/.agents/rules/AGENT.md",
+      "sha256": "76b4b210fec68acb2b026959e87f620aa1d30f1fae9cadcfdab7cc8ea2aa994a",
+      "mtimeMs": 1776110949511.9285
+    },
+    "rulesTools": {
+      "path": "socc-canonical/.agents/rules/TOOLS.md",
+      "sha256": "3f8793720f5419f5864f782c7a8f2b25bc9a99134e6dac0ef8b4e878138b88e3",
+      "mtimeMs": 1776110949512.2214
+    },
+    "rulesMemory": {
+      "path": "socc-canonical/.agents/rules/MEMORY.md",
+      "sha256": "08e860acc31384fc720a141193773182793c476af6ff496d516b686b20425c45",
+      "mtimeMs": 1776110949512.2214
+    },
+    "workflowSop": {
+      "path": "socc-canonical/.agents/workflows/SOP.md",
+      "sha256": "e314e638fe1dcb238b503af90c9fdada060db67a2fc3b9319cd88dde99358942",
+      "mtimeMs": 1776110949514.992
+    }
+  },
+  "runtimeSkills": [
+    {
+      "name": "code-review-excellence",
+      "path": "socc-canonical/.agents/soc-copilot/skills/code-review-excellence/SKILL.md",
+      "sha256": "a765bd62c6ee22eab0cb56e96b5a811b49a9b4dfc1f85a86776aa1d3d6e87532",
+      "mtimeMs": 1776110949512.8875
+    },
+    {
+      "name": "cybersecurity-analyst",
+      "path": "socc-canonical/.agents/soc-copilot/skills/cybersecurity-analyst/SKILL.md",
+      "sha256": "c15b191bf605c3e8760db5e95950e0abdfcc78017160d6141a6a41856e345a2e",
+      "mtimeMs": 1776110949513.042
+    },
+    {
+      "name": "data-visualization",
+      "path": "socc-canonical/.agents/soc-copilot/skills/data-visualization/SKILL.md",
+      "sha256": "728d3b95b9ebc744594076a2263c02b2a3f8f16a947437e66c035ef2329a12df",
+      "mtimeMs": 1776110949513.042
+    },
+    {
+      "name": "deep-research",
+      "path": "socc-canonical/.agents/soc-copilot/skills/deep-research/SKILL.md",
+      "sha256": "5637feab59dcc091d307fb0881907d9dfae74d3eccdf51b9bc8acf879c28c682",
+      "mtimeMs": 1776110949513.042
+    },
+    {
+      "name": "excel-analysis",
+      "path": "socc-canonical/.agents/soc-copilot/skills/excel-analysis/SKILL.md",
+      "sha256": "fb681b860b4d3bc20938cfbe490ebdc39d679d1634f1a6c12727bd4ab7ac91d0",
+      "mtimeMs": 1776110949513.042
+    },
+    {
+      "name": "find-skills",
+      "path": "socc-canonical/.agents/soc-copilot/skills/find-skills/SKILL.md",
+      "sha256": "54b44dc9539df865fbb060f62fb062e8232e765852a0cf14c38301fe0c1eb264",
+      "mtimeMs": 1776110949513.042
+    },
+    {
+      "name": "humanizer",
+      "path": "socc-canonical/.agents/soc-copilot/skills/humanizer/SKILL.md",
+      "sha256": "6688e4e292ab4f235e2a27f5193a7d048657c74b26ed6000398ee3371c9c3a4b",
+      "mtimeMs": 1776110949513.6287
+    },
+    {
+      "name": "malware-behavior",
+      "path": "socc-canonical/.agents/soc-copilot/skills/malware-behavior/SKILL.md",
+      "sha256": "82a86882c355771571269d63c826ee75b1866201f7e6b45e2a1e6bda8b01c2c0",
+      "mtimeMs": 1776110949513.6287
+    },
+    {
+      "name": "mitre",
+      "path": "socc-canonical/.agents/soc-copilot/skills/mitre/SKILL.md",
+      "sha256": "4e9d3a0f3ecb9cfc89f7518a3a1658d282a2137e4cf76c1f5b443a7570ce9ba7",
+      "mtimeMs": 1776110949513.6287
+    },
+    {
+      "name": "observability-logs-search",
+      "path": "socc-canonical/.agents/soc-copilot/skills/observability-logs-search/SKILL.md",
+      "sha256": "ec434341ea8f420fe35851f3edb4a18bf77ff325e1075fc383f74231834f9277",
+      "mtimeMs": 1776110949513.6287
+    },
+    {
+      "name": "payload-triage",
+      "path": "socc-canonical/.agents/soc-copilot/skills/payload-triage/SKILL.md",
+      "sha256": "a6429e8aabc11a685889c290765dc596f937173488c07866e54ee79db214b20c",
+      "mtimeMs": 1776110949513.8752
+    },
+    {
+      "name": "phishing-analysis",
+      "path": "socc-canonical/.agents/soc-copilot/skills/phishing-analysis/SKILL.md",
+      "sha256": "41e4e01d06538c1d118a123c8c69747094c4196ed129ed468aff61df57cb1705",
+      "mtimeMs": 1776110949513.8752
+    },
+    {
+      "name": "prd",
+      "path": "socc-canonical/.agents/soc-copilot/skills/prd/SKILL.md",
+      "sha256": "6772e6f0fcc7110d625c7f4595e4990e1910007676c36d217eda4e779041d5e5",
+      "mtimeMs": 1776110949513.8752
+    },
+    {
+      "name": "remembering-conversations",
+      "path": "socc-canonical/.agents/soc-copilot/skills/remembering-conversations/SKILL.md",
+      "sha256": "84a2ffa55206e037450bc323e03b121f3742950c95f5838f9b9dec8e5c6d5978",
+      "mtimeMs": 1776110949514.1475
+    },
+    {
+      "name": "sequential-thinking",
+      "path": "socc-canonical/.agents/soc-copilot/skills/sequential-thinking/SKILL.md",
+      "sha256": "c517ae710853ee2ea06111d72888fbe1eb432368b0a7984b9c31391ecbc2ef27",
+      "mtimeMs": 1776110949514.2373
+    },
+    {
+      "name": "soc-generalist",
+      "path": "socc-canonical/.agents/soc-copilot/skills/soc-generalist/SKILL.md",
+      "sha256": "dd15bfda50a4f34394b7d249179db8885d614f671cff57be6fe34dbce876f804",
+      "mtimeMs": 1776110949514.32
+    },
+    {
+      "name": "suspicious-url",
+      "path": "socc-canonical/.agents/soc-copilot/skills/suspicious-url/SKILL.md",
+      "sha256": "be1854a81f271853dd8fb19f434d01bc314a3ccb373bde6faf796236cd529eb0",
+      "mtimeMs": 1776110949514.32
+    },
+    {
+      "name": "systematic-debugging",
+      "path": "socc-canonical/.agents/soc-copilot/skills/systematic-debugging/SKILL.md",
+      "sha256": "4999cb851360485eca5074e727bbdd62ef20549c5d5b01216fcbf5831badb473",
+      "mtimeMs": 1776110949514.5637
+    },
+    {
+      "name": "translation-expertise",
+      "path": "socc-canonical/.agents/soc-copilot/skills/translation-expertise/SKILL.md",
+      "sha256": "246ec0c1751185e5ff30da40c698934e90dff71d2eb6d5fcc1448955567de3b2",
+      "mtimeMs": 1776110949514.5637
+    },
+    {
+      "name": "web-search",
+      "path": "socc-canonical/.agents/soc-copilot/skills/web-search/SKILL.md",
+      "sha256": "8e652d2267c967700bf4ab4b416d0afc571ed05076082e1bc92b98b85ba7fcb4",
+      "mtimeMs": 1776110949514.992
+    }
+  ]
 }

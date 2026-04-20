@@ -20,7 +20,7 @@ afterEach(() => {
 
 describe('preconnectAnthropicApi', () => {
   test('does not fetch when OpenAI mode is enabled', async () => {
-    process.env.CLAUDE_CODE_USE_OPENAI = '1'
+    process.env.SOCC_USE_OPENAI = '1'
     mock.module('./model/providers.js', () => ({
       getAPIProvider: () => 'openai',
     }))
@@ -34,7 +34,7 @@ describe('preconnectAnthropicApi', () => {
   })
 
   test('does not fetch when Gemini mode is enabled', async () => {
-    process.env.CLAUDE_CODE_USE_GEMINI = '1'
+    process.env.SOCC_USE_GEMINI = '1'
     mock.module('./model/providers.js', () => ({
       getAPIProvider: () => 'gemini',
     }))
@@ -48,7 +48,7 @@ describe('preconnectAnthropicApi', () => {
   })
 
   test('does not fetch when GitHub mode is enabled', async () => {
-    process.env.CLAUDE_CODE_USE_GITHUB = '1'
+    process.env.SOCC_USE_GITHUB = '1'
     mock.module('./model/providers.js', () => ({
       getAPIProvider: () => 'github',
     }))
@@ -62,12 +62,12 @@ describe('preconnectAnthropicApi', () => {
   })
 
   test('fetches in first-party mode', async () => {
-    delete process.env.CLAUDE_CODE_USE_OPENAI
-    delete process.env.CLAUDE_CODE_USE_GEMINI
-    delete process.env.CLAUDE_CODE_USE_GITHUB
-    delete process.env.CLAUDE_CODE_USE_BEDROCK
-    delete process.env.CLAUDE_CODE_USE_VERTEX
-    delete process.env.CLAUDE_CODE_USE_FOUNDRY
+    delete process.env.SOCC_USE_OPENAI
+    delete process.env.SOCC_USE_GEMINI
+    delete process.env.SOCC_USE_GITHUB
+    delete process.env.SOCC_USE_BEDROCK
+    delete process.env.SOCC_USE_VERTEX
+    delete process.env.SOCC_USE_FOUNDRY
 
     mock.module('./model/providers.js', () => ({
       getAPIProvider: () => 'firstParty',

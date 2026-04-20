@@ -7,7 +7,7 @@ import test from 'node:test'
 import { getSkillDirCommands, clearSkillCaches } from './loadSkillsDir.ts'
 
 function writeSkill(rootDir: string, skillPath: string): void {
-  const skillDir = join(rootDir, '.claude', 'skills', ...skillPath.split('/'))
+  const skillDir = join(rootDir, '.socc', 'skills', ...skillPath.split('/'))
   mkdirSync(skillDir, { recursive: true })
   writeFileSync(
     join(skillDir, 'SKILL.md'),
@@ -17,9 +17,9 @@ function writeSkill(rootDir: string, skillPath: string): void {
 }
 
 test('loads flat and nested skills with colon namespaces', async () => {
-  const configDir = mkdtempSync(join(tmpdir(), 'openclaude-skills-'))
+  const configDir = mkdtempSync(join(tmpdir(), 'socc-skills-'))
   const cwd = join(configDir, 'workspace')
-  const originalConfigDir = process.env.CLAUDE_CONFIG_DIR
+  const originalConfigDir = process.env.SOCC_CONFIG_DIR
 
   try {
     mkdirSync(cwd, { recursive: true })
@@ -27,7 +27,7 @@ test('loads flat and nested skills with colon namespaces', async () => {
     writeSkill(configDir, 'git/commit')
     writeSkill(configDir, 'frontend/react/form')
 
-    process.env.CLAUDE_CONFIG_DIR = configDir
+    process.env.SOCC_CONFIG_DIR = configDir
     clearSkillCaches()
 
     const skills = await getSkillDirCommands(cwd)
@@ -42,7 +42,7 @@ test('loads flat and nested skills with colon namespaces', async () => {
 
     const nestedSkill = promptSkills.find(skill => skill.name === 'git:commit')
     assert.ok(nestedSkill)
-    assert.equal(nestedSkill.skillRoot, join(configDir, '.claude', 'skills', 'git', 'commit'))
+    assert.equal(nestedSkill.skillRoot, join(configDir, '.socc', 'skills', 'git', 'commit'))
 
     const deepSkill = promptSkills.find(
       skill => skill.name === 'frontend:react:form',
@@ -50,13 +50,13 @@ test('loads flat and nested skills with colon namespaces', async () => {
     assert.ok(deepSkill)
     assert.equal(
       deepSkill.skillRoot,
-      join(configDir, '.claude', 'skills', 'frontend', 'react', 'form'),
+      join(configDir, '.socc', 'skills', 'frontend', 'react', 'form'),
     )
   } finally {
     if (originalConfigDir === undefined) {
-      delete process.env.CLAUDE_CONFIG_DIR
+      delete process.env.SOCC_CONFIG_DIR
     } else {
-      process.env.CLAUDE_CONFIG_DIR = originalConfigDir
+      process.env.SOCC_CONFIG_DIR = originalConfigDir
     }
     clearSkillCaches()
     rmSync(configDir, { recursive: true, force: true })

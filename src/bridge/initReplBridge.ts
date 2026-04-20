@@ -27,7 +27,7 @@ import {
 import type { Message } from '../types/message.js'
 import {
   checkAndRefreshOAuthTokenIfNeeded,
-  getClaudeAIOAuthTokens,
+  getSoccOAuthTokens,
   handleOAuth401Error,
 } from '../utils/auth.js'
 import { getGlobalConfig, saveGlobalConfig } from '../utils/config.js'
@@ -161,7 +161,7 @@ export async function initReplBridge(
     return null
   }
 
-  // When CLAUDE_BRIDGE_OAUTH_TOKEN is set (internal-only local dev), the bridge
+  // When SOCC_BRIDGE_OAUTH_TOKEN is set (internal-only local dev), the bridge
   // uses that token directly via getBridgeAccessToken() — keychain state is
   // irrelevant. Skip 2b/2c to preserve that decoupling: an expired keychain
   // token shouldn't block a bridge connection that doesn't use it.
@@ -178,7 +178,7 @@ export async function initReplBridge(
     if (
       cfg.bridgeOauthDeadExpiresAt != null &&
       (cfg.bridgeOauthDeadFailCount ?? 0) >= 3 &&
-      getClaudeAIOAuthTokens()?.expiresAt === cfg.bridgeOauthDeadExpiresAt
+      getSoccOAuthTokens()?.expiresAt === cfg.bridgeOauthDeadExpiresAt
     ) {
       logForDebugging(
         `[bridge:repl] Skipping: cross-process backoff (dead token seen ${cfg.bridgeOauthDeadFailCount} times)`,
@@ -215,7 +215,7 @@ export async function initReplBridge(
     // + transient refresh endpoint blip (5xx/timeout/wifi-reconnect) would
     // falsely trip a buffered check; the still-valid token would connect fine.
     // Check actual expiry instead: past-expiry AND refresh-failed → truly dead.
-    const tokens = getClaudeAIOAuthTokens()
+    const tokens = getSoccOAuthTokens()
     if (tokens && tokens.expiresAt !== null && tokens.expiresAt <= Date.now()) {
       logBridgeSkip(
         'oauth_expired_unrefreshable',
@@ -401,7 +401,7 @@ export async function initReplBridge(
   // on env-based.
   //
   // NAMING: "env-less" is distinct from "CCR v2" (the /worker/* transport).
-  // The env-based path below can ALSO use CCR v2 via CLAUDE_CODE_USE_CCR_V2.
+  // The env-based path below can ALSO use CCR v2 via SOCC_USE_CCR_V2.
   // tengu_bridge_repl_v2 gates env-less (no poll loop), not transport version.
   //
   // perpetual (assistant-mode session continuity via bridge-pointer.json) is
@@ -415,7 +415,7 @@ export async function initReplBridge(
         `[bridge:repl] Skipping: ${versionError}`,
         true,
       )
-      onStateChange?.('failed', 'run `claude update` to upgrade')
+      onStateChange?.('failed', 'run `socc update` to upgrade')
       return null
     }
     logForDebugging(
@@ -456,7 +456,7 @@ export async function initReplBridge(
   const versionError = checkBridgeMinVersion()
   if (versionError) {
     logBridgeSkip('version_too_old', `[bridge:repl] Skipping: ${versionError}`)
-    onStateChange?.('failed', 'run `claude update` to upgrade')
+    onStateChange?.('failed', 'run `socc update` to upgrade')
     return null
   }
 
@@ -466,8 +466,8 @@ export async function initReplBridge(
   const gitRepoUrl = await getRemoteUrl()
   const sessionIngressUrl =
     process.env.USER_TYPE === 'ant' &&
-    process.env.CLAUDE_BRIDGE_SESSION_INGRESS_URL
-      ? process.env.CLAUDE_BRIDGE_SESSION_INGRESS_URL
+    process.env.SOCC_BRIDGE_SESSION_INGRESS_URL
+      ? process.env.SOCC_BRIDGE_SESSION_INGRESS_URL
       : baseUrl
 
   // Assistant-mode sessions advertise a distinct worker_type so the web UI

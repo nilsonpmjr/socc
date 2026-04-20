@@ -54,11 +54,11 @@ export function formatAgentLine(agent: AgentDefinition): string {
  * connect, /reload-plugins, or permission-mode changes mutate the list →
  * description changes → full tool-schema cache bust.
  *
- * Override with CLAUDE_CODE_AGENT_LIST_IN_MESSAGES=true/false for testing.
+ * Override with SOCC_AGENT_LIST_IN_MESSAGES=true/false for testing.
  */
 export function shouldInjectAgentListInMessages(): boolean {
-  if (isEnvTruthy(process.env.CLAUDE_CODE_AGENT_LIST_IN_MESSAGES)) return true
-  if (isEnvDefinedFalsy(process.env.CLAUDE_CODE_AGENT_LIST_IN_MESSAGES))
+  if (isEnvTruthy(process.env.SOCC_AGENT_LIST_IN_MESSAGES)) return true
+  if (isEnvDefinedFalsy(process.env.SOCC_AGENT_LIST_IN_MESSAGES))
     return false
   return getFeatureValue_CACHED_MAY_BE_STALE('tengu_agent_list_attach', true)
 }
@@ -156,16 +156,16 @@ ${AGENT_TOOL_NAME}({
   const currentExamples = `Example usage:
 
 <example_agent_descriptions>
-"claude-code-guide": use this agent when the user asks how SOCC works or how to use its features
+"socc-guide": use this agent when the user asks how SOCC works or how to use its features
 "statusline-setup": use this agent to configure the user's SOCC status line setting
 </example_agent_descriptions>
 
 <example>
 user: "How do I configure SOCC hooks?"
 <commentary>
-This is a SOCC usage question, so use the claude-code-guide agent
+This is a SOCC usage question, so use the socc-guide agent
 </commentary>
-assistant: Uses the ${AGENT_TOOL_NAME} tool to launch the claude-code-guide agent
+assistant: Uses the ${AGENT_TOOL_NAME} tool to launch the socc-guide agent
 </example>
 
 <example>
@@ -246,7 +246,7 @@ Usage notes:
 - Always include a short description (3-5 words) summarizing what the agent will do${concurrencyNote}
 - When the agent is done, it will return a single message back to you. The result returned by the agent is not visible to the user. To show the user the result, you should send a text message back to the user with a concise summary of the result.${
     // eslint-disable-next-line custom-rules/no-process-env-top-level
-    !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS) &&
+    !isEnvTruthy(process.env.SOCC_DISABLE_BACKGROUND_TASKS) &&
     !isInProcessTeammate() &&
     !forkEnabled
       ? `

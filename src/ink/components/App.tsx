@@ -118,7 +118,7 @@ export default class App extends PureComponent<Props, State> {
   // Default to readable-mode stdin (legacy Ink behavior). The data-mode path
   // is kept as an explicit opt-in because some terminals can enter a state
   // where startup input appears frozen when data mode is the default.
-  stdinMode: 'readable' | 'data' = process.env.OPENCLAUDE_USE_DATA_STDIN === '1' || process.env.OPENCLAUDE_USE_READABLE_STDIN === '0' ? 'data' : 'readable';
+  stdinMode: 'readable' | 'data' = process.env.SOCC_USE_DATA_STDIN === '1' || process.env.SOCC_USE_READABLE_STDIN === '0' ? 'data' : 'readable';
   // Timeout durations for incomplete sequences (ms)
   readonly NORMAL_TIMEOUT = 50; // Short timeout for regular esc sequences
   readonly PASTE_TIMEOUT = 500; // Longer timeout for paste operations
@@ -183,7 +183,7 @@ export default class App extends PureComponent<Props, State> {
   }
   override componentDidMount() {
     // In accessibility mode, keep the native cursor visible for screen magnifiers and other tools
-    if (this.props.stdout.isTTY && !isEnvTruthy(process.env.CLAUDE_CODE_ACCESSIBILITY)) {
+    if (this.props.stdout.isTTY && !isEnvTruthy(process.env.SOCC_ACCESSIBILITY)) {
       this.props.stdout.write(HIDE_CURSOR);
     }
   }
@@ -441,7 +441,7 @@ export default class App extends PureComponent<Props, State> {
       this.props.stdout.write(SHOW_CURSOR + DFE + DISABLE_MOUSE_TRACKING);
     }
 
-    // Emit suspend event for Claude Code to handle. Mostly just has a notification
+    // Emit suspend event for SOCC to handle. Mostly just has a notification
     this.internal_eventEmitter.emit('suspend');
 
     // Set up resume handler
@@ -455,14 +455,14 @@ export default class App extends PureComponent<Props, State> {
 
       // Hide cursor (unless in accessibility mode) and re-enable focus reporting after resuming
       if (this.props.stdout.isTTY) {
-        if (!isEnvTruthy(process.env.CLAUDE_CODE_ACCESSIBILITY)) {
+        if (!isEnvTruthy(process.env.SOCC_ACCESSIBILITY)) {
           this.props.stdout.write(HIDE_CURSOR);
         }
         // Re-enable focus reporting to restore terminal state
         this.props.stdout.write(EFE);
       }
 
-      // Emit resume event for Claude Code to handle
+      // Emit resume event for SOCC to handle
       this.internal_eventEmitter.emit('resume');
       process.removeListener('SIGCONT', resumeHandler);
     };

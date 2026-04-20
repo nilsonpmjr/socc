@@ -18,7 +18,7 @@ import { getOrganizationUUID } from '../services/oauth/client.js';
 import { AppStateProvider } from '../state/AppState.js';
 import type { Message, SystemMessage } from '../types/message.js';
 import type { PermissionMode } from '../types/permissions.js';
-import { checkAndRefreshOAuthTokenIfNeeded, getClaudeAIOAuthTokens } from './auth.js';
+import { checkAndRefreshOAuthTokenIfNeeded, getSoccOAuthTokens } from './auth.js';
 import { checkGithubAppInstalled } from './background/remote/preconditions.js';
 import { deserializeMessages, type TeleportRemoteResponse } from './conversationRecovery.js';
 import { getCwd } from './cwd.js';
@@ -433,12 +433,12 @@ export async function teleportResumeCodeSession(sessionId: string, onProgress?: 
   }
   logForDebugging(`Resuming code session ID: ${sessionId}`);
   try {
-    const accessToken = getClaudeAIOAuthTokens()?.accessToken;
+    const accessToken = getSoccOAuthTokens()?.accessToken;
     if (!accessToken) {
       logEvent('tengu_teleport_resume_error', {
         error_type: 'no_access_token' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
       });
-      throw new Error('SOCC web sessions require authentication with a Claude.ai account. API key authentication is not sufficient. Please run /login to authenticate, or check your authentication status with /status.');
+      throw new Error('SOCC web sessions require a subscription-backed account. API key authentication is not sufficient. Please run /login to authenticate, or check your authentication status with /status.');
     }
 
     // Get organization UUID
@@ -633,7 +633,7 @@ export type PollRemoteSessionResponse = {
 export async function pollRemoteSessionEvents(sessionId: string, afterId: string | null = null, opts?: {
   skipMetadata?: boolean;
 }): Promise<PollRemoteSessionResponse> {
-  const accessToken = getClaudeAIOAuthTokens()?.accessToken;
+  const accessToken = getSoccOAuthTokens()?.accessToken;
   if (!accessToken) {
     throw new Error('No access token for polling');
   }
@@ -751,7 +751,7 @@ export async function teleportToRemote(options: {
   /**
    * Per-session env vars merged into session_context.environment_variables.
    * Write-only at the API layer (stripped from Get/List responses). When
-   * environmentId is set, CLAUDE_CODE_OAUTH_TOKEN is auto-injected from the
+   * environmentId is set, SOCC_OAUTH_TOKEN is auto-injected from the
    * caller's accessToken so the container's hook can hit inference (the
    * server only passes through what the caller sends; bughunter.go mints
    * its own, user sessions don't get one automatically).
@@ -800,7 +800,7 @@ export async function teleportToRemote(options: {
   try {
     // Check authentication
     await checkAndRefreshOAuthTokenIfNeeded();
-    const accessToken = getClaudeAIOAuthTokens()?.accessToken;
+    const accessToken = getSoccOAuthTokens()?.accessToken;
     if (!accessToken) {
       logError(new Error('No access token found for remote session creation'));
       return null;
@@ -826,7 +826,7 @@ export async function teleportToRemote(options: {
         'x-organization-uuid': orgUUID
       };
       const envVars = {
-        CLAUDE_CODE_OAUTH_TOKEN: accessToken,
+        SOCC_OAUTH_TOKEN: accessToken,
         ...(options.environmentVariables ?? {})
       };
 
@@ -1198,7 +1198,7 @@ export async function teleportToRemote(options: {
  * reaper collects it.
  */
 export async function archiveRemoteSession(sessionId: string): Promise<void> {
-  const accessToken = getClaudeAIOAuthTokens()?.accessToken;
+  const accessToken = getSoccOAuthTokens()?.accessToken;
   if (!accessToken) return;
   const orgUUID = await getOrganizationUUID();
   if (!orgUUID) return;

@@ -31,7 +31,7 @@ import { getInitialSettings } from 'src/utils/settings/settings.js'
 export async function update() {
   // Block updates for third-party providers. The update mechanism downloads
   // from the first-party distribution bucket, which would silently replace the
-  // OpenClaude build (with the OpenAI shim) with the upstream Claude Code
+  // SOCC build (with the OpenAI shim) with the upstream Claude Code
   // binary (without it).
   if (getAPIProvider() !== 'firstParty') {
     writeToStdout(
@@ -239,7 +239,7 @@ export async function update() {
           : ''
         writeToStdout(
           chalk.yellow(
-            `Another Claude process${pidInfo} is currently running. Please try again in a moment.`,
+            `Another SOCC process${pidInfo} is currently running. Please try again in a moment.`,
           ) + '\n',
         )
         await gracefulShutdown(0)

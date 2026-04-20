@@ -51,7 +51,7 @@ const MAX_WORKTREE_SLUG_LENGTH = 64
 /**
  * Validates a worktree slug to prevent path traversal and directory escape.
  *
- * The slug is joined into `.claude/worktrees/<slug>` via path.join, which
+ * The slug is joined into `.socc/worktrees/<slug>` via path.join, which
  * normalizes `..` segments — so `../../../target` would escape the worktrees
  * directory. Similarly, an absolute path (leading `/` or `C:\`) would discard
  * the prefix entirely.
@@ -202,14 +202,14 @@ const GIT_NO_PROMPT_ENV = {
 }
 
 function worktreesDir(repoRoot: string): string {
-  return join(repoRoot, '.claude', 'worktrees')
+  return join(repoRoot, '.socc', 'worktrees')
 }
 
 // Flatten nested slugs (`user/feature` → `user+feature`) for both the branch
 // name and the directory path. Nesting in either location is unsafe:
 //   - git refs: `worktree-user` (file) vs `worktree-user/feature` (needs dir)
 //     is a D/F conflict that git rejects.
-//   - directory: `.claude/worktrees/user/feature/` lives inside the `user`
+//   - directory: `.socc/worktrees/user/feature/` lives inside the `user`
 //     worktree; `git worktree remove` on the parent deletes children with
 //     uncommitted work.
 // `+` is valid in git branch names and filesystem paths but NOT in the
@@ -511,7 +511,7 @@ async function performPostCreationSetup(
   repoRoot: string,
   worktreePath: string,
 ): Promise<void> {
-  // Copy settings.local.json to the worktree's .claude directory
+  // Copy settings.local.json to the worktree's .socc directory
   // This propagates local settings (which may contain secrets) to the worktree
   const localSettingsRelativePath =
     getRelativeSettingsFilePathForSource('localSettings')
@@ -920,8 +920,8 @@ export async function createAgentWorktree(slug: string): Promise<{
 
   // Fall back to git worktree
   // findCanonicalGitRoot (not findGitRoot) so agent worktrees always land in
-  // the main repo's .claude/worktrees/ even when spawned from inside a session
-  // worktree — otherwise they nest at <worktree>/.claude/worktrees/ and the
+  // the main repo's .socc/worktrees/ even when spawned from inside a session
+  // worktree — otherwise they nest at <worktree>/.socc/worktrees/ and the
   // periodic cleanup (which scans the canonical root) never finds them.
   const gitRoot = findCanonicalGitRoot(getCwd())
   if (!gitRoot) {
@@ -1174,7 +1174,7 @@ export async function hasWorktreeChanges(
 
 /**
  * Fast-path handler for --worktree --tmux.
- * Creates the worktree and execs into tmux running Claude inside.
+ * Creates the worktree and execs into tmux running SOCC inside.
  * This is called early in cli.tsx before loading the full CLI.
  */
 export async function execIntoTmuxWorktree(args: string[]): Promise<{
@@ -1339,9 +1339,9 @@ export async function execIntoTmuxWorktree(args: string[]): Promise<{
     }
   }
 
-  // Check if tmux prefix conflicts with Claude keybindings
-  // Claude binds: ctrl+b (task:background), ctrl+c, ctrl+d, ctrl+t, ctrl+o, ctrl+r, ctrl+s, ctrl+g, ctrl+e
-  const claudeBindings = [
+  // Check if tmux prefix conflicts with SOCC keybindings
+  // SOCC binds: ctrl+b (task:background), ctrl+c, ctrl+d, ctrl+t, ctrl+o, ctrl+r, ctrl+s, ctrl+g, ctrl+e
+  const soccBindings = [
     'C-b',
     'C-c',
     'C-d',
@@ -1352,14 +1352,14 @@ export async function execIntoTmuxWorktree(args: string[]): Promise<{
     'C-g',
     'C-e',
   ]
-  const prefixConflicts = claudeBindings.includes(tmuxPrefix)
+  const prefixConflicts = soccBindings.includes(tmuxPrefix)
 
-  // Set env vars for the inner Claude to display tmux info in welcome message
+  // Set env vars for the inner SOCC instance to display tmux info in the welcome message
   const tmuxEnv = {
     ...process.env,
-    CLAUDE_CODE_TMUX_SESSION: tmuxSessionName,
-    CLAUDE_CODE_TMUX_PREFIX: tmuxPrefix,
-    CLAUDE_CODE_TMUX_PREFIX_CONFLICTS: prefixConflicts ? '1' : '',
+    SOCC_TMUX_SESSION: tmuxSessionName,
+    SOCC_TMUX_PREFIX: tmuxPrefix,
+    SOCC_TMUX_PREFIX_CONFLICTS: prefixConflicts ? '1' : '',
   }
 
   // Check if session already exists
@@ -1392,13 +1392,13 @@ export async function execIntoTmuxWorktree(args: string[]): Promise<{
     )
   }
 
-  // For ants in claude-cli-internal, set up dev panes (watch + start)
+  // For ants in the upstream internal repo, set up dev panes (watch + start)
   const isAnt = process.env.USER_TYPE === 'ant'
-  const isClaudeCliInternal = repoName === 'claude-cli-internal'
-  const shouldSetupDevPanes = isAnt && isClaudeCliInternal && !sessionExists
+  const isUpstreamInternalRepo = repoName === 'claude-cli-internal'
+  const shouldSetupDevPanes = isAnt && isUpstreamInternalRepo && !sessionExists
 
   if (shouldSetupDevPanes) {
-    // Create detached session with Claude in first pane
+    // Create detached session with SOCC in first pane
     spawnSync(
       'tmux',
       [
@@ -1437,7 +1437,7 @@ export async function execIntoTmuxWorktree(args: string[]): Promise<{
       cwd: worktreeDir,
     })
 
-    // Select the first pane (Claude)
+    // Select the first pane (SOCC)
     spawnSync('tmux', ['select-pane', '-t', `${tmuxSessionName}:0.0`], {
       cwd: worktreeDir,
     })

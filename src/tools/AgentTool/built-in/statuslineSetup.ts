@@ -77,7 +77,7 @@ How to use the statusLine command:
      "vim": {                     // Optional, only present when vim mode is enabled
        "mode": "INSERT" | "NORMAL"  // Current vim editor mode
      },
-     "agent": {                    // Optional, only present when Claude is started with --agent flag
+     "agent": {                    // Optional, only present when SOCC is started with --agent flag
        "name": "string",           // Agent name (e.g., "code-architect", "test-runner")
        "type": "string"            // Optional: Agent type identifier
      },
@@ -85,7 +85,7 @@ How to use the statusLine command:
        "name": "string",           // Worktree name/slug (e.g., "my-feature")
        "path": "string",           // Full path to the worktree directory
        "branch": "string",         // Optional: Git branch name for the worktree
-       "original_cwd": "string",   // The directory Claude was in before entering the worktree
+       "original_cwd": "string",   // The directory SOCC was in before entering the worktree
        "original_branch": "string" // Optional: Branch that was checked out before entering the worktree
      }
    }
@@ -112,7 +112,7 @@ How to use the statusLine command:
 
 2. For longer commands, save a new file alongside the user's existing settings home instead of creating a new config directory.
    - Prefer the currently used config home if one already exists.
-   - In most existing setups this will be ~/.claude/statusline-command.sh.
+   - In most existing setups this will be ~/.socc/statusline-command.sh.
 
 3. Update the user's resolved settings file with:
    {

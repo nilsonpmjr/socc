@@ -39,7 +39,7 @@ function parseOptions(argv: string[]): CliOptions {
   const options: CliOptions = {
     apply: false,
     benchmark: false,
-    goal: normalizeRecommendationGoal(process.env.OPENCLAUDE_PROFILE_GOAL),
+    goal: normalizeRecommendationGoal(process.env.SOCC_PROFILE_GOAL),
     json: false,
     provider: 'auto',
     baseUrl: null,

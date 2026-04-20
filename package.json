@@ -1,6 +1,6 @@
 {
   "name": "@vantagesec/socc",
-  "version": "0.1.12",
+  "version": "0.1.18",
   "description": "Security operations copiloto for threat intelligence, incident response, and agentic investigation",
   "type": "module",
   "bin": {
@@ -8,11 +8,13 @@
   },
   "files": [
     "bin/",
-    ".claude/agents/",
+    ".socc/agents/",
+    ".socc/references/",
+    ".socc/rules/",
+    ".socc/skills/",
     "dist/cli.mjs",
     "README.md",
-    "scripts/bootstrap-socc-soul.mjs",
-    "socc-canonical/.agents/"
+    "scripts/bootstrap-socc-soul.mjs"
   ],
   "scripts": {
     "build": "bun run scripts/build.ts",
@@ -52,7 +54,7 @@
     "doctor:report": "bun run scripts/system-check.ts --out reports/doctor-runtime.json",
     "hardening:check": "bun run smoke && bun run doctor:runtime",
     "hardening:strict": "bun run typecheck && bun run hardening:check",
-    "prepack": "npm run build",
+    "prepack": "npm run build && node scripts/bootstrap-socc-soul.mjs",
     "postinstall": "node scripts/bootstrap-socc-soul.mjs"
   },
   "dependencies": {

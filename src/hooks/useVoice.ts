@@ -571,7 +571,7 @@ export function useVoice({
 
   // ── Focus-driven recording ──────────────────────────────────────────
   // In focus mode, start recording when the terminal gains focus and
-  // stop when it loses focus. This enables a "multi-clauding army"
+  // stop when it loses focus. This enables a multi-session
   // workflow where voice input follows window focus.
   useEffect(() => {
     if (!enabled || !focusMode) {
@@ -988,7 +988,7 @@ export function useVoice({
             '[voice] Failed to connect to voice_stream (no OAuth token?)',
           )
           onErrorRef.current?.(
-            'Voice mode requires a Claude.ai account. Please run /login to sign in.',
+            'Voice mode requires a subscription-backed account. Please run /login to sign in.',
           )
           // Clear the audio buffer on failure
           audioBuffer.length = 0

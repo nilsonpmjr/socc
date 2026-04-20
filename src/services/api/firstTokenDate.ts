@@ -3,17 +3,17 @@ import { getOauthConfig } from '../../constants/oauth.js'
 import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
 import { getAuthHeaders } from '../../utils/http.js'
 import { logError } from '../../utils/log.js'
-import { getClaudeCodeUserAgent } from '../../utils/userAgent.js'
+import { getSoccUserAgentCore } from '../../utils/userAgent.js'
 
 /**
- * Fetch the user's first Claude Code token date and store in config.
- * This is called after successful login to cache when they started using Claude Code.
+ * Fetch the user's first SOCC token date and store it in config.
+ * This is called after successful login to cache when they started using the runtime.
  */
-export async function fetchAndStoreClaudeCodeFirstTokenDate(): Promise<void> {
+export async function fetchAndStoreSoccFirstTokenDate(): Promise<void> {
   try {
     const config = getGlobalConfig()
 
-    if (config.claudeCodeFirstTokenDate !== undefined) {
+    if (config.soccFirstTokenDate !== undefined) {
       return
     }
 
@@ -29,7 +29,7 @@ export async function fetchAndStoreClaudeCodeFirstTokenDate(): Promise<void> {
     const response = await axios.get(url, {
       headers: {
         ...authHeaders.headers,
-        'User-Agent': getClaudeCodeUserAgent(),
+        'User-Agent': getSoccUserAgentCore(),
       },
       timeout: 10000,
     })
@@ -52,7 +52,7 @@ export async function fetchAndStoreClaudeCodeFirstTokenDate(): Promise<void> {
 
     saveGlobalConfig(current => ({
       ...current,
-      claudeCodeFirstTokenDate: firstTokenDate,
+      soccFirstTokenDate: firstTokenDate,
     }))
   } catch (error) {
     logError(error)

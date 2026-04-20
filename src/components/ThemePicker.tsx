@@ -48,7 +48,7 @@ const DEMO_PATCH: StructuredPatchHunk = {
   lines: [
     ' function greet() {',
     '-  console.log("Hello, World!");',
-    '+  console.log("Hello, Claude!");',
+    '+  console.log("Hello, world!");',
     ' }',
   ],
 }
@@ -164,7 +164,7 @@ export function ThemePicker({
 
   const syntaxHint =
     colorModuleUnavailableReason === 'env'
-      ? `Syntax highlighting disabled (via CLAUDE_CODE_SYNTAX_HIGHLIGHT=${process.env.CLAUDE_CODE_SYNTAX_HIGHLIGHT})`
+      ? `Syntax highlighting disabled (via SOCC_SYNTAX_HIGHLIGHT=${process.env.SOCC_SYNTAX_HIGHLIGHT})`
       : syntaxHighlightingDisabled
         ? `Syntax highlighting disabled (${syntaxToggleShortcut} to enable)`
         : syntaxTheme

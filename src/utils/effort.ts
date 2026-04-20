@@ -30,7 +30,7 @@ export type EffortValue = EffortLevel | number
 // @[MODEL LAUNCH]: Add the new model to the allowlist if it supports the effort parameter.
 export function modelSupportsEffort(model: string): boolean {
   const m = model.toLowerCase()
-  if (isEnvTruthy(process.env.CLAUDE_CODE_ALWAYS_ENABLE_EFFORT)) {
+  if (isEnvTruthy(process.env.SOCC_ALWAYS_ENABLE_EFFORT)) {
     return true
   }
   const supported3P = get3PModelCapabilityOverride(model, 'effort')
@@ -182,7 +182,7 @@ export function resolvePickerEffortPersistence(
 }
 
 export function getEffortEnvOverride(): EffortValue | null | undefined {
-  const envOverride = process.env.CLAUDE_CODE_EFFORT_LEVEL
+  const envOverride = process.env.SOCC_EFFORT_LEVEL
   return envOverride?.toLowerCase() === 'unset' ||
     envOverride?.toLowerCase() === 'auto'
     ? null
@@ -192,7 +192,7 @@ export function getEffortEnvOverride(): EffortValue | null | undefined {
 /**
  * Resolve the effort value that will actually be sent to the API for a given
  * model, following the full precedence chain:
- *   env CLAUDE_CODE_EFFORT_LEVEL → appState.effortValue → model default
+ *   env SOCC_EFFORT_LEVEL → appState.effortValue → model default
  *
  * Returns undefined when no effort parameter should be sent (env set to
  * 'unset', or no default exists for the model).
@@ -311,7 +311,7 @@ const OPUS_DEFAULT_EFFORT_CONFIG_DEFAULT: OpusDefaultEffortConfig = {
   enabled: true,
   dialogTitle: 'We recommend medium effort for Opus',
   dialogDescription:
-    'Effort determines how long Claude thinks for when completing your task. We recommend medium effort for most tasks to balance speed and intelligence and maximize rate limits. Use ultrathink to trigger high effort when needed.',
+    'Effort determines how long SOCC thinks when completing your task. We recommend medium effort for most tasks to balance speed and intelligence and maximize rate limits. Use ultrathink to trigger high effort when needed.',
 }
 
 export function getOpusDefaultEffortConfig(): OpusDefaultEffortConfig {

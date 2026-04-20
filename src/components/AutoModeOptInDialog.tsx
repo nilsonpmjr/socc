@@ -69,7 +69,7 @@ export function AutoModeOptInDialog(t0: Props) {
   const onChange = t2;
   let t3;
   if ($[4] === Symbol.for("react.memo_cache_sentinel")) {
-    t3 = <Box flexDirection="column" gap={1}><Text>{AUTO_MODE_DESCRIPTION}</Text><Link url="https://code.claude.com/docs/en/security" /></Box>;
+    t3 = <Box flexDirection="column" gap={1}><Text>{AUTO_MODE_DESCRIPTION}</Text><Link url="https://github.com/nilsonpmjr/socc/tree/main/docs/security" /></Box>;
     $[4] = t3;
   } else {
     t3 = $[4];

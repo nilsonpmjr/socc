@@ -6,24 +6,24 @@ import axios from 'axios'
 import { OAUTH_BETA_HEADER } from '../constants/oauth.js'
 import {
   getAnthropicApiKey,
-  getClaudeAIOAuthTokens,
+  getSoccOAuthTokens,
   handleOAuth401Error,
   isClaudeAISubscriber,
 } from './auth.js'
 import { getAPIProvider } from './model/providers.js'
-import { getClaudeCodeUserAgent } from './userAgent.js'
+import { getSoccUserAgentCore } from './userAgent.js'
 import { getWorkload } from './workloadContext.js'
 
 // WARNING: We rely on `socc-cli` in the user agent for log filtering.
 // Please do NOT change this without making sure that logging also gets updated!
 export function getUserAgent(): string {
-  const agentSdkVersion = process.env.CLAUDE_AGENT_SDK_VERSION
-    ? `, agent-sdk/${process.env.CLAUDE_AGENT_SDK_VERSION}`
+  const agentSdkVersion = process.env.SOCC_AGENT_SDK_VERSION
+    ? `, agent-sdk/${process.env.SOCC_AGENT_SDK_VERSION}`
     : ''
-  // SDK consumers can identify their app/library via CLAUDE_AGENT_SDK_CLIENT_APP
+  // SDK consumers can identify their app/library via SOCC_AGENT_SDK_CLIENT_APP
   // e.g., "my-app/1.0.0" or "my-library/2.1"
-  const clientApp = process.env.CLAUDE_AGENT_SDK_CLIENT_APP
-    ? `, client-app/${process.env.CLAUDE_AGENT_SDK_CLIENT_APP}`
+  const clientApp = process.env.SOCC_AGENT_SDK_CLIENT_APP
+    ? `, client-app/${process.env.SOCC_AGENT_SDK_CLIENT_APP}`
     : ''
   // Turn-/process-scoped workload tag for cron-initiated requests. 1P-only
   // observability — proxies strip HTTP headers; QoS routing uses cc_workload
@@ -32,19 +32,19 @@ export function getUserAgent(): string {
   // so the read picks up the same setWorkload() value as getAttributionHeader.
   const workload = getWorkload()
   const workloadSuffix = workload ? `, workload/${workload}` : ''
-  return `socc-cli/${MACRO.VERSION} (${process.env.USER_TYPE}, ${process.env.CLAUDE_CODE_ENTRYPOINT ?? 'cli'}${agentSdkVersion}${clientApp}${workloadSuffix})`
+  return `socc-cli/${MACRO.VERSION} (${process.env.USER_TYPE}, ${process.env.SOCC_ENTRYPOINT ?? 'cli'}${agentSdkVersion}${clientApp}${workloadSuffix})`
 }
 
 export function getMCPUserAgent(): string {
   const parts: string[] = []
-  if (process.env.CLAUDE_CODE_ENTRYPOINT) {
-    parts.push(process.env.CLAUDE_CODE_ENTRYPOINT)
+  if (process.env.SOCC_ENTRYPOINT) {
+    parts.push(process.env.SOCC_ENTRYPOINT)
   }
-  if (process.env.CLAUDE_AGENT_SDK_VERSION) {
-    parts.push(`agent-sdk/${process.env.CLAUDE_AGENT_SDK_VERSION}`)
+  if (process.env.SOCC_AGENT_SDK_VERSION) {
+    parts.push(`agent-sdk/${process.env.SOCC_AGENT_SDK_VERSION}`)
   }
-  if (process.env.CLAUDE_AGENT_SDK_CLIENT_APP) {
-    parts.push(`client-app/${process.env.CLAUDE_AGENT_SDK_CLIENT_APP}`)
+  if (process.env.SOCC_AGENT_SDK_CLIENT_APP) {
+    parts.push(`client-app/${process.env.SOCC_AGENT_SDK_CLIENT_APP}`)
   }
   const suffix = parts.length > 0 ? ` (${parts.join(', ')})` : ''
   return `socc/${MACRO.VERSION}${suffix}`
@@ -59,7 +59,7 @@ export function getWebFetchUserAgent(): string {
     getAPIProvider() === 'firstParty'
       ? 'https://support.anthropic.com/'
       : 'https://github.com/nilsonpmjr/socc'
-  return `Claude-User (${getClaudeCodeUserAgent()}; +${supportUrl})`
+  return `Claude-User (${getSoccUserAgentCore()}; +${supportUrl})`
 }
 
 export type AuthHeaders = {
@@ -73,7 +73,7 @@ export type AuthHeaders = {
  */
 export function getAuthHeaders(): AuthHeaders {
   if (isClaudeAISubscriber()) {
-    const oauthTokens = getClaudeAIOAuthTokens()
+    const oauthTokens = getSoccOAuthTokens()
     if (!oauthTokens?.accessToken) {
       return {
         headers: {},
@@ -133,7 +133,7 @@ export async function withOAuth401Retry<T>(
         typeof err.response?.data === 'string' &&
         err.response.data.includes('OAuth token has been revoked'))
     if (!isAuthError) throw err
-    const failedAccessToken = getClaudeAIOAuthTokens()?.accessToken
+    const failedAccessToken = getSoccOAuthTokens()?.accessToken
     if (!failedAccessToken) throw err
     await handleOAuth401Error(failedAccessToken)
     return await request()

@@ -34,7 +34,7 @@ export type ContextWarning = {
 }
 
 export type ContextWarnings = {
-  claudeMdWarning: ContextWarning | null
+  soccMdWarning: ContextWarning | null
   agentWarning: ContextWarning | null
   mcpWarning: ContextWarning | null
   unreachableRulesWarning: ContextWarning | null
@@ -248,7 +248,7 @@ export async function checkContextWarnings(
   agentInfo: AgentDefinitionsResult | null,
   getToolPermissionContext: () => Promise<ToolPermissionContext>,
 ): Promise<ContextWarnings> {
-  const [claudeMdWarning, agentWarning, mcpWarning, unreachableRulesWarning] =
+  const [soccMdWarning, agentWarning, mcpWarning, unreachableRulesWarning] =
     await Promise.all([
       checkClaudeMdFiles(),
       checkAgentDescriptions(agentInfo),
@@ -257,7 +257,7 @@ export async function checkContextWarnings(
     ])
 
   return {
-    claudeMdWarning,
+    soccMdWarning,
     agentWarning,
     mcpWarning,
     unreachableRulesWarning,

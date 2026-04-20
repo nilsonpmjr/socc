@@ -12,7 +12,7 @@ const SYNC_START = '\x1B[?2026h'
 const SYNC_END = '\x1B[?2026l'
 
 const ORIGINAL_ENV = {
-  CLAUDE_CODE_USE_GITHUB: process.env.CLAUDE_CODE_USE_GITHUB,
+  SOCC_USE_GITHUB: process.env.SOCC_USE_GITHUB,
   GITHUB_TOKEN: process.env.GITHUB_TOKEN,
   GH_TOKEN: process.env.GH_TOKEN,
 }
@@ -164,7 +164,7 @@ function mockProviderManagerDependencies(
 
   mock.module('../utils/githubModelsCredentials.js', () => ({
     clearGithubModelsToken: () => ({ success: true }),
-    GITHUB_MODELS_HYDRATED_ENV_MARKER: 'CLAUDE_CODE_GITHUB_TOKEN_HYDRATED',
+    GITHUB_MODELS_HYDRATED_ENV_MARKER: 'SOCC_GITHUB_TOKEN_HYDRATED',
     hydrateGithubModelsTokenFromSecureStorage: () => {},
     readGithubModelsToken: syncRead,
     readGithubModelsTokenAsync: asyncRead,
@@ -276,7 +276,7 @@ afterEach(() => {
 })
 
 test('ProviderManager resolves GitHub virtual provider from async storage without sync reads in render flow', async () => {
-  delete process.env.CLAUDE_CODE_USE_GITHUB
+  delete process.env.SOCC_USE_GITHUB
   delete process.env.GITHUB_TOKEN
   delete process.env.GH_TOKEN
 
@@ -306,7 +306,7 @@ test('ProviderManager resolves GitHub virtual provider from async storage withou
 })
 
 test('ProviderManager first-run Ollama preset auto-detects installed models', async () => {
-  delete process.env.CLAUDE_CODE_USE_GITHUB
+  delete process.env.SOCC_USE_GITHUB
   delete process.env.GITHUB_TOKEN
   delete process.env.GH_TOKEN
 
@@ -396,7 +396,7 @@ test('ProviderManager first-run Ollama preset auto-detects installed models', as
 })
 
 test('ProviderManager avoids first-frame false negative while stored-token lookup is pending', async () => {
-  delete process.env.CLAUDE_CODE_USE_GITHUB
+  delete process.env.SOCC_USE_GITHUB
   delete process.env.GITHUB_TOKEN
   delete process.env.GH_TOKEN
 

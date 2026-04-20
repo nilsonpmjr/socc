@@ -172,8 +172,8 @@ import {
   isMcpInstructionsDeltaEnabled,
   type ClientSideInstruction,
 } from './mcpInstructionsDelta.js'
-import { CLAUDE_IN_CHROME_MCP_SERVER_NAME } from './claudeInChrome/common.js'
-import { CHROME_TOOL_SEARCH_INSTRUCTIONS } from './claudeInChrome/prompt.js'
+import { SOCC_IN_CHROME_MCP_SERVER_NAME } from './soccInChrome/common.js'
+import { CHROME_TOOL_SEARCH_INSTRUCTIONS } from './soccInChrome/prompt.js'
 import type { MCPServerConnection } from '../services/mcp/types.js'
 import type {
   HookEvent,
@@ -194,7 +194,7 @@ import {
   isThinkingMessage,
 } from './messages.js'
 import { isHumanTurn } from './messagePredicates.js'
-import { isEnvTruthy, getClaudeConfigHomeDir } from './envUtils.js'
+import { isEnvTruthy, getSoccConfigHomeDir } from './envUtils.js'
 import { feature } from 'bun:bundle'
 /* eslint-disable @typescript-eslint/no-require-imports */
 const BRIEF_TOOL_NAME: string | null =
@@ -751,8 +751,8 @@ export async function getAttachments(
   options?: { skipSkillDiscovery?: boolean },
 ): Promise<Attachment[]> {
   if (
-    isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_ATTACHMENTS) ||
-    isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE)
+    isEnvTruthy(process.env.SOCC_DISABLE_ATTACHMENTS) ||
+    isEnvTruthy(process.env.SOCC_SIMPLE)
   ) {
     // query.ts:removeFromQueue dequeues these unconditionally after
     // getAttachmentMessages runs — returning [] here silently drops them.
@@ -775,6 +775,9 @@ export async function getAttachments(
     ? [
         maybe('at_mentioned_files', () =>
           processAtMentionedFiles(input, context),
+        ),
+        maybe('local_path_files', () =>
+          processStandaloneFilePaths(input, context),
         ),
         maybe('mcp_resources', () =>
           processMcpResourceAttachments(input, context),
@@ -1575,7 +1578,7 @@ export function getMcpInstructionsDeltaAttachment(
     isToolSearchToolAvailable(tools)
   ) {
     clientSide.push({
-      serverName: CLAUDE_IN_CHROME_MCP_SERVER_NAME,
+      serverName: SOCC_IN_CHROME_MCP_SERVER_NAME,
       block: CHROME_TOOL_SEARCH_INSTRUCTIONS,
     })
   }
@@ -1896,7 +1899,35 @@ async function processAtMentionedFiles(
   input: string,
   toolUseContext: ToolUseContext,
 ): Promise<Attachment[]> {
-  const files = extractAtMentionedFiles(input)
+  return processReferencedFiles(
+    extractAtMentionedFiles(input),
+    toolUseContext,
+    'tengu_at_mention_extracting_directory_success',
+    'tengu_at_mention_extracting_filename_success',
+    'tengu_at_mention_extracting_filename_error',
+  )
+}
+
+async function processStandaloneFilePaths(
+  input: string,
+  toolUseContext: ToolUseContext,
+): Promise<Attachment[]> {
+  return processReferencedFiles(
+    extractStandaloneFilePaths(input),
+    toolUseContext,
+    'tengu_local_path_extracting_directory_success',
+    'tengu_local_path_extracting_filename_success',
+    'tengu_local_path_extracting_filename_error',
+  )
+}
+
+async function processReferencedFiles(
+  files: string[],
+  toolUseContext: ToolUseContext,
+  directorySuccessEventName: string,
+  fileSuccessEventName: string,
+  fileErrorEventName: string,
+): Promise<Attachment[]> {
   if (files.length === 0) return []
 
   const appState = toolUseContext.getAppState()
@@ -1929,7 +1960,7 @@ async function processAtMentionedFiles(
                 )
               }
               const stdout = names.join('\n')
-              logEvent('tengu_at_mention_extracting_directory_success', {})
+              logEvent(directorySuccessEventName, {})
 
               return {
                 type: 'directory' as const,
@@ -1948,8 +1979,8 @@ async function processAtMentionedFiles(
         return await generateFileAttachment(
           absoluteFilename,
           toolUseContext,
-          'tengu_at_mention_extracting_filename_success',
-          'tengu_at_mention_extracting_filename_error',
+          fileSuccessEventName,
+          fileErrorEventName,
           'at-mention',
           {
             offset: lineStart,
@@ -1957,7 +1988,7 @@ async function processAtMentionedFiles(
           },
         )
       } catch {
-        logEvent('tengu_at_mention_extracting_filename_error', {})
+        logEvent(fileErrorEventName, {})
       }
     }),
   )
@@ -2790,6 +2821,33 @@ export function extractAtMentionedFiles(content: string): string[] {
   return uniq([...quotedMatches, ...regularMatches])
 }
 
+export function extractStandaloneFilePaths(content: string): string[] {
+  // Detect direct absolute local paths in normal prose so users don't need
+  // to remember the @mention syntax for simple "analyze this file" flows.
+  const quotedAbsolutePathRegex =
+    /(^|[\s(])["']((?:[A-Za-z]:[\\/]|\/)[^"'\r\n]+)["']/g
+  const unquotedAbsolutePathRegex =
+    /(^|[\s(])((?:[A-Za-z]:[\\/]|\/)[^\s'")\]}>,;|&]+)/g
+
+  const results: string[] = []
+
+  let match
+  while ((match = quotedAbsolutePathRegex.exec(content)) !== null) {
+    if (match[2]) {
+      results.push(match[2])
+    }
+  }
+
+  while ((match = unquotedAbsolutePathRegex.exec(content)) !== null) {
+    if (match[2]) {
+      results.push(match[2].replace(/[!?]+$/, ''))
+    }
+  }
+
+  const atMentioned = new Set(extractAtMentionedFiles(content))
+  return uniq(results).filter(path => !atMentioned.has(path))
+}
+
 export function extractMcpResourceMentions(content: string): string[] {
   // Extract MCP resources mentioned with @ symbol in format @server:uri
   // Example: "@server1:resource/path" would extract "server1:resource/path"
@@ -3539,7 +3597,7 @@ async function getAsyncHookResponseAttachments(): Promise<Attachment[]> {
 
 /**
  * Get teammate mailbox attachments for agent swarm communication
- * Teammates are independent Claude Code sessions running in parallel (swarms),
+ * Teammates are independent SOCC sessions running in parallel (swarms),
  * not parent-child subagent relationships.
  *
  * This function checks two sources for messages:
@@ -3808,7 +3866,7 @@ function getTeamContextAttachment(messages: Message[]): Attachment[] {
     return []
   }
 
-  const configDir = getClaudeConfigHomeDir()
+  const configDir = getSoccConfigHomeDir()
   const teamConfigPath = `${configDir}/teams/${teamName}/config.json`
   const taskListPath = `${configDir}/tasks/${teamName}/`
 
@@ -3828,7 +3886,7 @@ function getTokenUsageAttachment(
   messages: Message[],
   model: string,
 ): Attachment[] {
-  if (!isEnvTruthy(process.env.CLAUDE_CODE_ENABLE_TOKEN_USAGE_ATTACHMENT)) {
+  if (!isEnvTruthy(process.env.SOCC_ENABLE_TOKEN_USAGE_ATTACHMENT)) {
     return []
   }
 
@@ -3917,7 +3975,7 @@ async function getVerifyPlanReminderAttachment(
 ): Promise<Attachment[]> {
   if (
     process.env.USER_TYPE !== 'ant' ||
-    !isEnvTruthy(process.env.CLAUDE_CODE_VERIFY_PLAN)
+    !isEnvTruthy(process.env.SOCC_VERIFY_PLAN)
   ) {
     return []
   }

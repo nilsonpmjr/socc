@@ -1,7 +1,7 @@
 // biome-ignore-all assist/source/organizeImports: internal-only import markers must not be reordered
 /**
  * Hooks are user-defined shell commands that can be executed at various points
- * in Claude Code's lifecycle.
+ * in SOCC's lifecycle.
  */
 import { basename } from 'path'
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
@@ -174,7 +174,7 @@ const TOOL_HOOK_EXECUTION_TIMEOUT_MS = 10 * 60 * 1000
  */
 const SESSION_END_HOOK_TIMEOUT_MS_DEFAULT = 1500
 export function getSessionEndHookTimeoutMs(): number {
-  const raw = process.env.CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS
+  const raw = process.env.SOCC_SESSIONEND_HOOKS_TIMEOUT_MS
   const parsed = raw ? parseInt(raw, 10) : NaN
   return Number.isFinite(parsed) && parsed > 0
     ? parsed
@@ -268,7 +268,7 @@ function executeInBackground({
  * Checks if a hook should be skipped due to lack of workspace trust.
  *
  * ALL hooks require workspace trust because they execute arbitrary commands from
- * .claude/settings.json. This is a defense-in-depth security measure.
+ * .socc/settings.json. This is a defense-in-depth security measure.
  *
  * Context: Hooks are captured via captureHooksConfigSnapshot() before the trust
  * dialog is shown. While most hooks won't execute until after trust is established
@@ -741,7 +741,7 @@ function processHookJSONOutput({
  *
  * Shell resolution: hook.shell → 'bash'. PowerShell hooks spawn pwsh
  * with -NoProfile -NonInteractive -Command and skip bash-specific prep
- * (POSIX path conversion, .sh auto-prepend, CLAUDE_CODE_SHELL_PREFIX).
+ * (POSIX path conversion, .sh auto-prepend, SOCC_SHELL_PREFIX).
  * See docs/design/ps-shell-selection.md §5.1.
  */
 async function execCommandHook(
@@ -815,9 +815,9 @@ async function execCommandHook(
   // reference $CLAUDE_PROJECT_DIR always resolve relative to the real repo root.
   const projectDir = getProjectRoot()
 
-  // Substitute ${CLAUDE_PLUGIN_ROOT} and ${user_config.X} in the command string.
+  // Substitute ${SOCC_PLUGIN_ROOT} and ${user_config.X} in the command string.
   // Order matches MCP/LSP (plugin vars FIRST, then user config) so a user-
-  // entered value containing the literal text ${CLAUDE_PLUGIN_ROOT} is treated
+  // entered value containing the literal text ${SOCC_PLUGIN_ROOT} is treated
   // as opaque — not re-interpreted as a template.
   let command = hook.command
   let pluginOpts: ReturnType<typeof loadPluginOptions> | undefined
@@ -842,10 +842,10 @@ async function execCommandHook(
     // form .replace() so paths containing $ aren't mangled by $-pattern
     // interpretation (rare but possible: \\server\c$\plugin).
     const rootPath = toHookPath(pluginRoot)
-    command = command.replace(/\$\{CLAUDE_PLUGIN_ROOT\}/g, () => rootPath)
+    command = command.replace(/\$\{SOCC_PLUGIN_ROOT\}/g, () => rootPath)
     if (pluginId) {
       const dataPath = toHookPath(getPluginDataDir(pluginId))
-      command = command.replace(/\$\{CLAUDE_PLUGIN_DATA\}/g, () => dataPath)
+      command = command.replace(/\$\{SOCC_PLUGIN_DATA\}/g, () => dataPath)
     }
     if (pluginId) {
       pluginOpts = loadPluginOptions(pluginId)
@@ -865,13 +865,13 @@ async function execCommandHook(
     }
   }
 
-  // CLAUDE_CODE_SHELL_PREFIX wraps the command via POSIX quoting
+  // SOCC_SHELL_PREFIX wraps the command via POSIX quoting
   // (formatShellPrefixCommand uses shell-quote). This makes no sense for
   // PowerShell — see design §8.1. For now PS hooks ignore the prefix;
-  // a CLAUDE_CODE_PS_SHELL_PREFIX (or shell-aware prefix) is a follow-up.
+  // a SOCC_PS_SHELL_PREFIX (or shell-aware prefix) is a follow-up.
   const finalCommand =
-    !isPowerShell && process.env.CLAUDE_CODE_SHELL_PREFIX
-      ? formatShellPrefixCommand(process.env.CLAUDE_CODE_SHELL_PREFIX, command)
+    !isPowerShell && process.env.SOCC_SHELL_PREFIX
+      ? formatShellPrefixCommand(process.env.SOCC_SHELL_PREFIX, command)
       : command
 
   const hookTimeoutMs = hook.timeout
@@ -884,12 +884,12 @@ async function execCommandHook(
     CLAUDE_PROJECT_DIR: toHookPath(projectDir),
   }
 
-  // Plugin and skill hooks both set CLAUDE_PLUGIN_ROOT (skills use the same
+  // Plugin and skill hooks both set SOCC_PLUGIN_ROOT (skills use the same
   // name for consistency — skills can migrate to plugins without code changes)
   if (pluginRoot) {
-    envVars.CLAUDE_PLUGIN_ROOT = toHookPath(pluginRoot)
+    envVars.SOCC_PLUGIN_ROOT = toHookPath(pluginRoot)
     if (pluginId) {
-      envVars.CLAUDE_PLUGIN_DATA = toHookPath(getPluginDataDir(pluginId))
+      envVars.SOCC_PLUGIN_DATA = toHookPath(getPluginDataDir(pluginId))
     }
   }
   // Expose plugin options as env vars too, so hooks can read them without
@@ -901,14 +901,14 @@ async function execCommandHook(
       // at schemas.ts:611 now constrains keys to /^[A-Za-z_]\w*$/ so this is
       // belt-and-suspenders, but cheap insurance if someone bypasses the schema.
       const envKey = key.replace(/[^A-Za-z0-9_]/g, '_').toUpperCase()
-      envVars[`CLAUDE_PLUGIN_OPTION_${envKey}`] = String(value)
+      envVars[`SOCC_PLUGIN_OPTION_${envKey}`] = String(value)
     }
   }
   if (skillRoot) {
-    envVars.CLAUDE_PLUGIN_ROOT = toHookPath(skillRoot)
+    envVars.SOCC_PLUGIN_ROOT = toHookPath(skillRoot)
   }
 
-  // CLAUDE_ENV_FILE points to a .sh file that the hook writes env var
+  // SOCC_ENV_FILE points to a .sh file that the hook writes env var
   // definitions into; getSessionEnvironmentScript() concatenates them and
   // bashProvider injects the content into bash commands. A PS hook would
   // naturally write PS syntax ($env:FOO = 'bar'), which bash can't parse.
@@ -922,7 +922,7 @@ async function execCommandHook(
       hookEvent === 'FileChanged') &&
     hookIndex !== undefined
   ) {
-    envVars.CLAUDE_ENV_FILE = await getHookEnvFilePath(hookEvent, hookIndex)
+    envVars.SOCC_ENV_FILE = await getHookEnvFilePath(hookEvent, hookIndex)
   }
 
   // When agent worktrees are removed, getCwd() may return a deleted path via
@@ -1447,7 +1447,7 @@ function isInternalHook(matched: MatchedHook): boolean {
  * Settings-file hooks (no pluginRoot/skillRoot) share the '' prefix so the
  * same command defined in user/project/local still collapses to one — the
  * original intent of the dedup. Plugin/skill hooks get their root as the
- * prefix, so two plugins sharing an unexpanded `${CLAUDE_PLUGIN_ROOT}/hook.sh`
+ * prefix, so two plugins sharing an unexpanded `${SOCC_PLUGIN_ROOT}/hook.sh`
  * template don't collapse: after expansion they point to different files.
  */
 function hookDedupKey(m: MatchedHook, payload: string): string {
@@ -1979,7 +1979,7 @@ async function* executeHooks({
     return
   }
 
-  if (isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE)) {
+  if (isEnvTruthy(process.env.SOCC_SIMPLE)) {
     return
   }
 
@@ -3013,7 +3013,7 @@ async function executeHooksOutsideREPL({
   signal?: AbortSignal
   timeoutMs: number
 }): Promise<HookOutsideReplResult[]> {
-  if (isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE)) {
+  if (isEnvTruthy(process.env.SOCC_SIMPLE)) {
     return []
   }
 
@@ -4321,14 +4321,14 @@ export function hasInstructionsLoadedHook(): boolean {
 
 /**
  * Execute InstructionsLoaded hooks when an instruction file (CLAUDE.md or
- * .claude/rules/*.md) is loaded into context. Fire-and-forget — this hook is
+ * .socc/rules/*.md) is loaded into context. Fire-and-forget — this hook is
  * for observability/audit only and does not support blocking.
  *
  * Dispatch sites:
  * - Eager load at session start (getMemoryFiles in claudemd.ts)
  * - Eager reload after compaction (getMemoryFiles cache cleared by
  *   runPostCompactCleanup; next call reports load_reason: 'compact')
- * - Lazy load when Claude touches a file that triggers nested CLAUDE.md or
+ * - Lazy load when the assistant touches a file that triggers nested CLAUDE.md or
  *   conditional rules with paths: frontmatter (memoryFilesToAttachments in
  *   attachments.ts)
  */

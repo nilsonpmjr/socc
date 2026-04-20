@@ -356,7 +356,7 @@ export function resolveProviderRequest(options?: {
   fallbackModel?: string
   reasoningEffortOverride?: ReasoningEffort
 }): ResolvedProviderRequest {
-  const isGithubMode = isEnvTruthy(process.env.CLAUDE_CODE_USE_GITHUB)
+  const isGithubMode = isEnvTruthy(process.env.SOCC_USE_GITHUB)
   const requestedModel =
     options?.model?.trim() ||
     process.env.OPENAI_MODEL?.trim() ||
@@ -416,12 +416,12 @@ export function resolveProviderRequest(options?: {
 }
 
 export function getAdditionalModelOptionsCacheScope(): string | null {
-  if (!isEnvTruthy(process.env.CLAUDE_CODE_USE_OPENAI)) {
-    if (!isEnvTruthy(process.env.CLAUDE_CODE_USE_GEMINI) &&
-        !isEnvTruthy(process.env.CLAUDE_CODE_USE_GITHUB) &&
-        !isEnvTruthy(process.env.CLAUDE_CODE_USE_BEDROCK) &&
-        !isEnvTruthy(process.env.CLAUDE_CODE_USE_VERTEX) &&
-        !isEnvTruthy(process.env.CLAUDE_CODE_USE_FOUNDRY)) {
+  if (!isEnvTruthy(process.env.SOCC_USE_OPENAI)) {
+    if (!isEnvTruthy(process.env.SOCC_USE_GEMINI) &&
+        !isEnvTruthy(process.env.SOCC_USE_GITHUB) &&
+        !isEnvTruthy(process.env.SOCC_USE_BEDROCK) &&
+        !isEnvTruthy(process.env.SOCC_USE_VERTEX) &&
+        !isEnvTruthy(process.env.SOCC_USE_FOUNDRY)) {
       return 'firstParty'
     }
     return null

@@ -41,7 +41,7 @@ import { logForDebugging } from '../debug.js'
 import { getCurrentInstallationType } from '../doctorDiagnostic.js'
 import { env } from '../env.js'
 import { envDynamic } from '../envDynamic.js'
-import { getClaudeConfigHomeDir, isEnvTruthy } from '../envUtils.js'
+import { getSoccConfigHomeDir, isEnvTruthy } from '../envUtils.js'
 import { errorMessage, getErrnoCode, isENOENT, toError } from '../errors.js'
 import { execFileNoThrowWithCwd } from '../execFileNoThrow.js'
 import { getShellType } from '../localInstaller.js'
@@ -867,7 +867,7 @@ export async function checkInstall(
       const absoluteTarget = resolve(dirname(dirs.executable), target)
       if (!(await isPossibleClaudeBinary(absoluteTarget))) {
         messages.push({
-          message: `Claude symlink points to missing or invalid binary: ${target}`,
+          message: `SOCC symlink points to missing or invalid binary: ${target}`,
           userActionRequired: true,
           type: 'error',
         })
@@ -883,7 +883,7 @@ export async function checkInstall(
         // EINVAL (not a symlink) or other — check as regular binary
         if (!(await isPossibleClaudeBinary(dirs.executable))) {
           messages.push({
-            message: `${dirs.executable} exists but is not a valid Claude binary`,
+            message: `${dirs.executable} exists but is not a valid SOCC binary`,
             userActionRequired: true,
             type: 'error',
           })
@@ -1688,9 +1688,9 @@ export async function cleanupNpmInstallations(): Promise<{
     }
   }
 
-  // Preserve compatibility with pre-migration installs under ~/.claude/local.
+  // Preserve compatibility with pre-migration installs under ~/.socc/local.
   const localInstallDirs = Array.from(
-    new Set([join(getClaudeConfigHomeDir(), 'local'), join(homedir(), '.claude', 'local')]),
+    new Set([join(getSoccConfigHomeDir(), 'local'), join(homedir(), '.socc', 'local')]),
   )
 
   for (const localInstallDir of localInstallDirs) {

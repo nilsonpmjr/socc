@@ -18,18 +18,18 @@ import { readFileSync as fsReadFileSync } from 'fs'
 import { unlink, writeFile } from 'fs/promises'
 import { join } from 'path'
 import {
-  CLAUDE_AI_INFERENCE_SCOPE,
+  SOCC_REMOTE_INFERENCE_SCOPE,
   getOauthConfig,
   OAUTH_BETA_HEADER,
 } from '../../constants/oauth.js'
 import {
   checkAndRefreshOAuthTokenIfNeeded,
   getAnthropicApiKeyWithSource,
-  getClaudeAIOAuthTokens,
+  getSoccOAuthTokens,
 } from '../../utils/auth.js'
 import { registerCleanup } from '../../utils/cleanupRegistry.js'
 import { logForDebugging } from '../../utils/debug.js'
-import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
+import { getSoccConfigHomeDir } from '../../utils/envUtils.js'
 import { classifyAxiosError } from '../../utils/errors.js'
 import { safeParseJSON } from '../../utils/json.js'
 import {
@@ -39,7 +39,7 @@ import {
 import { isEssentialTrafficOnly } from '../../utils/privacyLevel.js'
 import { sleep } from '../../utils/sleep.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
-import { getClaudeCodeUserAgent } from '../../utils/userAgent.js'
+import { getSoccUserAgentCore } from '../../utils/userAgent.js'
 import { getRetryDelay } from '../api/withRetry.js'
 import {
   type PolicyLimitsFetchResult,
@@ -117,7 +117,7 @@ export function initializePolicyLimitsLoadingPromise(): void {
  * Get the path to the policy limits cache file
  */
 function getCachePath(): string {
-  return join(getClaudeConfigHomeDir(), CACHE_FILENAME)
+  return join(getSoccConfigHomeDir(), CACHE_FILENAME)
 }
 
 /**
@@ -188,13 +188,13 @@ export function isPolicyLimitsEligible(): boolean {
   }
 
   // For OAuth users, check if they have Claude.ai tokens
-  const tokens = getClaudeAIOAuthTokens()
+  const tokens = getSoccOAuthTokens()
   if (!tokens?.accessToken) {
     return false
   }
 
   // Must have Claude.ai inference scope
-  if (!tokens.scopes?.includes(CLAUDE_AI_INFERENCE_SCOPE)) {
+  if (!tokens.scopes?.includes(SOCC_REMOTE_INFERENCE_SCOPE)) {
     return false
   }
 
@@ -245,7 +245,7 @@ function getAuthHeaders(): {
   }
 
   // Fall back to OAuth tokens (for Claude.ai users)
-  const oauthTokens = getClaudeAIOAuthTokens()
+  const oauthTokens = getSoccOAuthTokens()
   if (oauthTokens?.accessToken) {
     return {
       headers: {
@@ -315,7 +315,7 @@ async function fetchPolicyLimits(
     const endpoint = getPolicyLimitsEndpoint()
     const headers: Record<string, string> = {
       ...authHeaders.headers,
-      'User-Agent': getClaudeCodeUserAgent(),
+      'User-Agent': getSoccUserAgentCore(),
     }
 
     if (cachedChecksum) {

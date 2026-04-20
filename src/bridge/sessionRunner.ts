@@ -19,7 +19,7 @@ const MAX_STDERR_LINES = 10
 /**
  * Safe OS and runtime variables that the child process needs to function.
  * Everything else (API keys, DB passwords, proxy secrets, etc.) must not
- * be inherited — the child authenticates via CLAUDE_CODE_SESSION_ACCESS_TOKEN.
+ * be inherited — the child authenticates via SOCC_SESSION_ACCESS_TOKEN.
  */
 const CHILD_ENV_ALLOWLIST = new Set([
   // System / shell
@@ -30,14 +30,14 @@ const CHILD_ENV_ALLOWLIST = new Set([
   'LANG', 'LC_ALL', 'LC_CTYPE',
   // Node.js runtime
   'NODE_OPTIONS', 'NODE_PATH', 'NODE_ENV',
-  // OpenClaude session / bridge (non-secret)
-  'CLAUDE_CODE_ENVIRONMENT_KIND',
-  'CLAUDE_CODE_FORCE_SANDBOX',
-  'CLAUDE_CODE_BUBBLEWRAP',
-  'CLAUDE_CODE_ENTRYPOINT',
-  'CLAUDE_CODE_COORDINATOR_MODE',
-  'CLAUDE_CODE_PERMISSIONS_VERSION',
-  'CLAUDE_CODE_PERMISSIONS_SETTING',
+  // SOCC session / bridge (non-secret)
+  'SOCC_ENVIRONMENT_KIND',
+  'SOCC_FORCE_SANDBOX',
+  'SOCC_BUBBLEWRAP',
+  'SOCC_ENTRYPOINT',
+  'SOCC_COORDINATOR_MODE',
+  'SOCC_PERMISSIONS_VERSION',
+  'SOCC_PERMISSIONS_SETTING',
   // Display / terminal
   'TERM', 'COLORTERM', 'FORCE_COLOR', 'NO_COLOR',
 ])
@@ -66,14 +66,14 @@ export function buildChildEnv(
   }
 
   // Bridge-required overrides
-  env.CLAUDE_CODE_OAUTH_TOKEN = undefined // explicitly strip
-  env.CLAUDE_CODE_ENVIRONMENT_KIND = 'bridge'
-  if (opts.sandbox) env.CLAUDE_CODE_FORCE_SANDBOX = '1'
-  env.CLAUDE_CODE_SESSION_ACCESS_TOKEN = opts.accessToken
-  env.CLAUDE_CODE_POST_FOR_SESSION_INGRESS_V2 = '1'
+  env.SOCC_OAUTH_TOKEN = undefined // explicitly strip
+  env.SOCC_ENVIRONMENT_KIND = 'bridge'
+  if (opts.sandbox) env.SOCC_FORCE_SANDBOX = '1'
+  env.SOCC_SESSION_ACCESS_TOKEN = opts.accessToken
+  env.SOCC_POST_FOR_SESSION_INGRESS_V2 = '1'
   if (opts.useCcrV2) {
-    env.CLAUDE_CODE_USE_CCR_V2 = '1'
-    env.CLAUDE_CODE_WORKER_EPOCH = String(opts.workerEpoch)
+    env.SOCC_USE_CCR_V2 = '1'
+    env.SOCC_WORKER_EPOCH = String(opts.workerEpoch)
   }
 
   return env
@@ -584,7 +584,7 @@ export function createSessionSpawner(deps: SessionSpawnerDeps): SessionSpawner {
           handle.writeStdin(
             jsonStringify({
               type: 'update_environment_variables',
-              variables: { CLAUDE_CODE_SESSION_ACCESS_TOKEN: token },
+              variables: { SOCC_SESSION_ACCESS_TOKEN: token },
             }) + '\n',
           )
           deps.onDebug(

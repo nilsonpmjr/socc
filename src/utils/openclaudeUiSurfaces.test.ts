@@ -2,32 +2,20 @@ import { describe, expect, test } from 'bun:test'
 import { join } from 'path'
 
 import { optionForPermissionSaveDestination } from '../components/permissions/rules/AddPermissionRules.tsx'
-import { isClaudeSettingsPath } from './permissions/filesystem.ts'
+import { isSoccSettingsPath } from './permissions/filesystem.ts'
 import { getValidationTip } from './settings/validationTips.ts'
 
-describe('OpenClaude settings path surfaces', () => {
-  test('isClaudeSettingsPath recognizes project .socc settings files', () => {
+describe('SOCC settings path surfaces', () => {
+  test('isSoccSettingsPath recognizes project .socc settings files', () => {
     expect(
-      isClaudeSettingsPath(
+      isSoccSettingsPath(
         join(process.cwd(), '.socc', 'settings.json'),
       ),
     ).toBe(true)
 
     expect(
-      isClaudeSettingsPath(
+      isSoccSettingsPath(
         join(process.cwd(), '.socc', 'settings.local.json'),
-      ),
-    ).toBe(true)
-
-    expect(
-      isClaudeSettingsPath(
-        join(process.cwd(), '.openclaude', 'settings.json'),
-      ),
-    ).toBe(true)
-
-    expect(
-      isClaudeSettingsPath(
-        join(process.cwd(), '.openclaude', 'settings.local.json'),
       ),
     ).toBe(true)
   })
@@ -55,7 +43,7 @@ describe('OpenClaude settings path surfaces', () => {
   })
 })
 
-describe('OpenClaude validation tips', () => {
+describe('SOCC validation tips', () => {
   test('permissions.defaultMode invalid value keeps suggestion but no Claude docs link', () => {
     const tip = getValidationTip({
       path: 'permissions.defaultMode',

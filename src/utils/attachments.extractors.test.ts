@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   extractAtMentionedFiles,
   extractMcpResourceMentions,
+  extractStandaloneFilePaths,
 } from './attachments.js'
 
 // Contract tests for the two @-mention extractors.
@@ -80,6 +81,41 @@ describe('extractor contract', () => {
     ]
     test.each(cases)('%s', (_label, input, expected) => {
       expect(extractAtMentionedFiles(input)).toEqual(expected)
+    })
+  })
+
+  describe('extractStandaloneFilePaths extracts direct local paths in prose', () => {
+    const cases: Array<[string, string, string[]]> = [
+      [
+        'a quoted Windows drive-letter path in prose',
+        'analise "C:\\Users\\me\\file.txt" por favor',
+        ['C:\\Users\\me\\file.txt'],
+      ],
+      [
+        'a quoted POSIX path with spaces',
+        'veja "/Users/foo/my file.ts" depois',
+        ['/Users/foo/my file.ts'],
+      ],
+      [
+        'an unquoted POSIX path',
+        'use /Users/foo/bar.ts como entrada',
+        ['/Users/foo/bar.ts'],
+      ],
+    ]
+    test.each(cases)('%s', (_label, input, expected) => {
+      expect(extractStandaloneFilePaths(input)).toEqual(expected)
+    })
+  })
+
+  describe('extractStandaloneFilePaths ignores non-file tokens and @mentions', () => {
+    const cases: Array<[string, string]> = [
+      ['an @mentioned Windows path', '@"C:\\Users\\me\\file.txt"'],
+      ['an @mentioned POSIX path', '@/Users/foo/bar.ts'],
+      ['a URL', 'https://example.com/report.csv'],
+      ['plain prose', 'analise esse alerta por favor'],
+    ]
+    test.each(cases)('%s', (_label, input) => {
+      expect(extractStandaloneFilePaths(input)).toEqual([])
     })
   })
 })

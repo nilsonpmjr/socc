@@ -163,7 +163,7 @@ function isGithubProviderAvailable(
   credentialSource: GithubCredentialSource,
   processEnv: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  if (isEnvTruthy(processEnv.CLAUDE_CODE_USE_GITHUB)) {
+  if (isEnvTruthy(processEnv.SOCC_USE_GITHUB)) {
     return true
   }
   return credentialSource !== 'none'
@@ -172,7 +172,7 @@ function isGithubProviderAvailable(
 function getGithubProviderModel(
   processEnv: NodeJS.ProcessEnv = process.env,
 ): string {
-  if (isEnvTruthy(processEnv.CLAUDE_CODE_USE_GITHUB)) {
+  if (isEnvTruthy(processEnv.SOCC_USE_GITHUB)) {
     return processEnv.OPENAI_MODEL?.trim() || GITHUB_PROVIDER_DEFAULT_MODEL
   }
   return GITHUB_PROVIDER_DEFAULT_MODEL
@@ -195,7 +195,7 @@ function getGithubProviderSummary(
 
 export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
   const initialGithubCredentialSource = getGithubCredentialSourceFromEnv()
-  const initialIsGithubActive = isEnvTruthy(process.env.CLAUDE_CODE_USE_GITHUB)
+  const initialIsGithubActive = isEnvTruthy(process.env.SOCC_USE_GITHUB)
   const initialHasGithubCredential = initialGithubCredentialSource !== 'none'
 
   const [profiles, setProfiles] = React.useState(() => getProviderProfiles())
@@ -236,7 +236,7 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
 
   const refreshGithubProviderState = React.useCallback((): void => {
     const envCredentialSource = getGithubCredentialSourceFromEnv()
-    const githubActive = isEnvTruthy(process.env.CLAUDE_CODE_USE_GITHUB)
+    const githubActive = isEnvTruthy(process.env.SOCC_USE_GITHUB)
     const canResolveFromEnv = githubActive || envCredentialSource !== 'none'
 
     if (canResolveFromEnv) {
@@ -258,7 +258,7 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
 
       setGithubCredentialSource(credentialSource)
       setGithubProviderAvailable(isGithubProviderAvailable(credentialSource))
-      setIsGithubActive(isEnvTruthy(process.env.CLAUDE_CODE_USE_GITHUB))
+      setIsGithubActive(isEnvTruthy(process.env.SOCC_USE_GITHUB))
       setIsGithubCredentialSourceResolved(true)
     })()
   }, [])
@@ -281,12 +281,12 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
   function clearStartupProviderOverrideFromUserSettings(): string | null {
     const { error } = updateSettingsForSource('userSettings', {
       env: {
-        CLAUDE_CODE_USE_OPENAI: undefined as any,
-        CLAUDE_CODE_USE_GEMINI: undefined as any,
-        CLAUDE_CODE_USE_GITHUB: undefined as any,
-        CLAUDE_CODE_USE_BEDROCK: undefined as any,
-        CLAUDE_CODE_USE_VERTEX: undefined as any,
-        CLAUDE_CODE_USE_FOUNDRY: undefined as any,
+        SOCC_USE_OPENAI: undefined as any,
+        SOCC_USE_GEMINI: undefined as any,
+        SOCC_USE_GITHUB: undefined as any,
+        SOCC_USE_BEDROCK: undefined as any,
+        SOCC_USE_VERTEX: undefined as any,
+        SOCC_USE_FOUNDRY: undefined as any,
       },
     })
     return error ? error.message : null
@@ -299,7 +299,7 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
   function activateGithubProvider(): string | null {
     const { error } = updateSettingsForSource('userSettings', {
       env: {
-        CLAUDE_CODE_USE_GITHUB: '1',
+        SOCC_USE_GITHUB: '1',
         OPENAI_MODEL: GITHUB_PROVIDER_DEFAULT_MODEL,
         OPENAI_API_KEY: undefined as any,
         OPENAI_ORG: undefined as any,
@@ -307,18 +307,18 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
         OPENAI_ORGANIZATION: undefined as any,
         OPENAI_BASE_URL: undefined as any,
         OPENAI_API_BASE: undefined as any,
-        CLAUDE_CODE_USE_OPENAI: undefined as any,
-        CLAUDE_CODE_USE_GEMINI: undefined as any,
-        CLAUDE_CODE_USE_BEDROCK: undefined as any,
-        CLAUDE_CODE_USE_VERTEX: undefined as any,
-        CLAUDE_CODE_USE_FOUNDRY: undefined as any,
+        SOCC_USE_OPENAI: undefined as any,
+        SOCC_USE_GEMINI: undefined as any,
+        SOCC_USE_BEDROCK: undefined as any,
+        SOCC_USE_VERTEX: undefined as any,
+        SOCC_USE_FOUNDRY: undefined as any,
       },
     })
     if (error) {
       return error.message
     }
 
-    process.env.CLAUDE_CODE_USE_GITHUB = '1'
+    process.env.SOCC_USE_GITHUB = '1'
     process.env.OPENAI_MODEL = GITHUB_PROVIDER_DEFAULT_MODEL
     delete process.env.OPENAI_API_KEY
     delete process.env.OPENAI_ORG
@@ -326,13 +326,13 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
     delete process.env.OPENAI_ORGANIZATION
     delete process.env.OPENAI_BASE_URL
     delete process.env.OPENAI_API_BASE
-    delete process.env.CLAUDE_CODE_USE_OPENAI
-    delete process.env.CLAUDE_CODE_USE_GEMINI
-    delete process.env.CLAUDE_CODE_USE_BEDROCK
-    delete process.env.CLAUDE_CODE_USE_VERTEX
-    delete process.env.CLAUDE_CODE_USE_FOUNDRY
-    delete process.env.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED
-    delete process.env.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED_ID
+    delete process.env.SOCC_USE_OPENAI
+    delete process.env.SOCC_USE_GEMINI
+    delete process.env.SOCC_USE_BEDROCK
+    delete process.env.SOCC_USE_VERTEX
+    delete process.env.SOCC_USE_FOUNDRY
+    delete process.env.SOCC_PROVIDER_PROFILE_ENV_APPLIED
+    delete process.env.SOCC_PROVIDER_PROFILE_ENV_APPLIED_ID
     delete process.env[GITHUB_MODELS_HYDRATED_ENV_MARKER]
 
     hydrateGithubModelsTokenFromSecureStorage()
@@ -348,7 +348,7 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
 
     const { error } = updateSettingsForSource('userSettings', {
       env: {
-        CLAUDE_CODE_USE_GITHUB: undefined as any,
+        SOCC_USE_GITHUB: undefined as any,
         OPENAI_MODEL: undefined as any,
         OPENAI_BASE_URL: undefined as any,
         OPENAI_API_BASE: undefined as any,
@@ -367,7 +367,7 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
       delete process.env.GITHUB_TOKEN
     }
 
-    delete process.env.CLAUDE_CODE_USE_GITHUB
+    delete process.env.SOCC_USE_GITHUB
     delete process.env[GITHUB_MODELS_HYDRATED_ENV_MARKER]
     delete process.env.OPENAI_MODEL
     delete process.env.OPENAI_API_KEY

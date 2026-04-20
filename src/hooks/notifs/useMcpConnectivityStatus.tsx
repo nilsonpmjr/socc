@@ -5,7 +5,7 @@ import { useEffect } from 'react';
 import { useNotifications } from 'src/context/notifications.js';
 import { getIsRemoteMode } from '../../bootstrap/state.js';
 import { Text } from '../../ink.js';
-import { hasClaudeAiMcpEverConnected } from '../../services/mcp/claudeai.js';
+import { hasSoccMcpEverConnected } from '../../services/mcp/claudeai.js';
 import type { MCPServerConnection } from '../../services/mcp/types.js';
 type Props = {
   mcpClients?: MCPServerConnection[];
@@ -79,13 +79,13 @@ export function useMcpConnectivityStatus(t0) {
   useEffect(t2, t3);
 }
 function _temp4(client_2) {
-  return client_2.type === "needs-auth" && client_2.config.type === "claudeai-proxy" && hasClaudeAiMcpEverConnected(client_2.name);
+  return client_2.type === "needs-auth" && client_2.config.type === "claudeai-proxy" && hasSoccMcpEverConnected(client_2.name);
 }
 function _temp3(client_1) {
   return client_1.type === "needs-auth" && client_1.config.type !== "claudeai-proxy";
 }
 function _temp2(client_0) {
-  return client_0.type === "failed" && client_0.config.type === "claudeai-proxy" && hasClaudeAiMcpEverConnected(client_0.name);
+  return client_0.type === "failed" && client_0.config.type === "claudeai-proxy" && hasSoccMcpEverConnected(client_0.name);
 }
 function _temp(client) {
   return client.type === "failed" && client.config.type !== "sse-ide" && client.config.type !== "ws-ide" && client.config.type !== "claudeai-proxy";

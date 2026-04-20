@@ -22,7 +22,7 @@ import type { LogOption } from 'src/types/logs.js'
 import { inspect } from 'util'
 import { getGlobalConfig } from './config.js'
 import { logForDebugging } from './debug.js'
-import { getClaudeConfigHomeDir, isEnvTruthy } from './envUtils.js'
+import { getSoccConfigHomeDir, isEnvTruthy } from './envUtils.js'
 import { getErrnoCode, isENOENT } from './errors.js'
 import { pathExists } from './file.js'
 import { logError } from './log.js'
@@ -66,14 +66,14 @@ export function fileHistoryEnabled(): boolean {
   }
   return (
     getGlobalConfig().fileCheckpointingEnabled !== false &&
-    !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING)
+    !isEnvTruthy(process.env.SOCC_DISABLE_FILE_CHECKPOINTING)
   )
 }
 
 function fileHistoryEnabledSdk(): boolean {
   return (
-    isEnvTruthy(process.env.CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING) &&
-    !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING)
+    isEnvTruthy(process.env.SOCC_ENABLE_SDK_FILE_CHECKPOINTING) &&
+    !isEnvTruthy(process.env.SOCC_DISABLE_FILE_CHECKPOINTING)
   )
 }
 
@@ -731,7 +731,7 @@ function getBackupFileName(filePath: string, version: number): string {
 }
 
 function resolveBackupPath(backupFileName: string, sessionId?: string): string {
-  const configDir = getClaudeConfigHomeDir()
+  const configDir = getSoccConfigHomeDir()
   return join(
     configDir,
     'file-history',
@@ -951,7 +951,7 @@ export async function copyFileHistoryForResume(log: LogOption): Promise<void> {
     // All backups share the same directory: {configDir}/file-history/{sessionId}/
     // Create it once upfront instead of once per backup file
     const newBackupDir = join(
-      getClaudeConfigHomeDir(),
+      getSoccConfigHomeDir(),
       'file-history',
       sessionId,
     )
