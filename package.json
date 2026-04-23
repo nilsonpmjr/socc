@@ -1,10 +1,13 @@
 {
   "name": "@vantagesec/socc",
-  "version": "0.1.18",
+  "version": "0.2.0",
   "description": "Security operations copiloto for threat intelligence, incident response, and agentic investigation",
   "type": "module",
   "bin": {
     "socc": "bin/socc"
+  },
+  "exports": {
+    "./engine": "./dist/engine.mjs"
   },
   "files": [
     "bin/",
@@ -13,6 +16,7 @@
     ".socc/rules/",
     ".socc/skills/",
     "dist/cli.mjs",
+    "dist/engine.mjs",
     "README.md",
     "scripts/bootstrap-socc-soul.mjs"
   ],

@@ -8,7 +8,8 @@
  * - src/ path aliases
  */
 
-import { readFileSync } from 'fs'
+import { readFileSync, readdirSync, writeFileSync } from 'fs'
+import { join } from 'path'
 import { noTelemetryPlugin } from './no-telemetry-plugin'
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'))
@@ -43,29 +44,76 @@ const featureFlags: Record<string, boolean> = {
   COWORKER_TYPE_TELEMETRY: false,
 }
 
-const result = await Bun.build({
-  entrypoints: ['./src/entrypoints/cli.tsx'],
-  outdir: './dist',
-  target: 'node',
-  format: 'esm',
-  splitting: false,
-  sourcemap: 'external',
-  minify: false,
-  naming: 'cli.mjs',
-  define: {
-    // MACRO.* build-time constants
-    // Keep the internal compatibility version high enough to pass
-    // first-party minimum-version guards, but expose the real package
-    // version separately in SOCC branding.
-    'MACRO.VERSION': JSON.stringify('99.0.0'),
-    'MACRO.DISPLAY_VERSION': JSON.stringify(version),
-    'MACRO.BUILD_TIME': JSON.stringify(new Date().toISOString()),
-    'MACRO.ISSUES_EXPLAINER':
-      JSON.stringify('report the issue at https://github.com/nilsonpmjr/socc/issues'),
-    'MACRO.PACKAGE_URL': JSON.stringify('@vantagesec/socc'),
-    'MACRO.NATIVE_PACKAGE_URL': 'undefined',
-  },
-  plugins: [
+// ── Pre-process: replace feature() calls with boolean literals ──────
+// Bun v1.3.9+ resolves `import { feature } from 'bun:bundle'` natively
+// before plugins can intercept it via onResolve. The bun: namespace is
+// handled by Bun's C++ resolver which runs before the JS plugin phase,
+// so the previous onResolve/onLoad shim was silently ineffective — ALL
+// feature() calls evaluated to false regardless of the featureFlags map.
+//
+// Fix: pre-process source files to strip the bun:bundle import and
+// replace feature('FLAG') calls with their boolean literal. Files are
+// modified in-place before Bun.build() and restored in a finally block.
+
+const featureCallRe = /\bfeature\(\s*['"](\w+)['"][,\s]*\)/gs
+const featureImportRe = /import\s*\{[^}]*\bfeature\b[^}]*\}\s*from\s*['"]bun:bundle['"];?\s*\n?/g
+const modifiedFiles = new Map<string, string>()
+
+function preProcessFeatureFlags(dir: string) {
+  for (const ent of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, ent.name)
+    if (ent.isDirectory()) { preProcessFeatureFlags(full); continue }
+    if (!/\.(ts|tsx)$/.test(ent.name)) continue
+
+    const raw = readFileSync(full, 'utf-8')
+    if (!raw.includes('feature(')) continue
+
+    let contents = raw
+    contents = contents.replace(featureImportRe, '')
+    contents = contents.replace(featureCallRe, (_match, name) =>
+      String((featureFlags as Record<string, boolean>)[name] ?? false),
+    )
+
+    if (contents !== raw) {
+      modifiedFiles.set(full, raw)
+      writeFileSync(full, contents)
+    }
+  }
+}
+
+function restoreModifiedFiles() {
+  for (const [path, original] of modifiedFiles) {
+    writeFileSync(path, original)
+  }
+  modifiedFiles.clear()
+}
+
+preProcessFeatureFlags(join(import.meta.dir, '..', 'src'))
+const numModified = modifiedFiles.size
+
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(signal, () => {
+    restoreModifiedFiles()
+    process.exit(signal === 'SIGINT' ? 130 : 143)
+  })
+}
+
+// Shared define, plugins, external for both CLI and engine bundles.
+const sharedDefine = {
+  // MACRO.* build-time constants
+  // Keep the internal compatibility version high enough to pass
+  // first-party minimum-version guards, but expose the real package
+  // version separately in SOCC branding.
+  'MACRO.VERSION': JSON.stringify('99.0.0'),
+  'MACRO.DISPLAY_VERSION': JSON.stringify(version),
+  'MACRO.BUILD_TIME': JSON.stringify(new Date().toISOString()),
+  'MACRO.ISSUES_EXPLAINER':
+    JSON.stringify('report the issue at https://github.com/nilsonpmjr/socc/issues'),
+  'MACRO.PACKAGE_URL': JSON.stringify('@vantagesec/socc'),
+  'MACRO.NATIVE_PACKAGE_URL': 'undefined',
+}
+
+const sharedPlugins = [
     noTelemetryPlugin,
     {
       name: 'bun-bundle-shim',
@@ -103,18 +151,11 @@ export async function handleBgFlag() { throw new Error("Background sessions are 
           ],
         ] as const)
 
-        // Resolve `import { feature } from 'bun:bundle'` to a shim
-        build.onResolve({ filter: /^bun:bundle$/ }, () => ({
-          path: 'bun:bundle',
-          namespace: 'bun-bundle-shim',
-        }))
-        build.onLoad(
-          { filter: /.*/, namespace: 'bun-bundle-shim' },
-          () => ({
-            contents: `const featureFlags = ${JSON.stringify(featureFlags)};\nexport function feature(name) { return featureFlags[name] ?? false; }`,
-            loader: 'js',
-          }),
-        )
+        // bun:bundle feature() replacement is handled by the source
+        // pre-processing step above (see preProcessFeatureFlags).
+        // The previous onResolve/onLoad shim was ineffective in Bun
+        // v1.3.9+ because the bun: namespace is resolved natively
+        // before the JS plugin phase runs.
 
         build.onResolve(
           { filter: /^\.\.\/(daemon\/workerRegistry|daemon\/main|cli\/bg|cli\/handlers\/templateJobs|environment-runner\/main|self-hosted-runner\/main)\.js$/ },
@@ -274,49 +315,71 @@ export const SeverityNumber = {};
 
         // Scan source to find imports that can't resolve
         function scanForMissingImports() {
+          function checkAndRegister(specifier: string, fileDir: string, namedPart: string) {
+            const names = namedPart.split(',')
+              .map((s: string) => s.trim().replace(/^type\s+/, ''))
+              .filter((s: string) => s && !s.startsWith('type '))
+
+            // Check src/tasks/ non-relative imports
+            if (specifier.startsWith('src/tasks/')) {
+              const resolved = pathMod.resolve(__dirname, '..', specifier)
+              const candidates = [
+                resolved,
+                `${resolved}.ts`, `${resolved}.tsx`,
+                resolved.replace(/\.js$/, '.ts'), resolved.replace(/\.js$/, '.tsx'),
+                pathMod.join(resolved, 'index.ts'), pathMod.join(resolved, 'index.tsx'),
+              ]
+              if (!candidates.some((c: string) => fs.existsSync(c))) {
+                missingModules.add(specifier)
+              }
+            }
+            // Check relative .js imports
+            else if (specifier.endsWith('.js') && (specifier.startsWith('./') || specifier.startsWith('../'))) {
+              const resolved = pathMod.resolve(fileDir, specifier)
+              const tsVariant = resolved.replace(/\.js$/, '.ts')
+              const tsxVariant = resolved.replace(/\.js$/, '.tsx')
+              if (!fs.existsSync(resolved) && !fs.existsSync(tsVariant) && !fs.existsSync(tsxVariant)) {
+                missingModules.add(specifier)
+              }
+            }
+
+            // Track named exports for missing modules
+            if (names.length > 0) {
+              if (!missingModuleExports.has(specifier)) missingModuleExports.set(specifier, new Set())
+              for (const n of names) missingModuleExports.get(specifier)!.add(n)
+            }
+          }
+
           function walk(dir: string) {
             for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
               const full = pathMod.join(dir, ent.name)
               if (ent.isDirectory()) { walk(full); continue }
               if (!/\.(ts|tsx)$/.test(ent.name)) continue
-              const code: string = fs.readFileSync(full, 'utf-8')
-              // Collect all imports
+              const rawCode: string = fs.readFileSync(full, 'utf-8')
+              const fileDir = pathMod.dirname(full)
+
+              // Strip comments before scanning for imports/requires.
+              // The regex scanner matches require()/import() patterns
+              // inside JSDoc comments, causing false-positive missing
+              // module detection that breaks the build with noop stubs.
+              const code = rawCode
+                .replace(/\/\*[\s\S]*?\*\//g, '')  // block comments
+                .replace(/\/\/.*$/gm, '')           // line comments
+
+              // Collect static imports: import { X } from '...'
               for (const m of code.matchAll(/import\s+(?:\{([^}]*)\}|(\w+))?\s*(?:,\s*\{([^}]*)\})?\s*from\s+['"](.*?)['"]/g)) {
-                const specifier = m[4]
-                const namedPart = m[1] || m[3] || ''
-                const names = namedPart.split(',')
-                  .map((s: string) => s.trim().replace(/^type\s+/, ''))
-                  .filter((s: string) => s && !s.startsWith('type '))
+                checkAndRegister(m[4], fileDir, m[1] || m[3] || '')
+              }
 
-                // Check src/tasks/ non-relative imports
-                if (specifier.startsWith('src/tasks/')) {
-                  const resolved = pathMod.resolve(__dirname, '..', specifier)
-                  const candidates = [
-                    resolved,
-                    `${resolved}.ts`, `${resolved}.tsx`,
-                    resolved.replace(/\.js$/, '.ts'), resolved.replace(/\.js$/, '.tsx'),
-                    pathMod.join(resolved, 'index.ts'), pathMod.join(resolved, 'index.tsx'),
-                  ]
-                  if (!candidates.some((c: string) => fs.existsSync(c))) {
-                    missingModules.add(specifier)
-                  }
-                }
-                // Check relative .js imports
-                else if (specifier.endsWith('.js') && (specifier.startsWith('./') || specifier.startsWith('../'))) {
-                  const dir2 = pathMod.dirname(full)
-                  const resolved = pathMod.resolve(dir2, specifier)
-                  const tsVariant = resolved.replace(/\.js$/, '.ts')
-                  const tsxVariant = resolved.replace(/\.js$/, '.tsx')
-                  if (!fs.existsSync(resolved) && !fs.existsSync(tsVariant) && !fs.existsSync(tsxVariant)) {
-                    missingModules.add(specifier)
-                  }
-                }
+              // Collect dynamic requires: require('...') — these are used
+              // behind feature() gates and become live when flags are enabled.
+              for (const m of code.matchAll(/require\(\s*['"](\.\.?\/[^'"]+)['"]\s*\)/g)) {
+                checkAndRegister(m[1], fileDir, '')
+              }
 
-                // Track named exports for missing modules
-                if (names.length > 0) {
-                  if (!missingModuleExports.has(specifier)) missingModuleExports.set(specifier, new Set())
-                  for (const n of names) missingModuleExports.get(specifier)!.add(n)
-                }
+              // Collect dynamic imports: import('...')
+              for (const m of code.matchAll(/import\(\s*['"](\.\.?\/[^'"]+)['"]\s*\)/g)) {
+                checkAndRegister(m[1], fileDir, '')
               }
             }
           }
@@ -350,38 +413,54 @@ ${exports}
         )
       },
     },
-  ],
-  external: [
-    // OpenTelemetry — too many named exports to stub, kept external
-    '@opentelemetry/api',
-    '@opentelemetry/api-logs',
-    '@opentelemetry/core',
-    '@opentelemetry/exporter-trace-otlp-grpc',
-    '@opentelemetry/exporter-trace-otlp-http',
-    '@opentelemetry/exporter-trace-otlp-proto',
-    '@opentelemetry/exporter-logs-otlp-http',
-    '@opentelemetry/exporter-logs-otlp-proto',
-    '@opentelemetry/exporter-logs-otlp-grpc',
-    '@opentelemetry/exporter-metrics-otlp-proto',
-    '@opentelemetry/exporter-metrics-otlp-grpc',
-    '@opentelemetry/exporter-metrics-otlp-http',
-    '@opentelemetry/exporter-prometheus',
-    '@opentelemetry/resources',
-    '@opentelemetry/sdk-trace-base',
-    '@opentelemetry/sdk-trace-node',
-    '@opentelemetry/sdk-logs',
-    '@opentelemetry/sdk-metrics',
-    '@opentelemetry/semantic-conventions',
-    // Native image processing
-    'sharp',
-    // Cloud provider SDKs
-    '@aws-sdk/client-bedrock',
-    '@aws-sdk/client-bedrock-runtime',
-    '@aws-sdk/client-sts',
-    '@aws-sdk/credential-providers',
-    '@azure/identity',
-    'google-auth-library',
-  ],
+]
+
+const sharedExternal = [
+  // OpenTelemetry — too many named exports to stub, kept external
+  '@opentelemetry/api',
+  '@opentelemetry/api-logs',
+  '@opentelemetry/core',
+  '@opentelemetry/exporter-trace-otlp-grpc',
+  '@opentelemetry/exporter-trace-otlp-http',
+  '@opentelemetry/exporter-trace-otlp-proto',
+  '@opentelemetry/exporter-logs-otlp-http',
+  '@opentelemetry/exporter-logs-otlp-proto',
+  '@opentelemetry/exporter-logs-otlp-grpc',
+  '@opentelemetry/exporter-metrics-otlp-proto',
+  '@opentelemetry/exporter-metrics-otlp-grpc',
+  '@opentelemetry/exporter-metrics-otlp-http',
+  '@opentelemetry/exporter-prometheus',
+  '@opentelemetry/resources',
+  '@opentelemetry/sdk-trace-base',
+  '@opentelemetry/sdk-trace-node',
+  '@opentelemetry/sdk-logs',
+  '@opentelemetry/sdk-metrics',
+  '@opentelemetry/semantic-conventions',
+  // Native image processing
+  'sharp',
+  // Cloud provider SDKs
+  '@aws-sdk/client-bedrock',
+  '@aws-sdk/client-bedrock-runtime',
+  '@aws-sdk/client-sts',
+  '@aws-sdk/credential-providers',
+  '@azure/identity',
+  'google-auth-library',
+]
+
+try {
+
+const result = await Bun.build({
+  entrypoints: ['./src/entrypoints/cli.tsx'],
+  outdir: './dist',
+  target: 'node',
+  format: 'esm',
+  splitting: false,
+  sourcemap: 'external',
+  minify: false,
+  naming: 'cli.mjs',
+  define: sharedDefine,
+  plugins: sharedPlugins,
+  external: sharedExternal,
 })
 
 if (!result.success) {
@@ -389,7 +468,42 @@ if (!result.success) {
   for (const log of result.logs) {
     console.error(log)
   }
-  process.exit(1)
+  process.exitCode = 1
+} else {
+  console.log(`✓ Built SOCC v${version} → dist/cli.mjs`)
 }
 
-console.log(`✓ Built SOCC v${version} → dist/cli.mjs`)
+// ── Second entrypoint: dist/engine.mjs ─────────────────────────────
+// Headless library bundle re-exporting query() + types for embedding
+// (e.g., socc-plugin server running inside a Bun Worker per session).
+// Shares the same plugin set, feature-flag pre-processing, and external
+// list as the CLI build above — just a different entrypoint.
+
+const engineResult = await Bun.build({
+  entrypoints: ['./src/entrypoints/engine.tsx'],
+  outdir: './dist',
+  target: 'node',
+  format: 'esm',
+  splitting: false,
+  sourcemap: 'external',
+  minify: false,
+  naming: 'engine.mjs',
+  define: sharedDefine,
+  plugins: sharedPlugins,
+  external: sharedExternal,
+})
+
+if (!engineResult.success) {
+  console.error('Engine build failed:')
+  for (const log of engineResult.logs) {
+    console.error(log)
+  }
+  process.exitCode = 1
+} else {
+  console.log(`✓ Built SOCC engine v${version} → dist/engine.mjs`)
+}
+
+} finally {
+  restoreModifiedFiles()
+  console.log(`  🔄 feature-flags: pre-processed ${numModified} files (restored)`)
+}
